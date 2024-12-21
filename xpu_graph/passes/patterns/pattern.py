@@ -67,13 +67,6 @@ class AutoMatchPattern(Pattern):
         for rule_name in graph_desc_map:
             self._parse_lines(rule_name, graph_desc_map[rule_name].split("\n"), {}, {})
 
-        for rule_name, rule in self._rule_map.items():
-
-            logger.debug(f"================ rule: {rule_name}")
-            logger.debug(f"type_map: {rule.type_map}")
-            logger.debug(f"links: {rule.links}")
-            logger.debug(f"end_name: {rule.end_name}")
-
     @property
     def _markdown_path(self):
         path = inspect.getfile(self.__class__)

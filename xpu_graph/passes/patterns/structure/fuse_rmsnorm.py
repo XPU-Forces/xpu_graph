@@ -95,11 +95,11 @@ class FusedRMSNorm(Pattern):
 
             node.replace_all_uses_with(rms_norm_node)
             if len(add_node.users) == 0:
-                gm.graph.erase_node(add_node)
+                graph_module.graph.erase_node(add_node)
             if len(mean_node.users) == 0:
-                gm.graph.erase_node(mean_node)
+                graph_module.graph.erase_node(mean_node)
             if len(pow_node.users) == 0:
-                gm.graph.erase_node(pow_node)
+                graph_module.graph.erase_node(pow_node)
             is_modified = True
 
         graph_module.graph.lint()

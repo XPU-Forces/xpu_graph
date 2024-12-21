@@ -25,7 +25,6 @@ def cat_test(xpu_graph, func):
 class TestCat:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
     @pytest.mark.parametrize(
