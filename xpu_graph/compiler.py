@@ -19,6 +19,13 @@ class XpuGraph:
             setup_logger(logging.DEBUG)
         else:
             setup_logger(logging.INFO)
+        if self._config.freeze:
+            # The configuration in this inductor affects the return value of is_parameter_freezing(),
+            # thereby influencing the process of generating the fx_graph in dynamo. The current code
+            # in the community is not very clean, and it would be more reasonable to place this
+            # configuration under dynamo. You can refer to this link for more information.
+            # https://github.com/pytorch/pytorch/blob/release/2.5/torch/_dynamo/utils.py#L3061
+            torch._inductor.config.freezing = True
 
         self._pass_manager = PassManager(self._config)
 
