@@ -1,7 +1,9 @@
 import pytest
+
 import torch
 import torch_mlu
 import xpu_graph
+
 from xpu_graph.test_utils import is_similar
 from xpu_graph.config import OptLevel
 
@@ -44,10 +46,10 @@ fn0 = RMSNorm1(hidden_size=(10,)).mlu()
 fn1 = RMSNorm2(hidden_size=(10,)).mlu()
 
 
-def rmsnorm_test(xpu_graph, func):
+def rmsnorm_test(xpu_graph_backend, func):
     with torch.no_grad():
         a = torch.randn(1, 10).mlu()
-        compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res = compiled(a)
         res1 = func(a)
     assert is_similar(res1.float(), res.float())
@@ -55,10 +57,7 @@ def rmsnorm_test(xpu_graph, func):
 
 class TestRMSNorm:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
-        config.vendor_compiler = {"mode": "reduce-overhead"}
-        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler()
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -68,14 +67,10 @@ class TestRMSNorm:
         ],
     )
     def test_rmsnorm_patterns(self, pattern_func):
-        rmsnorm_test(self.xpu_graph, pattern_func)
+        rmsnorm_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    config.opt_level = OptLevel.level2
-    config.vendor_compiler = {"mode": "reduce-overhead"}
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    rmsnorm_test(xpu_graph, fn0)
-    rmsnorm_test(xpu_graph, fn1)
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
+    rmsnorm_test(xpu_graph_backend, fn0)
+    rmsnorm_test(xpu_graph_backend, fn1)

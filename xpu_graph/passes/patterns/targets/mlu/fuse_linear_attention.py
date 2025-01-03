@@ -17,9 +17,7 @@ from ...utils.check_ops import (
     check_act_op,
 )
 
-from .triton_kernel.linear_attn import (
-    linear_attn,
-)
+from .triton_kernel.linear_attention_kernel import attention
 
 
 def naive(q, k, v, bias, causal, sm_scale, has_bias):
@@ -44,9 +42,7 @@ class LinearAttentionReplacement(nn.Module):
             sm_scale = 1.0 / sm_scale
 
         # output = naive(
-        output = linear_attn(
-            query, key, value, bias, causal, sm_scale, has_bias
-        )
+        output = attention(query, key, value, bias, causal, sm_scale, has_bias)
         return output
 
 

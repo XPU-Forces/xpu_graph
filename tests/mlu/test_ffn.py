@@ -1,8 +1,9 @@
 import pytest
+
 import torch
 import torch_mlu
 import xpu_graph
-from xpu_graph.config import OptLevel
+
 from xpu_graph.test_utils import is_similar
 
 import torch_mlu_ops as ops
@@ -74,7 +75,7 @@ def fn3(ffn_input, ffn_weight1, ffn_weight2, bias1=None, bias2=None, act="silu")
     return output.view(-1)
 
 
-def ffn_test(xpu_graph, func):
+def ffn_test(xpu_graph_backend, func):
     with torch.no_grad():
         batch = 5
         seq_len = 16
@@ -105,7 +106,7 @@ def ffn_test(xpu_graph, func):
         ]
         args += [act_mode]
 
-        compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res1 = func(*args)
         res = compiled(*args)
         assert is_similar(res1.float(), res.float())
@@ -124,17 +125,14 @@ def ffn_test(xpu_graph, func):
 
 class TestFFN:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
-        config.opt_level = OptLevel.level2
-        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler()
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0, fn1, fn2, fn3],
     )
     def test_slice_patterns(self, pattern_func):
-        ffn_test(self.xpu_graph, pattern_func)
+        ffn_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":

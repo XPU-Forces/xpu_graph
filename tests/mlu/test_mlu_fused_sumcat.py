@@ -4,6 +4,7 @@ import torch
 import torch_mlu
 import xpu_graph
 
+from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar
 
 device = "mlu:0"

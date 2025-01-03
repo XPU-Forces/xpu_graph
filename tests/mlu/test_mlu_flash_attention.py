@@ -1,7 +1,9 @@
 import math
 import pytest
+
 import torch
 import xpu_graph
+
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import assertTensorsEqual
 
@@ -395,10 +397,9 @@ def fa_test(xpu_graph_backend, func):
 
 class TestFA:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
-        config.opt_level = OptLevel.level2
-        self.xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            freeze=True, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -430,27 +431,23 @@ class TestFA:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    config.opt_level = OptLevel.level2
-    # config.vendor_compiler = {"mode": "reduce-overhead"}
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    fa_test(xpu_graph, _sfdp_pattern_1)
-    fa_test(xpu_graph, _sfdp_pattern_1_1)
-    fa_test(xpu_graph, _sfdp_pattern_2)
-    fa_test(xpu_graph, _sfdp_pattern_3)
-    fa_test(xpu_graph, _sfdp_pattern_4)
-    fa_test(xpu_graph, _sfdp_pattern_5)
-    fa_test(xpu_graph, _sfdp_pattern_6)
-    fa_test(xpu_graph, _sfdp_pattern_7)
-    fa_test(xpu_graph, _sfdp_pattern_8)
-    fa_test(xpu_graph, _sfdp_pattern_9)
-    fa_test(xpu_graph, _sfdp_pattern_10)
-    fa_test(xpu_graph, _sfdp_pattern_11)
-    fa_test(xpu_graph, _sfdp_pattern_12)
-    fa_test(xpu_graph, _sfdp_pattern_13)
-    fa_test(xpu_graph, _sfdp_pattern_5_1)
-    fa_test(xpu_graph, _sfdp_pattern_transformer_1)
-    fa_test(xpu_graph, _sfdp_pattern_transformer_2)
-    fa_test(xpu_graph, _sfdp_pattern_transformer_3)
-    fa_test(xpu_graph, _sfdp_pattern_6_1)
+    xpu_graph_backend = xpu_graph.mlu_compiler(freeze=True, opt_level=OptLevel.level2)
+    fa_test(xpu_graph_backend, _sfdp_pattern_1)
+    fa_test(xpu_graph_backend, _sfdp_pattern_1_1)
+    fa_test(xpu_graph_backend, _sfdp_pattern_2)
+    fa_test(xpu_graph_backend, _sfdp_pattern_3)
+    fa_test(xpu_graph_backend, _sfdp_pattern_4)
+    fa_test(xpu_graph_backend, _sfdp_pattern_5)
+    fa_test(xpu_graph_backend, _sfdp_pattern_6)
+    fa_test(xpu_graph_backend, _sfdp_pattern_7)
+    fa_test(xpu_graph_backend, _sfdp_pattern_8)
+    fa_test(xpu_graph_backend, _sfdp_pattern_9)
+    fa_test(xpu_graph_backend, _sfdp_pattern_10)
+    fa_test(xpu_graph_backend, _sfdp_pattern_11)
+    fa_test(xpu_graph_backend, _sfdp_pattern_12)
+    fa_test(xpu_graph_backend, _sfdp_pattern_13)
+    fa_test(xpu_graph_backend, _sfdp_pattern_5_1)
+    fa_test(xpu_graph_backend, _sfdp_pattern_transformer_1)
+    fa_test(xpu_graph_backend, _sfdp_pattern_transformer_2)
+    fa_test(xpu_graph_backend, _sfdp_pattern_transformer_3)
+    fa_test(xpu_graph_backend, _sfdp_pattern_6_1)

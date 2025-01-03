@@ -1,7 +1,9 @@
 import math
 import pytest
+
 import torch
 import xpu_graph
+
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import assertTensorsEqual
 
@@ -47,10 +49,9 @@ def bmm_test(xpu_graph_backend, func):
 
 class TestBMM:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
-        config.opt_level = OptLevel.level2
-        self.xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            freeze=True, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -62,11 +63,7 @@ class TestBMM:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    config.opt_level = OptLevel.level2
-    # config.vendor_compiler = {"mode": "reduce-overhead"}
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    bmm_test(xpu_graph, fn0)
-    bmm_test(xpu_graph, fn1)
-    bmm_test(xpu_graph, fn2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(freeze=True, opt_level=OptLevel.level2)
+    bmm_test(xpu_graph_backend, fn0)
+    bmm_test(xpu_graph_backend, fn1)
+    bmm_test(xpu_graph_backend, fn2)

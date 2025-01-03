@@ -1,10 +1,9 @@
 import pytest
 import torch
 import torch_mlu
-import torch_mlu_ops
-import torch.nn.functional as F
 import xpu_graph
 
+import torch.nn.functional as F
 from xpu_graph.test_utils import is_similar
 
 device = "mlu:0"
@@ -94,7 +93,7 @@ def fn17(inputs, weight, bias):
     return output.view(-1).reshape(128, 32, 16)
 
 
-def matmul_test(xpu_graph, func):
+def matmul_test(xpu_graph_backend, func):
     if func in [fn0, fn1, fn9]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((768, 16), device=device, dtype=data_type)
@@ -121,16 +120,14 @@ def matmul_test(xpu_graph, func):
     if func in [fn0, fn1, fn2, fn3, fn12]:
         bias = None
     res = func(inputs, weight, bias)
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, weight, bias)
     assert is_similar(res1.float(), res.float())
 
 
 class TestMatMul:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
-        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler()
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -155,7 +152,7 @@ class TestMatMul:
         ],
     )
     def test_matmul_patterns(self, pattern_func):
-        matmul_test(self.xpu_graph, pattern_func)
+        matmul_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":

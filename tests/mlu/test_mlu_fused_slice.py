@@ -3,7 +3,7 @@ import pytest
 import torch
 import torch_mlu
 import xpu_graph
-
+from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar
 
 device = "mlu:0"
@@ -351,9 +351,9 @@ def fn13(x):
     return x1, x2, x3, x4, x5, x6, x7
 
 
-def slice_test(xpu_graph, func):
+def slice_test(xpu_graph_backend, func):
     a = torch.randn(10, 43106).to(device=device)
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res = compiled(a)[0]
     res1 = func(a)[0]
     assert is_similar(res1.float(), res.float())
@@ -361,34 +361,30 @@ def slice_test(xpu_graph, func):
 
 class TestSlice:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
-        config.target = xpu_graph.config.Target.mlu
-        config.vendor_compiler = {"mode": "reduce-overhead"}
-        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            freeze=True, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0, fn1, fn2, fn3, fn5, fn6, fn7, fn8, fn9, fn10, fn11, fn12, fn13],
     )
     def test_slice_patterns(self, pattern_func):
-        slice_test(self.xpu_graph, pattern_func)
+        slice_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    config.vendor_compiler = {"mode": "reduce-overhead"}
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    slice_test(xpu_graph, fn0)
-    slice_test(xpu_graph, fn1)
-    slice_test(xpu_graph, fn2)
-    slice_test(xpu_graph, fn3)
-    slice_test(xpu_graph, fn5)
-    slice_test(xpu_graph, fn6)
-    slice_test(xpu_graph, fn7)
-    slice_test(xpu_graph, fn8)
-    slice_test(xpu_graph, fn9)
-    slice_test(xpu_graph, fn10)
-    slice_test(xpu_graph, fn11)
-    slice_test(xpu_graph, fn12)
-    slice_test(xpu_graph, fn13)
+    xpu_graph_backend = xpu_graph.mlu_compiler(freeze=True, opt_level=OptLevel.level2)
+    slice_test(xpu_graph_backend, fn0)
+    slice_test(xpu_graph_backend, fn1)
+    slice_test(xpu_graph_backend, fn2)
+    slice_test(xpu_graph_backend, fn3)
+    slice_test(xpu_graph_backend, fn5)
+    slice_test(xpu_graph_backend, fn6)
+    slice_test(xpu_graph_backend, fn7)
+    slice_test(xpu_graph_backend, fn8)
+    slice_test(xpu_graph_backend, fn9)
+    slice_test(xpu_graph_backend, fn10)
+    slice_test(xpu_graph_backend, fn11)
+    slice_test(xpu_graph_backend, fn12)
+    slice_test(xpu_graph_backend, fn13)
