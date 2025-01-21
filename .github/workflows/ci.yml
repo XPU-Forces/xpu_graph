@@ -6,6 +6,7 @@ jobs:
     steps:
       - name: clone xpu_graph code
         run: |
+          rm -rf /data01/wangmingfa/mlu-ci
           mkdir -p /data01/wangmingfa/mlu-ci
           cd /data01/wangmingfa/mlu-ci
           git clone https://github.com/BD-Seed-HHW/xpu_graph.git
