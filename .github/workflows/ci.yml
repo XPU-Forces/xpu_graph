@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [ main ]
+    branches: [ push, pull_request ]
 jobs:
   container-test-job:
     runs-on: self-hosted
