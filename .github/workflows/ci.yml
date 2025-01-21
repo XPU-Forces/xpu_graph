@@ -13,5 +13,5 @@ jobs:
         - /usr/bin/cnmon:/usr/bin/cnmon
       options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host 
     steps:
-      - name: Running xxx
-        run: echo 'hello world' && ls /opt/apps && cnmon && which python && ls . && echo $PWD
+      - name: Running mlu tests
+        run: source /opt/apps/venv/xpu-graph/bin/activate && pip install -e . && pytest tests/mlu/test_*
