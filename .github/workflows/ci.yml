@@ -1,10 +1,19 @@
-name: ci
-
-on: [push, pull_request]
-
+name: CI-CD
+on:
+  push:
+    branches: [ main ]
 jobs:
-  build:
+  container-test-job:
     runs-on: self-hosted
+    container:
+      image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+      env:
+        NODE_ENV: development
+      ports:
+        - 80
+      volumes:
+        - /data01/wangmingfa:/host
+      options: --cpus 1
     steps:
-    - name: Echo the greeting's time
-      run: echo 'The is ci test.'
+      - name: Check for dockerenv file
+        run: (ls /host && echo Found dockerenv) || (echo No dockerenv)
