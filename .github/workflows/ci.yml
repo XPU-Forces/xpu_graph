@@ -7,6 +7,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Check for dockerenv file
+        uses: actions/checkout@v3
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
         with:
