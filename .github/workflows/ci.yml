@@ -7,4 +7,4 @@ jobs:
     runs-on: self-hosted
     steps:
     - name: Echo the greeting's time
-      run: echo 'The time was ${{ steps.hello.outputs.time }}.
+      run: echo 'The is ci test.'
