@@ -8,6 +8,10 @@ jobs:
       image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
       volumes:
         - /data01/wangmingfa:/host
+        - /tmp/.X11-unix:/tmp/.X11-unix
+        - /dev:/dev
+        - /usr/bin/cnmon:/usr/bin/cnmon
+      options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --net=host --ipc=host --pid=host 
     steps:
       - name: Running xxx
-        run: echo 'hello world'
+        run: echo 'hello world' && ls /opt/apps && cnmon
