@@ -6,6 +6,11 @@ jobs:
     runs-on: self-hosted
     container:
       image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+      env:
+          HTTP_PROXY: http://sys-proxy-rd-relay.byted.org:3128
+          HTTPS_PROXY: http://sys-proxy-rd-relay.byted.org:3128
+      ports:
+        - 5432:5432
       volumes:
         - /data01/wangmingfa:/host
         - /tmp/.X11-unix:/tmp/.X11-unix
