@@ -29,7 +29,7 @@ jobs:
         - /tmp/.X11-unix:/tmp/.X11-unix
         - /dev:/dev
         - /usr/bin/cnmon:/usr/bin/cnmon
-      options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host --user root
+      options: --pull never -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host --user root
     steps:
       - name: Running mlu tests
         shell: bash
