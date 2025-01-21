@@ -30,6 +30,40 @@ def fn1(inputs, residual, weight, bias):
     return output, inputs_
 
 
+def fn2(inputs, weight, bias):
+    mean = torch.mean(inputs, dim=-1, keepdim=True)
+    variance = torch.var(
+        inputs, dim=-1, keepdim=True, unbiased=False
+    )  # unbiased=False == tf.nn.moments
+    normalized = (inputs - mean) / ((variance + 1e-6) ** (0.5))
+    outputs = weight * normalized + bias
+    return outputs
+
+
+def fn3(inputs, weight, bias):
+    mean = torch.mean(inputs, dim=-1, keepdim=True)
+    variance = torch.var(
+        inputs, dim=-1, keepdim=True, unbiased=False
+    )  # unbiased=False == tf.nn.moments
+    normalized = (inputs - mean) * torch.rsqrt(1e-6 + variance)
+    outputs = bias + normalized
+    return outputs
+
+
+def fn4(inputs, weight, bias):
+    mean = torch.mean(inputs, dim=-1, keepdim=True)
+    variance = torch.var(inputs, dim=-1, keepdim=True, correction=0)
+    normalized = (inputs - mean) / torch.sqrt(variance + 1e-5)
+    return normalized
+
+
+def fn5(inputs, weight, bias):
+    mean = torch.mean(inputs, dim=-1, keepdim=True)
+    variance = torch.var(inputs, dim=-1, keepdim=True, correction=0)
+    normalized = (inputs - mean) * ((variance + 1e-5) ** (-0.5))
+    return weight * normalized
+
+
 def layernorm_test(xpu_graph, func):
     inputs = torch.randn((8, 1024), device=device, dtype=data_type)
     residual = torch.randn((8, 1024), device=device, dtype=data_type)
@@ -45,6 +79,15 @@ def layernorm_test(xpu_graph, func):
         norm1, res1 = func(inputs, residual, weight, bias)
         assert is_similar(norm1, norm)
         assert is_similar(res1, res)
+    if func == fn2 or func == fn3:
+        bias = torch.randn((1024,), device=device, dtype=data_type)
+        norm = compiled(inputs, weight, bias)
+        norm1 = func(inputs, weight, bias)
+        assert is_similar(norm1, norm)
+    if func == fn4 or func == fn5:
+        norm = compiled(inputs, weight, bias)
+        norm1 = func(inputs, weight, bias)
+        assert is_similar(norm1, norm)
 
 
 class TestLayerNorm:
@@ -55,9 +98,9 @@ class TestLayerNorm:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0],
+        [fn0, fn2],
     )
-    def test_slice_patterns(self, pattern_func):
+    def test_layernrom_patterns(self, pattern_func):
         layernorm_test(self.xpu_graph_backend, pattern_func)
 
 
@@ -65,3 +108,7 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
     layernorm_test(xpu_graph_backend, fn0)
     layernorm_test(xpu_graph_backend, fn1)
+    layernorm_test(xpu_graph_backend, fn2)
+    layernorm_test(xpu_graph_backend, fn3)
+    layernorm_test(xpu_graph_backend, fn4)
+    layernorm_test(xpu_graph_backend, fn5)

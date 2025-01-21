@@ -11,6 +11,13 @@ def get_input_node(node, idx):
     return node.args[idx]
 
 
+def get_input_kw_node(node, key):
+    if key in node.kwargs:
+        return node.kwargs[key]
+    else:
+        return None
+
+
 def get_actual_node(node, idx):
     new_node = node.args[idx]
     changed1 = True
@@ -31,6 +38,10 @@ def check_op(node: fx.Node, target) -> bool:
     return _is_valid_node(node) and node.target == target
 
 
+def check_sqrt_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.sqrt.default)
+
+
 def check_rsqrt_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.rsqrt.default)
 
@@ -39,8 +50,16 @@ def check_add_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.add.Tensor)
 
 
+def check_sub_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.sub.Tensor)
+
+
 def check_mean_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.mean.dim)
+
+
+def check_var_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.var.dim)
 
 
 def check_pow_op(node: fx.Node) -> bool:
