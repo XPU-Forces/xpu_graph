@@ -39,6 +39,10 @@ jobs:
           which python
           ls / -la
           echo ======
+          sleep 50
+          echo ++++++++++++++++++++++
+          sleep 1h
+          echo ---------------
           ls /opt -la
           # pip install expecttest
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
