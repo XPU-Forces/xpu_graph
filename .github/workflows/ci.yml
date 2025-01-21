@@ -30,8 +30,9 @@ jobs:
       - name: Running mlu tests
         #run: /opt/apps/venv/xpu-graph/bin/pip install -e . && /opt/apps/venv/xpu-graph/bin/pip show xpu_graph && /opt/apps/venv/xpu-graph/bin/pytest tests/mlu/test_*
         run: |
-          export http_proxy=
-          export https_proxy=
+          export http_proxy=http://sys-proxy-rd-relay.byted.org:3128
+          export https_proxy=http://sys-proxy-rd-relay.byted.org:3128
+          export no_proxy=.byted.org
           echo ===1 $http_proxy
           git clone https://github.com/BD-Seed-HHW/xpu_graph.git
           echo -00d00 $HTTP_PROXY
