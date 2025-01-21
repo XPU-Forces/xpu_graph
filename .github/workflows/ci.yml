@@ -29,6 +29,7 @@ jobs:
       options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host --user root
     steps:
       - name: Running mlu tests
+        shell: bash
         run: |
           cd /host/xpu_graph
           whoami
