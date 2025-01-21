@@ -5,15 +5,9 @@ on:
 jobs:
   container-test-job:
     runs-on: self-hosted
-    container:
-      image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
-      env:
-        NODE_ENV: development
-      ports:
-        - 80
-      volumes:
-        - /data01/wangmingfa:/host
-      options: --cpus 1
     steps:
       - name: Check for dockerenv file
-        run: (ls /host && echo Found dockerenv) || (echo No dockerenv)
+        with:
+          image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+          options: -v /data01/wangmingfa:/host
+          run: (ls /host && echo Found dockerenv) || (echo No dockerenv)
