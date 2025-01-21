@@ -18,8 +18,8 @@ jobs:
         with:
           depth: 1
           branch: 'master'
-          owner: 'GuillaumeFalourd'
-          repository: 'poc-github-actions'
+          owner: 'BD-Seed-HHW'
+          repository: 'xpu_graph'
       - name: Running mlu tests
         #run: /opt/apps/venv/xpu-graph/bin/pip install -e . && /opt/apps/venv/xpu-graph/bin/pip show xpu_graph && /opt/apps/venv/xpu-graph/bin/pytest tests/mlu/test_*
         run: |
