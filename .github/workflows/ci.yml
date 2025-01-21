@@ -31,6 +31,6 @@ jobs:
         #run: /opt/apps/venv/xpu-graph/bin/pip install -e . && /opt/apps/venv/xpu-graph/bin/pip show xpu_graph && /opt/apps/venv/xpu-graph/bin/pytest tests/mlu/test_*
         run: |
           echo ===1 $http_proxy
-          echo -0000 $HTTP_PROXY
+          echo -00d00 $HTTP_PROXY
           cd xpu_graph
           ls -la
