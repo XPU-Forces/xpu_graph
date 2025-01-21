@@ -13,12 +13,13 @@ jobs:
     name: Run xpu_graph tests
     runs-on: self-hosted
     container:
-      image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
-      env:
-          HTTP_PROXY: http://sys-proxy-rd-relay.byted.org:3128
-          HTTPS_PROXY: http://sys-proxy-rd-relay.byted.org:3128
-      ports:
-        - 5432:5432
+      # image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+      image: cambricon-base/pytorch:v24.12.1-torch2.5.0-torchmlu1.24.1-debian10.11-py310
+      # env:
+      #     HTTP_PROXY: http://sys-proxy-rd-relay.byted.org:3128
+      #     HTTPS_PROXY: http://sys-proxy-rd-relay.byted.org:3128
+      # ports:
+      #   - 5432:5432
       volumes:
         - /data01/wangmingfa/mlu-ci:/host
         - /tmp/.X11-unix:/tmp/.X11-unix
@@ -30,7 +31,8 @@ jobs:
         run: |
           cd /host/xpu_graph
           ls -la
-          /opt/apps/venv/xpu-graph/bin/pip install -e .
-          /opt/apps/venv/xpu-graph/bin/pip show xpu_graph
-          /opt/apps/venv/xpu-graph/bin/pytest tests/mlu/test_*
+          pip install expecttest
+          pip install -e .
+          pip show xpu_graph
+          python tests/mlu/test_*
           
