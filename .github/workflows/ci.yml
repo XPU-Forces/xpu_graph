@@ -1,16 +1,13 @@
-name: ci
-on:
-  push:
-    branches: [ push, pull_request ]
+name: Run test suite
+on: push
 jobs:
-  container-test-job:
+  run-tests:
+    name: Run xpu_graph tests
     runs-on: self-hosted
+    container:
+      image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+      volumes:
+        - /data01/wangmingfa:/host
     steps:
-      - uses: actions/checkout@v3
-      - name: Check for dockerenv file
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        with:
-          image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
-          options: -v /data01/wangmingfa:/host
-          run: (ls /host && echo Found dockerenv) || (echo No dockerenv)
+      - name: Running xxx
+        run: echo 'hello world'
