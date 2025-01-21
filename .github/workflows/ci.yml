@@ -14,4 +14,4 @@ jobs:
       options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host 
     steps:
       - name: Running xxx
-        run: echo 'hello world' && ls /opt/apps && cnmon
+        run: echo 'hello world' && ls /opt/apps && cnmon && which python && ls . && echo $PWD
