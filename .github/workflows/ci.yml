@@ -13,7 +13,7 @@ jobs:
         - /usr/bin/cnmon:/usr/bin/cnmon
       options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host 
     steps:
-      # - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       # - name: Clone GuillaumeFalourd/formulas-training PRIVATE repository
       #   uses: GuillaumeFalourd/clone-github-repo-action@v2.3
       #   with:
