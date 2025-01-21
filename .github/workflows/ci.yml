@@ -32,7 +32,8 @@ jobs:
         run: |
           cd /host/xpu_graph
           whoami
-          ls -la
+          source /torch/venv3/pytorch/bin/activate
+          which python
           # pip install expecttest
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
           which pip
