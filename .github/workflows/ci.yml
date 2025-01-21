@@ -1,6 +1,14 @@
 name: Run test suite
 on: push
 jobs:
+  clone-code:
+    runs-on: self-hosted
+    steps:
+      - name: clone xpu_graph code
+        run: |
+          mkdir -p /data01/wangmingfa/mlu-ci
+          cd /data01/wangmingfa/mlu-ci
+          git clone https://github.com/BD-Seed-HHW/xpu_graph.git
   run-tests:
     name: Run xpu_graph tests
     runs-on: self-hosted
@@ -12,7 +20,7 @@ jobs:
       ports:
         - 5432:5432
       volumes:
-        - /data01/wangmingfa:/host
+        - /data01/wangmingfa/mlu-ci:/host
         - /tmp/.X11-unix:/tmp/.X11-unix
         - /dev:/dev
         - /usr/bin/cnmon:/usr/bin/cnmon
@@ -35,11 +43,5 @@ jobs:
       - name: Running mlu tests
         #run: /opt/apps/venv/xpu-graph/bin/pip install -e . && /opt/apps/venv/xpu-graph/bin/pip show xpu_graph && /opt/apps/venv/xpu-graph/bin/pytest tests/mlu/test_*
         run: |
-          export http_proxy=http://sys-proxy-rd-relay.byted.org:3128
-          export https_proxy=http://sys-proxy-rd-relay.byted.org:3128
-          export no_proxy=.byted.org
-          echo ===1 $http_proxy
-          git clone https://github.com/BD-Seed-HHW/xpu_graph.git
-          echo -00d00 $HTTP_PROXY
-          cd xpu_graph
+          cd /host/xpu_graph
           ls -la
