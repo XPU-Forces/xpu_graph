@@ -1,5 +1,8 @@
 name: Run test suite
 on: push
+defaults:
+  run:
+    shell: bash
 jobs:
   clone-code:
     runs-on: self-hosted
@@ -34,6 +37,9 @@ jobs:
           cd /host/xpu_graph
           whoami
           which python
+          ls / -la
+          echo ======
+          ls /opt -la
           # pip install expecttest
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
           which pip
