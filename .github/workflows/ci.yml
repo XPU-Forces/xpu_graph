@@ -34,7 +34,9 @@ jobs:
           ls -la
           # pip install expecttest
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
-          pip install -e .
+          which pip
+          which python
+          pip install --root-user-action=ignore -e .
           pip show xpu_graph
           python tests/mlu/test_*
           # rm -rf /host/xpu_graph
