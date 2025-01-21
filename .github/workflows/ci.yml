@@ -13,19 +13,20 @@ jobs:
         - /usr/bin/cnmon:/usr/bin/cnmon
       options: -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host 
     steps:
+      - uses: actions/checkout@v4
       # - name: Clone GuillaumeFalourd/formulas-training PRIVATE repository
       #   uses: GuillaumeFalourd/clone-github-repo-action@v2.3
       #   with:
       #     owner: 'BD-Seed-HHW'
       #     repository: 'xpu_graph'
       #     access-token: ${{ secrets.ACCESS_TOKEN }}
-      - name: Clone BD-Seed-HHW/xpu_graph PUBLIC repository
-        uses: BD-Seed-HHW/clone-github-repo-action@v2.3
-        with:
-          depth: 1
-          branch: 'master'
-          owner: 'BD-Seed-HHW'
-          repository: 'xpu_graph'
+      # - name: Clone BD-Seed-HHW/xpu_graph PUBLIC repository
+      #   uses: BD-Seed-HHW/clone-github-repo-action@v2.3
+      #   with:
+      #     depth: 1
+      #     branch: 'master'
+      #     owner: 'BD-Seed-HHW'
+      #     repository: 'xpu_graph'
       - name: Running mlu tests
         #run: /opt/apps/venv/xpu-graph/bin/pip install -e . && /opt/apps/venv/xpu-graph/bin/pip show xpu_graph && /opt/apps/venv/xpu-graph/bin/pytest tests/mlu/test_*
         run: |
