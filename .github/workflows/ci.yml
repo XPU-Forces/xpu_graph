@@ -34,8 +34,8 @@ jobs:
           ls -la
           # pip install expecttest
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
-          pip install -e .
-          pip show xpu_graph
-          python tests/mlu/test_*
+          /torch/venv3/pytorch/bin/pip install -e .
+          /torch/venv3/pytorch/bin/pip show xpu_graph
+          /torch/venv3/pytorch/bin/python tests/mlu/test_*
           # rm -rf /host/xpu_graph
           
