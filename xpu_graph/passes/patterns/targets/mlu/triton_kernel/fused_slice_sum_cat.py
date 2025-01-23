@@ -51,8 +51,8 @@ def mlu_triton_slice_sum_cat_kernel(
         indices_start = indices[i * 2]
         indices_end = indices[i * 2 + 1]
         slice_mask = (offset_row < indices_end) & (offset_row > (indices_start - 1))
-        mask_i = slice_mask[:, None] & mask_col[None, :]
-        slice_value = tl.where(mask_i == 0, 0, input_data)
+        combined_mask = slice_mask[:, None] & mask_col[None, :]
+        slice_value = tl.where(combined_mask, input_data, 0)
         sum_value = tl.sum(slice_value, axis=0)
         tl.store(output_offset + i * col + offset_col, sum_value, mask=mask_col)
 
