@@ -1,7 +1,5 @@
 name: Run test suite
-on:
-  push:
-    branches: [ master ]
+on: [push]
 defaults:
   run:
     shell: bash
