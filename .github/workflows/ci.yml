@@ -1,7 +1,8 @@
 name: Run test suite
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
 defaults:
   run:
     shell: bash
