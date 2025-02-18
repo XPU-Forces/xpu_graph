@@ -30,6 +30,9 @@ class FusedNormReplacement(nn.Module):
     ):
         if bias is None:
             bias = torch.zeros_like(weight)
+        dtype = torch.promote_types(input.dtype, residual.dtype)
+        input = input.to(dtype)
+        residual = residual.to(dtype)
         if store_output_before_norm:
             if norm_type == "layer_norm":
                 output, residual = torch_mlu_ops.fused_layer_norm(

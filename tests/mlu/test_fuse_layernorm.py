@@ -63,6 +63,16 @@ def fn5(inputs, weight, bias):
     normalized = (inputs - mean) * ((variance + 1e-5) ** (-0.5))
     return weight * normalized
 
+def fn6(inputs, residual, weight, bias):
+    residual = residual.to(torch.float32)
+    weight = weight.to(torch.float32)
+    if bias is not None:
+        bias = bias.to(torch.float32)
+    inputs_ = inputs + residual
+    output = torch.layer_norm(
+        inputs_, normalized_shape=[1024], weight=weight, bias=bias, eps=1e-5
+    )
+    return output
 
 def layernorm_test(xpu_graph, func):
     inputs = torch.randn((8, 1024), device=device, dtype=data_type)
@@ -70,7 +80,7 @@ def layernorm_test(xpu_graph, func):
     weight = torch.randn((1024), device=device, dtype=data_type)
     bias = None
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
-    if func == fn0:
+    if func == fn0 or func == fn6:
         norm = compiled(inputs, residual, weight, bias)
         norm1 = func(inputs, residual, weight, bias)
         assert is_similar(norm1, norm)
@@ -98,7 +108,7 @@ class TestLayerNorm:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0, fn2],
+        [fn0, fn2, fn6],
     )
     def test_layernrom_patterns(self, pattern_func):
         layernorm_test(self.xpu_graph_backend, pattern_func)
@@ -112,3 +122,4 @@ if __name__ == "__main__":
     layernorm_test(xpu_graph_backend, fn3)
     layernorm_test(xpu_graph_backend, fn4)
     layernorm_test(xpu_graph_backend, fn5)
+    layernorm_test(xpu_graph_backend, fn6)
