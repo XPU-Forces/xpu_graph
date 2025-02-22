@@ -1,6 +1,6 @@
 import torch
 from torch import nn, fx
-import torch_mlu
+# import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from typing import Callable
 from ..utils.check_ops import (

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union, Tuple
 
 import torch
 from torch import nn, fx
@@ -26,7 +26,7 @@ from ..utils.check_ops import (
 
 def _is_unaffined_layernorm(
     node: fx.Node,
-) -> tuple[bool, Optional[tuple[fx.Node, Optional[float | int]]]]:
+) -> Tuple[bool, Optional[Tuple[fx.Node, Optional[Union[float, int]]]]]:
     # Matching: y = (x - mean(x)) / sqrt(var(x) + eps)
     # Or:       y = (x - mean(x)) * rsqrt(var(x) + eps)
     matched, node0, node1 = check_div_or_mul_op(node)
@@ -90,7 +90,7 @@ def _is_unaffined_layernorm(
 
 def _is_unbiased_layernorm(
     node: fx.Node,
-) -> tuple[bool, Optional[tuple[fx.Node, Optional[float | int], Optional[fx.Node]]]]:
+) -> Tuple[bool, Optional[Tuple[fx.Node, Optional[Union[float, int]], Optional[fx.Node]]]]:
     res, nodes = _is_unaffined_layernorm(node)
     if res:
         input, eps = nodes
@@ -122,12 +122,12 @@ def _is_unbiased_layernorm(
 
 def _is_layernorm(
     node: fx.Node,
-) -> tuple[
+) -> Tuple[
     bool,
     Optional[
-        tuple[
+        Tuple[
             fx.Node,
-            Optional[float | int],
+            Optional[Union[float, int]],
             Optional[fx.Node],
             Optional[fx.Node],
             list[fx.Node],

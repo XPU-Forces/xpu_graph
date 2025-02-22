@@ -1,7 +1,7 @@
 import torch
 import operator
 from torch import nn, fx
-
+from typing import Union, Tuple
 
 def _is_valid_node(node: fx.Node) -> bool:
     return isinstance(node, fx.Node) and node.op == "call_function"
@@ -96,7 +96,7 @@ def get_dtype(node: fx.Node):
 
 def check_sub_or_add_op(
     node: fx.Node,
-) -> tuple[bool, fx.Node | None, tuple[fx.Node | None, bool] | None]:
+) -> Tuple[bool, Union[fx.Node, None], Union[Tuple[Union[fx.Node, None], bool], None]]:
     if not _is_valid_node(node):
         return False, None, ()
 
@@ -114,7 +114,7 @@ def check_sub_or_add_op(
 
 def check_div_or_mul_op(
     node: fx.Node,
-) -> tuple[bool, fx.Node | None, tuple[fx.Node | None, bool] | None]:
+) -> Tuple[bool, Union[fx.Node, None], Union[Tuple[Union[fx.Node, None], bool], None]]:
     if not _is_valid_node(node):
         return False, None, ()
 
@@ -130,7 +130,7 @@ def check_div_or_mul_op(
     return True, node0, (node1, is_div)
 
 
-def check_bmm_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
+def check_bmm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
     if not check_op(node, torch.ops.aten.bmm.default):
         return False, None, None
 
@@ -139,7 +139,7 @@ def check_bmm_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
     return True, arg1, arg2
 
 
-def check_mm_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
+def check_mm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
     if not check_op(node, torch.ops.aten.mm.default):
         return False, None, None
 
@@ -197,7 +197,7 @@ def check_t_op(node: fx.Node) -> bool:
 
 def check_act_op(
     node: fx.Node,
-) -> tuple[bool, fx.Node | None, tuple[fx.Node | None, bool] | None]:
+) -> Tuple[bool, Union[fx.Node, None], Union[Tuple[Union[fx.Node, None], bool], None]]:
     if not _is_valid_node(node):
         return False, None
     if node.target == torch.ops.aten.silu.default:
@@ -251,7 +251,7 @@ def check_norm_op(node: fx.node):
 
 def check_addmm_op(
     node: fx.Node,
-) -> tuple[bool, fx.Node | None, fx.Node | None, fx.Node | None]:
+) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
     if not check_op(node, torch.ops.aten.addmm.default):
         return False, None, None, None
     arg1 = get_input_node(node, 0)

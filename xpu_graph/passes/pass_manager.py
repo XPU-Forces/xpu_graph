@@ -42,7 +42,6 @@ class PassManager:
         changed = True
         while changed:
             from torch.fx.passes.shape_prop import ShapeProp
-
             ShapeProp(gm).propagate(*example_inputs)
             changed = False
             for pass_ in self._passes:
