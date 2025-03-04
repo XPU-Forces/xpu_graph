@@ -12,17 +12,15 @@ jobs:
   clone-code:
     runs-on: self-hosted
     steps:
-      - name: clone xpu_graph code
+      - name: job01 clone xpu_graph code
         run: |
           cd /data01/wangmingfa/mlu-ci
           sudo rm -rf xpu_graph
           git clone https://github.com/BD-Seed-HHW/xpu_graph.git
-          exit $?
   run-tests:
-    name: Run xpu_graph tests
-    runs-on: self-hosted
+    name: job02 Run xpu_graph tests
     needs: [clone-code]
-    if: ${{ always() && needs.clone-code.result == 'succeed'}}
+    runs-on: self-hosted
     container:
       image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
       volumes:
@@ -38,13 +36,12 @@ jobs:
           cd /host/xpu_graph
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
           pip install --root-user-action=ignore -e .
-          python tests/mlu/test_*
-          exit $?
+          pytest tests/mlu/test_*
   notify:
     runs-on: self-hosted
     needs: [clone-code, run-tests]
-    if: ${{ always() && (needs.clone-code.result == 'failure' || needs.run-tests.result == 'failure')}}
+    if: ${{always() && (needs.clone-code.result == 'failure' || needs.run-tests.result == 'failure')}}
     steps:
-      - name: check status
+      - name: status
         run: |
           exit 1
