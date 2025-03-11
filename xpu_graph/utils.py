@@ -1,13 +1,16 @@
 import logging
 import sys
 import time
+import functools
 
 logger = logging.getLogger("XPU_GRAPH")
 
 
 def setup_logger(loglevel):
-    while logger.hasHandlers() and len(logger.handlers) != 0:
+    # Skip if handlers already exist
+    if logger.handlers:
         return
+
     fmt = logging.Formatter(
         fmt="[XPU_GRAPH]: %(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [%(levelname)s]: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -20,18 +23,20 @@ def setup_logger(loglevel):
 
 
 def xpu_timer(func):
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if len(args) > 0 and hasattr(args[0], "__class__"):
+        start = time.time()
+        res = func(*args, **kwargs)
+        end = time.time()
+
+        # Determine function name (including class name if applicable)
+        if args and hasattr(args[0], "__class__"):
             class_name = args[0].__class__.__name__
-            start = time.time()
-            res = func(*args, **kwargs)
-            end = time.time()
-            logger.debug(f"{class_name}.{func.__name__} cost {end - start}s")
+            func_name = f"{class_name}.{func.__name__}"
         else:
-            start = time.time()
-            res = func(*args, **kwargs)
-            end = time.time()
-            logger.debug(f"{func.__name__} cost {end - start}s")
+            func_name = func.__name__
+
+        logger.debug(f"{func_name} cost {end - start:.4f}s")
         return res
 
     return wrapper

@@ -3,6 +3,7 @@ import operator
 from torch import nn, fx
 from typing import Union, Tuple
 
+
 def _is_valid_node(node: fx.Node) -> bool:
     return isinstance(node, fx.Node) and node.op == "call_function"
 
@@ -130,7 +131,9 @@ def check_div_or_mul_op(
     return True, node0, (node1, is_div)
 
 
-def check_bmm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
+def check_bmm_op(
+    node: fx.Node,
+) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
     if not check_op(node, torch.ops.aten.bmm.default):
         return False, None, None
 
@@ -139,11 +142,15 @@ def check_bmm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.No
     return True, arg1, arg2
 
 
-def check_mm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if check_op(node, torch.ops.aten.mm.default) or check_op(node, torch.ops.aten.matmul.default):
-       arg1 = node.args[0]
-       arg2 = node.args[1]
-       return True, arg1, arg2
+def check_mm_op(
+    node: fx.Node,
+) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
+    if check_op(node, torch.ops.aten.mm.default) or check_op(
+        node, torch.ops.aten.matmul.default
+    ):
+        arg1 = node.args[0]
+        arg2 = node.args[1]
+        return True, arg1, arg2
     return False, None, None
 
 

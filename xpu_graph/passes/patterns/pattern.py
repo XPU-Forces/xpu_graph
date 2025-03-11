@@ -10,6 +10,7 @@ from xpu_graph.config import OptLevel
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
 
+
 class PatternGroup(Enum):
     GROUP0 = 0
     GROUP1 = 1
@@ -20,6 +21,7 @@ class PatternGroup(Enum):
             return self.value < other.value
         return NotImplemented
 
+
 class Pattern(Optimizer):
     _opt_level = OptLevel.level0
     _pattern_group = PatternGroup.GROUP0
@@ -29,6 +31,7 @@ class Pattern(Optimizer):
 
     def process(self, gm: fx.GraphModule):
         raise NotImplementedError
+
 
 class PatternRule(object):
     def __init__(self, type_map: dict, links: dict, end_name: str):
@@ -47,6 +50,7 @@ class PatternRule(object):
     @property
     def end_name(self):
         return self._end_name
+
 
 class AutoMatchPattern(Pattern):
     """
@@ -120,11 +124,15 @@ class AutoMatchPattern(Pattern):
 
         line = lines[0]
         if re.match(r"^\s*$", line):
-            return self._parse_lines(rule_name, lines[1:], type_map.copy(), links.copy())
+            return self._parse_lines(
+                rule_name, lines[1:], type_map.copy(), links.copy()
+            )
         src, dst, types = self._parse_mermaid(line)
         type_map.update(types)
         if not src or not dst:
-            return self._parse_lines(rule_name, lines[1:], type_map.copy(), links.copy())
+            return self._parse_lines(
+                rule_name, lines[1:], type_map.copy(), links.copy()
+            )
         succ = False
         for slot in dst[1]:
             if (dst[0], slot) in links:
@@ -176,10 +184,11 @@ class AutoMatchPattern(Pattern):
         for uri in uris.split("/"):
             if not uri:
                 continue
-            if not (uri.startswith('torch.ops') or uri.startswith('operator')):
+            if not (uri.startswith("torch.ops") or uri.startswith("operator")):
                 raise RuntimeError(f"Target {uri} is illegal")
             names = uri.split(".")
             import importlib
+
             value = importlib.import_module(names[0])
             for name in names[1:]:
                 if not hasattr(value, name):
@@ -204,31 +213,42 @@ class AutoMatchPattern(Pattern):
         rule = self._rule_map[rule_name]
 
         for target in rule.type_map[rule.end_name]:
-            candidates = [node for node in gm.graph.nodes if node.op == 'call_function' and node.target == target]
+            candidates = [
+                node
+                for node in gm.graph.nodes
+                if node.op == "call_function" and node.target == target
+            ]
 
             candidates.reverse()
             for cdd in candidates:
                 node_map = {}
                 node_map[rule.end_name] = cdd
-                node_map, matched_rule_set = self._get_match_subgraph(rule, rule.end_name, node_map, set())
-                if node_map is None or len(matched_rule_set)!= len(rule.links):
+                node_map, matched_rule_set = self._get_match_subgraph(
+                    rule, rule.end_name, node_map, set()
+                )
+                if node_map is None or len(matched_rule_set) != len(rule.links):
                     continue
                 if self.rewriter(gm, rule_name, node_map):
                     changed = True
 
         return changed
 
-    def _get_match_subgraph(self, rule: PatternRule, node_alias: str, node_map: dict, matched_rule_set: set):
+    def _get_match_subgraph(
+        self, rule: PatternRule, node_alias: str, node_map: dict, matched_rule_set: set
+    ):
         for i, parent_node in enumerate(node_map[node_alias].args):
-
             if not (node_alias, i) in rule.links:
                 continue
-            if not isinstance(parent_node, fx.Node) or parent_node.op != 'call_function':
+            if (
+                not isinstance(parent_node, fx.Node)
+                or parent_node.op != "call_function"
+            ):
                 return None, set()
             parent_alias, parent_slot = rule.links[(node_alias, i)]
 
             # Python version: below code is only work for Python3.7+
             import sys
+
             if sys.version_info >= (3, 7):
                 if list(parent_node.users.keys())[parent_slot] != node_map[node_alias]:
                     return None, set()
@@ -240,10 +260,11 @@ class AutoMatchPattern(Pattern):
             node_map[parent_alias] = parent_node
             matched_rule_set.add((node_alias, i))
 
-            node_map , matched_rule_set = self._get_match_subgraph(rule, parent_alias, node_map, matched_rule_set)
+            node_map, matched_rule_set = self._get_match_subgraph(
+                rule, parent_alias, node_map, matched_rule_set
+            )
 
         return node_map, matched_rule_set
-
 
     def rewriter(self, gm: fx.GraphModule, rule_name: str, node_map: dict) -> bool:
         raise NotImplementedError

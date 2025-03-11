@@ -46,9 +46,10 @@ class PassManager:
         gm.recompile()
 
         if self.config.enable_cache:
-          # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
-          from torch.fx.experimental.proxy_tensor import make_fx
-          gm = make_fx(gm, record_module_stack=True)(*example_inputs)
+            # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
+            from torch.fx.experimental.proxy_tensor import make_fx
+
+            gm = make_fx(gm, record_module_stack=True)(*example_inputs)
 
         return gm
 

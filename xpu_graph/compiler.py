@@ -15,23 +15,22 @@ import logging
 
 
 def optimize_graph(gm, sample_inputs, config=None):
+    # Create default config if none provided
+    if config is None:
+        config = XpuGraphConfig(
+            target=Target.mlu, enable_cache=False, opt_level=OptLevel.level2
+        )
+
+    # Setup logging based on config
+    setup_logger(logging.DEBUG if config.debug else logging.INFO)
+
+    # Create fake inputs for optimization
     fake_mode = FakeTensorMode()
     fake_mode.allow_non_fake_inputs = True
     fake_inputs = [
         fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
         for x in sample_inputs
     ]
-
-    if config is None:
-        config = XpuGraphConfig()
-        config.target = Target.mlu
-        config.enable_cache = False
-        config.opt_level = OptLevel.level2
-
-    if config.debug:
-        setup_logger(logging.DEBUG)
-    else:
-        setup_logger(logging.INFO)
 
     with fake_mode:
         logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
@@ -55,10 +54,9 @@ class XpuGraph:
         cache: XpuGraphCache = None,
     ):
         self._config = config
-        if self._config.debug:
-            setup_logger(logging.DEBUG)
-        else:
-            setup_logger(logging.INFO)
+        # Setup logging based on config
+        setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
+
         if self._config.freeze:
             # The configuration in this inductor affects the return value of is_parameter_freezing(),
             # thereby influencing the process of generating the fx_graph in dynamo. The current code
@@ -68,33 +66,36 @@ class XpuGraph:
             torch._inductor.config.freezing = True
 
         self._pass_manager = PassManager(self._config)
-        if config.enable_cache:
-            if cache:
-                self._cache = cache
-            else:
-                self._cache = default_cache()
+        self._cache = (
+            cache
+            if cache and config.enable_cache
+            else default_cache()
+            if config.enable_cache
+            else None
+        )
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs):
             if self._config.skip_all_pass:
                 return gm
 
-            # return gm
+            # Create fake inputs for optimization
             from torch._guards import detect_fake_mode
 
             fake_mode = detect_fake_mode(sample_inputs)
+            fake_mode.allow_non_fake_inputs = True
             fake_inputs = [
                 fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
                 for x in sample_inputs
             ]
-            fake_mode.allow_non_fake_inputs = True
 
             with fake_mode:
                 logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info("xpu_graph passes start...")
 
-                if self._config.enable_cache:
+                # Try to load from cache or run pass manager
+                if self._config.enable_cache and self._cache:
                     hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
                     xpu_compiled = self._cache.load_gm(hashkey)
                     if xpu_compiled is None:
@@ -109,6 +110,7 @@ class XpuGraph:
                     f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
                 )
 
+                # Apply vendor compiler if configured
                 if self._config.vendor_compiler_config:
                     from .backends import vendor_compiler
 
@@ -137,8 +139,7 @@ class XpuGraph:
 
             return _compiler(unlifted_gm, example_inputs)
         else:
-            xpu_gm = aot_autograd(fw_compiler=_compiler)(dynamo_gm, example_inputs)
-            return xpu_gm
+            return aot_autograd(fw_compiler=_compiler)(dynamo_gm, example_inputs)
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()
