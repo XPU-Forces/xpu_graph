@@ -18,10 +18,10 @@ def test_convert_gelu():
             )
         )
 
-    from xpu_graph.compiler import XpuGraph
+    from xpu_graph import XpuGraph, XpuGraphConfig
 
-    compiled_gelu0 = torch.compile(_gelu0, backend=XpuGraph())
-    compiled_gelu1 = torch.compile(_gelu1, backend=XpuGraph())
+    compiled_gelu0 = torch.compile(_gelu0, backend=XpuGraph(XpuGraphConfig(is_training=False)))
+    compiled_gelu1 = torch.compile(_gelu1, backend=XpuGraph(XpuGraphConfig(is_training=False)))
 
     from xpu_graph.test_utils import is_similar
 

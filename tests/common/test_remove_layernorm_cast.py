@@ -23,6 +23,7 @@ def fn0(inputs, weight, bias):
     outputs = outputs.to(dtype=orig_dtype)
     return outputs
 
+
 def layernorm_test(xpu_graph, func):
     inputs = torch.randn((8, 1024), device=device, dtype=data_type)
     weight = torch.randn((1024), device=device, dtype=data_type)
@@ -37,20 +38,22 @@ def layernorm_test(xpu_graph, func):
 
 class TestLayerNorm:
     def setup_class(self):
-        config = xpu_graph.XpuGraphConfig(opt_level=OptLevel.level2, freeze=True)
+        config = xpu_graph.XpuGraphConfig(
+            is_training=True, opt_level=OptLevel.level2, freeze=True
+        )
         self.xpu_graph_backend = xpu_graph.XpuGraph(config)
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0],
     )
-    def test_layernrom_patterns(self, pattern_func):
+    def test_layernorm_patterns(self, pattern_func):
         layernorm_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        opt_level=OptLevel.level2, freeze=True, debug=True
+        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     layernorm_test(xpu_graph_backend, fn0)

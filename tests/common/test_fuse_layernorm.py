@@ -63,7 +63,9 @@ def layernorm_test(xpu_graph, func):
 
 class TestLayerNorm:
     def setup_class(self):
-        config = xpu_graph.XpuGraphConfig(opt_level=OptLevel.level2, freeze=False)
+        config = xpu_graph.XpuGraphConfig(
+            is_training=False, opt_level=OptLevel.level2, freeze=False
+        )
         self.xpu_graph_backend = xpu_graph.XpuGraph(config)
 
     @pytest.mark.parametrize(
@@ -76,7 +78,7 @@ class TestLayerNorm:
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        opt_level=OptLevel.level2, freeze=False, debug=True
+        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     layernorm_test(xpu_graph_backend, fn0)

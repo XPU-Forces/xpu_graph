@@ -1,5 +1,5 @@
 import torch
-from xpu_graph.compiler import XpuGraph
+from xpu_graph import XpuGraph, XpuGraphConfig
 
 
 def test_constant_folding():
@@ -14,7 +14,7 @@ def test_constant_folding():
             return torch.matmul(x, weight)
 
     foo = Foo()
-    xpu_graph = XpuGraph()
+    xpu_graph = XpuGraph(XpuGraphConfig(is_training=False))
     compiled_foo = torch.compile(foo, backend=xpu_graph, dynamic=False)
     res = compiled_foo(torch.ones(128, 128))
     expect = foo(torch.ones(128, 128))

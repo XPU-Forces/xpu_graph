@@ -18,7 +18,7 @@ jobs:
           sudo rm -rf xpu_graph
           git clone https://github.com/BD-Seed-HHW/xpu_graph.git
           cd xpu_graph
-          git fetch origin ${{ github.event.pull_request.merge_commit_sha }}:pull/${{ github.event.pull_request.number }}
+          git fetch origin pull/${{ github.event.pull_request.number }}/merge:pull/${{ github.event.pull_request.number }}
           git checkout pull/${{ github.event.pull_request.number }}
           echo "Checked out commit SHA: $(git rev-parse HEAD)"
   run-tests:

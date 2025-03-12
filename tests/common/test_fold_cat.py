@@ -24,7 +24,7 @@ def cat_test(xpu_graph, func):
 
 class TestCat:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
+        config = xpu_graph.config.XpuGraphConfig(is_training=False)
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
     @pytest.mark.parametrize(
@@ -38,4 +38,6 @@ class TestCat:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    config = xpu_graph.config.XpuGraphConfig(is_training=False)
+    xpu_graph = xpu_graph.compiler.XpuGraph(config)
+    cat_test(xpu_graph, fn0)
