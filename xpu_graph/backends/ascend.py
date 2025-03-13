@@ -15,6 +15,9 @@ def npu_compile(module: torch.nn.Module, example_inputs) -> torch.nn.Module:
     config.experimental_config.keep_inference_input_mutations = True
     config.experimental_config.frozen_parameter = True
 
+    """Add this config to enable AclGraph in npu backend."""
+    config.mode = "reduce-overhead"
+
     npu_backend = tng.get_npu_backend(compiler_config=config)
     compiled_module = npu_backend(module, example_inputs)
 
