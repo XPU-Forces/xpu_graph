@@ -25,9 +25,12 @@ def optimize_graph(gm, sample_inputs, config=None):
             enable_cache=False,
             opt_level=OptLevel.level2,
         )
+    config._reset_config_with_env()
 
     # Setup logging based on config
     setup_logger(logging.DEBUG if config.debug else logging.INFO)
+
+    logger.info(f"{config}")
 
     # Create fake inputs for optimization
     fake_mode = FakeTensorMode()
@@ -58,9 +61,12 @@ class XpuGraph:
         config: XpuGraphConfig,
         cache: XpuGraphCache = None,
     ):
+        config._reset_config_with_env()
         self._config = config
         # Setup logging based on config
         setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
+
+        logger.info(f"{config}")
 
         if self._config.freeze and self._config.is_training == False:
             # The configuration in this inductor affects the return value of is_parameter_freezing(),
@@ -79,8 +85,6 @@ class XpuGraph:
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs, stage: FxStage):
-            if self._config.skip_all_pass:
-                return gm
 
             # Create fake inputs for optimization
             from torch._guards import detect_fake_mode
@@ -158,13 +162,11 @@ class XpuGraph:
             exported_gm, gs = aot_export_module(
                 dynamo_gm, example_inputs, trace_joint=False
             )
-            logger.debug(f"before aot_export_module, graph like:\n {exported_gm.graph}")
             if self._config.freeze:
                 from xpu_graph.fx_utils import unlift_gm
 
                 exported_gm = unlift_gm(dynamo_gm, exported_gm, gs)
                 logger.info("unlift graph complete")
-                logger.debug(f"after unlift, graph like:\n {exported_gm.graph}")
             xpu_gm = _compiler(exported_gm, example_inputs, stage=FxStage.inference)
         return xpu_gm
 

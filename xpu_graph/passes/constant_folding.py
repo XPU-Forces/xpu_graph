@@ -21,7 +21,6 @@ def _no_folding(node: fx.Node):
 
 
 class ConstantFolding(Optimizer):
-    _opt_level = OptLevel.level1
 
     def __init__(self):
         super().__init__()
@@ -64,7 +63,7 @@ class ConstantFolding(Optimizer):
                         unset_fake_temporarily as diable_fake_mode,
                     )
 
-                logger.info(f"start constant folding: f{node.name} f{node.target}")
+                logger.info(f"start constant folding: {node.name} {node.target}")
 
                 with diable_fake_mode():
                     constant_value = node.target(*new_args, **node.kwargs)
@@ -77,8 +76,7 @@ class ConstantFolding(Optimizer):
                     constant_node = graph.create_node("get_attr", constant_name)
                     node.replace_all_uses_with(constant_node)
 
-                # Delete origin node in order we can delete some useless constant later.
-                graph.erase_node(node)
+                logger.debug(f"constant folding graph: {graph}")
 
         gm.graph.lint()
 

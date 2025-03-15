@@ -4,6 +4,7 @@ import torch_mlu
 import torch_mlu_ops
 from typing import List, Tuple
 
+from xpu_graph import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 from ...utils.check_ops import (
@@ -225,6 +226,8 @@ def _is_fa(node: fx.Node):
 
 
 class FusedFlashAttention(Pattern):
+    _opt_level = OptLevel.level2
+
     def process(self, graph_module: fx.GraphModule):
         graph_module.add_submodule("flash_attn_base", FlashAttentionReplacement())
         graph_module.add_submodule(

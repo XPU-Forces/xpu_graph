@@ -12,7 +12,7 @@ def setup_logger(loglevel):
         return
 
     fmt = logging.Formatter(
-        fmt="[XPU_GRAPH]: %(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [%(levelname)s]: %(message)s",
+        fmt="%(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     handler = logging.StreamHandler(stream=sys.stdout)

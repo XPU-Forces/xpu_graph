@@ -19,7 +19,8 @@ class Optimizer(ABC):
     def process(self, gm: fx.GraphModule) -> bool:
         pass
 
-    @xpu_timer
+    # TODO(zhangjihang): Always close timer temporarily. Need a config to contral after.
+    # @xpu_timer
     def __call__(self, gm: fx.GraphModule) -> bool:
         changed = self.process(gm)
 
