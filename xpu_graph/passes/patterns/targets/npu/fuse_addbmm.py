@@ -2,8 +2,7 @@ from typing import Optional
 
 import torch
 from torch import nn, fx
-import torch_mlu
-import torch_mlu_ops
+import torch_npu
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
@@ -19,6 +18,9 @@ from ...utils.check_ops import (
     get_dtype,
 )
 
+from .triton_kernel.fused_bmm import (
+    triton_bmm,
+)
 
 class FusedBAddBMMReplacement(nn.Module):
     def forward(self, input1, input2, bias, bmm_shape, output_shape, output_dtype):
@@ -51,9 +53,9 @@ class FusedBAddBMMReplacement(nn.Module):
         if bias is not None:
             if bias.dtype != output_dtype:
                 bias = bias.to(output_dtype)
-            output = torch.bmm(input1, input2) + bias
+            output = torch.ops.torch_npu_triton.triton_bmm(input1, input2) + bias
         else:
-            output = torch.bmm(input1, input2)
+            output = torch.ops.torch_npu_triton.triton_bmm(input1, input2)
 
         if output.shape != output_shape:
             output = output.view(output_shape)
@@ -71,7 +73,7 @@ def _is_bmm(
     return match_, ()
 
 
-def check_fused_bmm(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
+def check_fused_bmm(node: fx.Node):
     if not check_op(node, "fused_bmm"):
         return False
     return True
@@ -156,39 +158,3 @@ class FusedBMM(Pattern):
         graph_module.graph.lint()
         graph_module.recompile()
         return is_modified
-
-
-# class FusedBaddBMM(Pattern):
-#     _opt_level = OptLevel.level2
-
-#     def process(self, graph_module: fx.GraphModule) -> bool:
-#         is_modified = False
-#         graph_module.add_submodule("fused_baddbmm", FusedBAddBMMReplacement())
-#         for node in reversed(graph_module.graph.nodes):
-#             is_match, add_bmm_param = _is_add_bmm(node)
-#             if is_match:
-#                 bmm_node, add_node, output_shape, output_dtype = add_bmm_param
-#                 with graph_module.graph.inserting_before(node):
-#                     new_node = graph_module.graph.call_module(
-#                         "fused_baddbmm",
-#                         args=(
-#                             bmm_node.args[0],
-#                             bmm_node.args[1],
-#                             add_node,
-#                             bmm_node.args[3],  # ori shape
-#                             output_shape,
-#                             output_dtype,
-#                         ),
-#                     )
-#                 node.replace_all_uses_with(new_node)
-#                 graph_module.graph.erase_node(node)
-#                 is_modified = True
-
-#         for node in reversed(graph_module.graph.nodes):
-#             is_match, bmm_node = _is_bmm_view(node, "fused_baddbmm")
-#             if is_match:
-#                 replace_node(graph_module, bmm_node, node, "fused_baddbmm")
-
-#         graph_module.graph.lint()
-#         graph_module.recompile()
-#         return is_modified

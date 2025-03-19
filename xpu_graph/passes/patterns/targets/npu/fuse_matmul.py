@@ -1,5 +1,5 @@
 from typing import Optional, Tuple, Union
-
+import math
 import torch
 from torch import nn, fx
 import torch_npu
@@ -15,6 +15,10 @@ from ...utils.check_ops import (
     check_bmm_op,
     check_addmm_op,
     check_t_op,
+)
+
+from .triton_kernel.fused_matmul import (
+    triton_matmul,
 )
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
@@ -179,6 +183,7 @@ class FusedMatMulReplacement(nn.Module):
         if inputs.stride()[-1] != 1:
             inputs = inputs.contiguous()
 
+        # output = torch.ops.torch_npu_triton.triton_matmul(inputs, weight)
         if bias != None:
             if isinstance(bias, int):
                 dim = weight.shape[1] if trans_b == False else weight.shape[0]
@@ -186,8 +191,6 @@ class FusedMatMulReplacement(nn.Module):
                     [bias] * dim, device=inputs.device, dtype=inputs.dtype
                 )
         # bias 2d or None
-        # import pdb;pdb.set_trace()
-        # output = torch_npu.npu_grouped_matmul([inputs], [weight], bias=[bias] if bias is not None else bias)[0]
         if bias is not None:
             output = torch.matmul(inputs, weight) + bias
         else:
@@ -384,7 +387,6 @@ class FusedMatMul(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule) -> bool:
-        # import pdb;pdb.set_trace()
         is_modified = False
         is_modified |= match_mm(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_1_replacement")
