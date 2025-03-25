@@ -1,7 +1,7 @@
 import torch
 import torch.utils._pytree as pytree
 from torch.export.unflatten import _assign_attr, _AttrKind
-from torch.export._unlift import _unlift
+# from torch.export._unlift import _unlift
 
 
 from torch.fx import map_arg
