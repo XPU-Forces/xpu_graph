@@ -28,8 +28,9 @@ def foo(x, y):
     another_z = x + y
     return z, another_z
 
+import torch
 from xpu_graph.compiler import XpuGraph
-compiled_foo = torch.compile(foo, backend=XpuGraph())
+compiled_foo = torch.compile(foo, backend=XpuGraph(XpuGraphConfig(False)))
 compiled_foo(torch.randn(10), torch.randn(10))
 
 ```
