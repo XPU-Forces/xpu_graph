@@ -9,7 +9,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 from .passes.pass_manager import PassManager
 from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import logger, setup_logger, local_logger
+from .utils import logger, setup_logger, local_logger, get_nodes_statistics
 from .cache import XpuGraphCache, default_cache
 from .fx_utils import FxStage, unlift_exported_gm
 import logging
@@ -92,8 +92,10 @@ class XpuGraph:
 
             with fake_mode:
                 with local_logger("before"):
+                    logger.info(
+                        f"before xpu_graph, nodes statistics: {get_nodes_statistics(gm)}"
+                    )
                     logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
-                    logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                     logger.info(f"xpu_graph passes start {stage}...")
 
                 if stage == FxStage.pregrad:
@@ -123,11 +125,11 @@ class XpuGraph:
                     xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
 
                 with local_logger("after"):
-                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                     logger.info("xpu_graph passes complete")
                     logger.info(
-                        f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
+                        f"after xpu_graph, nodes statistics: \n{get_nodes_statistics(xpu_compiled)}"
                     )
+                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
 
                 if stage == FxStage.pregrad:
                     return xpu_compiled
@@ -144,13 +146,13 @@ class XpuGraph:
                     )
 
             return xpu_compiled
-        
+
         def _staged_compiler(stage: FxStage):
             def wrapped(gm, sample_inputs):
                 with local_logger(stage.name):
                     xpu_compiled = _compiler(gm, sample_inputs, stage)
                 return xpu_compiled
-            
+
             return wrapped
 
         if self._config.is_training:

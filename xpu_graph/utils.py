@@ -4,6 +4,8 @@ import time
 import functools
 import os
 
+import torch
+
 
 class _LoggerWrapper:
     def __init__(self, logger):
@@ -74,3 +76,33 @@ def xpu_timer(func):
         return res
 
     return wrapper
+
+
+def get_nodes_statistics(gm: torch.fx.GraphModule) -> str:
+    statistics = []
+    statistics.append(f"Total nodes num: {len(gm.graph.nodes)}")
+    nodes_map = {
+        "placeholder": 0,
+        "get_attr": 0,
+        "output": 0,
+    }
+    for node in gm.graph.nodes:
+        if node.op == "placeholder":
+            nodes_map["placeholder"] += 1
+        elif node.op == "get_attr":
+            nodes_map["get_attr"] += 1
+        elif node.op == "output":
+            nodes_map["output"] = len(node.args)
+        else:
+            callee = node.target
+            if callee in nodes_map:
+                nodes_map[callee] += 1
+            else:
+                nodes_map[callee] = 1
+
+    statistics.append(f"{'Node name':<50}  Node num")
+    statistics.append("-" * 60)
+    statistics += [f"{str(key):<50}  {value}" for key, value in nodes_map.items()]
+    statistics_str = "\n".join(statistics)
+
+    return statistics_str
