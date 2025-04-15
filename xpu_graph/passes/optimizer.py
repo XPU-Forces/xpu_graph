@@ -22,11 +22,13 @@ class Optimizer(ABC):
     # TODO(zhangjihang): Always close timer temporarily. Need a config to contral after.
     # @xpu_timer
     def __call__(self, gm: fx.GraphModule) -> bool:
+        prev_nodes_num = len(gm.graph.nodes)
+
         changed = self.process(gm)
 
         if changed:
             logger.debug(
-                f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph"
+                f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph, before: {prev_nodes_num} nodes, after: {len(gm.graph.nodes)} nodes."
             )
 
         if changed and self._dump_graph:
