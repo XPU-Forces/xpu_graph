@@ -14,12 +14,18 @@ class _LoggerWrapper:
     def __getattr__(self, name):
         return getattr(self._logger, name)
 
+    def __setattr__(self, name, value):
+        if name == "_logger":
+            super().__setattr__(name, value)
+        else:
+            setattr(self._logger, name, value)
+
 
 logger = _LoggerWrapper(logging.getLogger("xpu_graph"))
 
 
 def setup_logger(loglevel):
-    if not logger.handlers:
+    if len(logger.handlers) == 0:
         # Skip if handlers already exist
         fmt = logging.Formatter(
             fmt="%(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
