@@ -12,6 +12,7 @@ from .utils import (
     setup_logger,
     local_logger,
     NodesStatistics,
+    GitLikeDiffer
 )
 from .cache import XpuGraphCache, default_cache, SerializeWrapper
 from .fx_utils import FxStage, dispatch_graph, decompose_for_inductor
@@ -99,6 +100,8 @@ class XpuGraph:
                     if cached_compiled is not None:
                         return cached_compiled
 
+                # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
+                original_gm_graph = gm.graph
                 with local_logger("before"):
                     logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
                     logger.info(f"xpu_graph passes start {stage}...")
@@ -110,6 +113,9 @@ class XpuGraph:
                 with local_logger("after"):
                     logger.info("xpu_graph passes complete")
                     logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
+                    logger.debug(
+                        f"Final difference after optimizations by xpu_graph:\n {GitLikeDiffer.diff(original_gm_graph, xpu_compiled.graph)}"
+                    )
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
 
@@ -171,6 +177,7 @@ class XpuGraph:
             )
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+            logger.debug(f"Difference:\n {GitLikeDiffer.diff(dynamo_gm.graph, dispatch_graph.graph)}")
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
