@@ -71,4 +71,4 @@ def fused_slice_cat(
 
 @fused_slice_cat.register_fake
 def fused_slice_cat_fake(input_tensor, indices_tensor, n_rows, elements, input_stride):
-    return torch.empty(n_rows, elements, device=input_tensor.device)
+    return torch.empty(n_rows, elements, device=input_tensor.device, dtype=input_tensor.dtype)
