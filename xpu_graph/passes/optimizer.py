@@ -32,11 +32,35 @@ class Optimizer(ABC):
             )
 
         if changed and self._dump_graph:
-            global opt_times
-            graph = fx.passes.graph_drawer.FxGraphDrawer(gm, self.__class__.__name__)
-            graph.get_dot_graph().write_svg(
-                f"{opt_times}_{self.__class__.__name__}.svg"
-            )
-            opt_times += 1
-
+            self.__dump_files(gm)
         return changed
+    
+    def __dump_files(self, gm):
+        import os
+        import shutil
+        from subprocess import run
+
+        global opt_times
+        dirname = "xpu_graph_debugs"
+
+        if opt_times == 0:
+            if os.path.exists(dirname):
+                shutil.rmtree(dirname)
+            os.makedirs(dirname)
+            if run("dot -h", shell=True).returncode != 0:
+                # TODO(liuyuan): Maybe use yum according to the kernel.
+                # NOTE(liuyuan): graphviz should be installed for the following method [get_dot_graph()]
+                run("apt install -y graphviz", shell=True, check=True)
+
+        filename = os.path.join(dirname, f"optimization_{opt_times}_after_pass_{self.__class__.__name__}")
+        
+        # NOTE(liuyuan): write irs into file.
+        with open(f"{filename}.ll", 'w') as f:
+            f.writelines(str(gm.graph))
+
+        # NOTE(liuyuan): visualize the graph and dump as svg file.
+        graph = fx.passes.graph_drawer.FxGraphDrawer(gm, self.__class__.__name__)
+        graph.get_dot_graph().write_svg(
+            f"{filename}.svg"
+        )
+        opt_times += 1
