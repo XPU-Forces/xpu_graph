@@ -30,7 +30,7 @@ def foo(x, y):
 
 import torch
 from xpu_graph.compiler import XpuGraph
-compiled_foo = torch.compile(foo, backend=XpuGraph(XpuGraphConfig(False)))
+compiled_foo = torch.compile(foo, backend=XpuGraph(XpuGraphConfig(is_training=False)))
 compiled_foo(torch.randn(10), torch.randn(10))
 
 ```
