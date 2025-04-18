@@ -177,7 +177,7 @@ class XpuGraph:
             )
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
-            logger.debug(f"Difference:\n {GitLikeDiffer.diff(dynamo_gm.graph, dispatch_graph.graph)}")
+            logger.debug(f"Difference:\n {GitLikeDiffer.diff(dynamo_gm.graph, dispatched_gm.graph)}")
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
