@@ -1,17 +1,26 @@
-import os
+import copy
 import hashlib
+import os
 import pickle
 from os import PathLike
-from .config import XpuGraphConfig
-from .utils import logger
-from .fx_utils import FxStage
+
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch.utils._python_dispatch import _disable_current_modes
-from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path
+
+torch_version = torch.__version__
+if torch_version.startswith("2.6"):
+    from torch._inductor.compile_fx import CompiledFxGraph
+    from torch._inductor.codecache import PyCodeCache, get_path
+else:
+    from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path
 from torch.fx import GraphModule, Graph, Node
 from torch.fx.node import map_aggregate
-import copy
+from torch.utils._python_dispatch import _disable_current_modes
+
+from .config import XpuGraphConfig
+from .fx_utils import FxStage
+from .utils import logger
 
 
 class _ArgWrapper:
@@ -23,9 +32,10 @@ class _ArgWrapper:
 
 def _get_target_function(fn_name: str):
     fqn_list = fn_name.split(".")
-    import torch
-    import operator
     import builtins
+    import operator
+
+    import torch
 
     supported_mods = {"torch": torch, "operator": operator, "builtins": builtins}
     try:
@@ -78,7 +88,6 @@ class SerializeWrapper(torch.nn.Module):
                     return arg
 
             for node in nodes:
-
                 node_meta = (
                     node.name,
                     node.type,
@@ -121,9 +130,7 @@ class SerializeWrapper(torch.nn.Module):
                     return arg
 
             for node_meta in nodes_meta:
-                node_name, node_type, node_op, node_target, node_args, node_kwargs = (
-                    node_meta
-                )
+                node_name, node_type, node_op, node_target, node_args, node_kwargs = node_meta
 
                 if node_op == "call_function":
                     node_target = _get_target_function(node_target)
@@ -156,9 +163,7 @@ class XpuGraphCache:
         logger.info(f"Cache Key: {hashkey}")
         return hashkey
 
-    def save_gm(
-        self, key, value: torch.fx.GraphModule, expire=None
-    ) -> torch.fx.GraphModule:
+    def save_gm(self, key, value: torch.fx.GraphModule, expire=None) -> torch.fx.GraphModule:
         # Note: since GraphModules ser/des may do canonicalization, so the cached version should be returned
         return value
 
@@ -182,9 +187,7 @@ class XpuGraphLocalCache(XpuGraphCache):
         os.makedirs(cache_path, exist_ok=True)
         self._path = cache_path
 
-    def save_gm(
-        self, key, value: torch.fx.GraphModule, expire=None
-    ) -> torch.fx.GraphModule:
+    def save_gm(self, key, value: torch.fx.GraphModule, expire=None) -> torch.fx.GraphModule:
         artifact_path = self._graph_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
         with compile_lock, _disable_current_modes():

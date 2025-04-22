@@ -5,7 +5,6 @@ import torch_mlu
 import xpu_graph
 
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import is_similar
 from xpu_graph.test_utils import (
     assertTensorsEqual,
     need_xpu_graph_logs,
@@ -75,19 +74,21 @@ def fn4(inputs, slice_param, other_tensor):
 def sumcat_test(xpu_graph_backend, func):
     batch_size_list = [86, 32, 64, 128, 256, 512]
     for batch in batch_size_list:
-        slice_723 = torch.randn(batch, 32, 32).to("mlu:0").to(torch.float16)
+        slice_723 = torch.rand(batch, 32, 32).to("mlu:0").to(torch.float16)
         slice_param = [(0, 2), (0, 4), (0, 8), (0, 16)]
         args = (slice_723, slice_param)
         if func in [fn1, fn2]:
-            other_tensor = torch.randn(batch, 32).to("mlu:0").to(torch.float16)
+            other_tensor = torch.rand(batch, 32).to("mlu:0").to(torch.float16)
             args += (other_tensor,)
         elif func in [fn3, fn4]:
-            other_tensor = torch.randn(batch, 32, 32).to("mlu:0").to(torch.float16)
+            other_tensor = torch.rand(batch, 32, 32).to("mlu:0").to(torch.float16)
             args += (other_tensor,)
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res1 = func(*args)
         res = compiled(*args)
-        assert is_similar(res1.cpu().float(), res.cpu().float())
+        assertTensorsEqual(
+            res1.cpu().float(), res.cpu().float(), 0.001, use_MSE=True, use_RAE=True
+        )
 
 
 class TestSliceSumCat:

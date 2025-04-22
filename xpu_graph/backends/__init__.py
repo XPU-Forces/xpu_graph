@@ -22,7 +22,7 @@ def vendor_compiler(
         from .npu import npu_compile
 
         logger.info("npu_compile start...")
-        npu_compiled = npu_compile(gm, fake_inputs, **extra_kwargs)
+        npu_compiled = npu_compile(gm, fake_inputs, config_dict, **extra_kwargs)
         logger.info("npu_compile complete")
         return npu_compiled
     elif target == Target.mlu:

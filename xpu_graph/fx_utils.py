@@ -1,3 +1,4 @@
+import itertools
 from typing import Union, Callable
 from enum import Enum
 from unittest.mock import patch
@@ -17,19 +18,16 @@ from torch._dynamo.utils import preserve_rng_state
 
 from torch._functorch.aot_autograd import (
     AOTConfig,
-    construct_fake_mode,
-    process_inputs,
     create_functional_call,
 )
 from torch._functorch._aot_autograd.collect_metadata_analysis import (  # noqa: F401
     run_functionalized_fw_and_collect_metadata,
 )
-from torch._functorch._aot_autograd.jit_compile_runtime_wrappers import (
-    aot_dispatch_export,
+from torch._functorch._aot_autograd.dispatch_and_compile_graph import (
+    aot_dispatch_autograd_graph,
+    aot_dispatch_base_graph,
 )
 
-
-import itertools
 
 FX_COUNT = itertools.count()
 
@@ -92,8 +90,12 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
 
     ctx = nullcontext if stage == FxStage.pregrad else torch.no_grad
     with ctx():
-        fake_mode, shape_env = construct_fake_mode(full_args, aot_config)
-        fake_flat_args = process_inputs(full_args, aot_config, fake_mode, shape_env)
+        fake_mode = detect_fake_mode(full_args)
+        shape_env = fake_mode.shape_env
+        fake_flat_args = [
+            fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
+            for x in full_args
+        ]
 
         dispatched_gm, fw_metadata = _invoke_dispatcher(
             flat_fn, fake_flat_args, fake_mode, shape_env, aot_config, stage
@@ -109,6 +111,14 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
 
     fake_inputs = fake_flat_args[params_len:]
     return dispatched_gm, fake_inputs
+
+
+def find_nodes(graph, *, op: str, target=None):
+    result = []
+    for node in graph.nodes:
+        if node.op == op and (target is None or node.target == target):
+            result.append(node)
+    return result
 
 
 def _collect_params_and_inputs_info(gm, example_inputs):
@@ -148,7 +158,7 @@ def _collect_params_and_inputs_info(gm, example_inputs):
     full_args.extend(example_inputs)
 
     static_input_indices = []
-    for pos, node in enumerate(gm.graph.find_nodes(op="placeholder")):
+    for pos, node in enumerate(find_nodes(gm.graph, op="placeholder")):
         if hasattr(node, "_dynamo_source"):
             if aot_autograd_arg_pos_to_source is None:
                 aot_autograd_arg_pos_to_source = []
@@ -193,8 +203,10 @@ def _collect_params_and_inputs_info(gm, example_inputs):
         keep_inference_input_mutations=False,
         dynamic_shapes=dynamic_shapes,
         aot_autograd_arg_pos_to_source=aot_autograd_arg_pos_to_source,
-        static_input_indices=static_input_indices,
     )
+    if hasattr(aot_config, "static_input_indices"):
+        # Compatibility for torch version < 2.5
+        aot_config.static_input_indices = static_input_indices
     return params_flat, params_spec, full_args, aot_config
 
 
@@ -216,25 +228,36 @@ def _invoke_dispatcher(
         fake_mode
     ), (
         python_dispatcher_mode
-    ), PhiloxStateTracker(), torch._dynamo.utils._disable_saved_tensors_hooks_during_tracing():
+    ), PhiloxStateTracker():
         with enable_python_dispatcher():
             with patch("torch.cuda.set_rng_state", lambda *args: None):
-                fw_metadata = run_functionalized_fw_and_collect_metadata(
-                    flat_fn,
-                    static_input_indices=aot_config.static_input_indices,
-                    keep_input_mutations=aot_config.keep_inference_input_mutations,
-                    is_train=needs_autograd,
-                    pre_dispatch=aot_config.pre_dispatch,
-                )(*fake_flat_args)
+                if hasattr(aot_config, 'static_input_indices'):
+                    fw_metadata = run_functionalized_fw_and_collect_metadata(
+                        flat_fn,
+                        static_input_indices=aot_config.static_input_indices,
+                        keep_input_mutations=aot_config.keep_inference_input_mutations,
+                        is_train=needs_autograd,
+                        pre_dispatch=aot_config.pre_dispatch,
+                    )(*fake_flat_args)
+                else:
+                    fw_metadata = run_functionalized_fw_and_collect_metadata(
+                        flat_fn,
+                        keep_input_mutations=aot_config.keep_inference_input_mutations,
+                        is_train=needs_autograd,
+                        pre_dispatch=aot_config.pre_dispatch,
+                    )(*fake_flat_args)
 
-        compiled_fn, fw_metadata = aot_dispatch_export(
-            flat_fn,
-            fake_flat_args,
-            aot_config,
-            fw_metadata=fw_metadata,
-            needs_autograd=needs_autograd,
-        )
-    return compiled_fn, fw_metadata
+        if needs_autograd and not aot_config.pre_dispatch:
+            dispatched_fn = aot_dispatch_autograd_graph(
+                flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata
+            )
+        else:
+            dispatched_fn = aot_dispatch_base_graph(
+                flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata
+            )
+        if isinstance(dispatched_fn, tuple):
+            dispatched_fn = dispatched_fn[0]
+    return dispatched_fn, fw_metadata
 
 
 def _unlift_params(mod, gm):
@@ -304,7 +327,7 @@ def _insert_mutations(gm, fw_metadata, input_nodes):
 
     num_mutated_outs = len(mutated_inps)
     output_node = list(gm.graph.nodes)[-1]
-    assert output_node.op is "output"
+    assert output_node.op == "output"
 
     outputs = pytree.tree_flatten(output_node.args)[0]
 

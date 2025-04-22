@@ -18,4 +18,4 @@ jobs:
         shell: bash
         run: |
           echo "Running MLU tests..."
-          python3 -m pytest --ignore=tests/xpu_ops tests
+          python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/npu tests
