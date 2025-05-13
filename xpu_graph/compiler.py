@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, overload
+from itertools import chain
 
 import torch
 from torch._dynamo.backends.common import aot_autograd
@@ -9,7 +9,13 @@ from .cache import SerializeWrapper, XpuGraphCache, default_cache
 from .config import OptLevel, Target, XpuGraphConfig
 from .fx_utils import FxStage, decompose_for_inductor, dispatch_graph
 from .passes.pass_manager import PassManager
+from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
+
+__all__ = [
+    "optimize_graph",
+    "XpuGraph",
+]
 
 
 def optimize_graph(gm, sample_inputs, config=None):
@@ -64,9 +70,13 @@ class XpuGraph:
             logger.warning("Target Ascend does not support cache.")
 
         self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
-
         self._set_context()
+        # WARNING(liuyuan): _pass_manager MUST be initilized after _set_context because triton kernel depends on environment varaibels that fetched in _set_context.
         self._pass_manager = PassManager(self._config)
+        # NOTE(liuyuan): The plugin patterns should be placed before those built-in.
+        self._pass_manager.get_pattern_manager().insert_patterns(
+            chain.from_iterable(__PLUGIN_PATTERN_GROUP__.get(self._config.target, {}).values())
+        )
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, fake_inputs, stage: FxStage):
@@ -159,7 +169,6 @@ class XpuGraph:
             dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
-            logger.debug(f"Difference:\n %s", GitLikeDiffer(dynamo_gm.graph, dispatched_gm.graph))
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 

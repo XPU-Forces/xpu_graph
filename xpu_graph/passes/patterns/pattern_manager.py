@@ -1,13 +1,14 @@
-from typing import Callable, overload, List
+from typing import Callable, List, overload
 
 import torch
 import torch.fx as fx
 
-from xpu_graph.passes.optimizer import Optimizer
-from xpu_graph.config import XpuGraphConfig, Target
+from xpu_graph.config import Target, XpuGraphConfig
 from xpu_graph.fx_utils import FxStage
-from .pattern import Pattern, PatternGroup
+from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
+
+from .pattern import Pattern, PatternGroup
 
 
 class PatternManager(Optimizer):
@@ -60,9 +61,7 @@ class PatternManager(Optimizer):
                     self._enable_patterns[group].append(pattern)
 
         for group, group_patterns in self._enable_patterns.items():
-            logger.debug(
-                f"xpu_graph enable builtin {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}"
-            )
+            logger.debug(f"xpu_graph enable builtin {group} patterns: {[str(pat) for pat in group_patterns]}")
 
     def get_pass_with_stage(self, stage):
         self.reset_patterns_with_stage(stage)
@@ -79,15 +78,16 @@ class PatternManager(Optimizer):
         return changed
 
     @overload
-    def register_pattern(self, pattern: Pattern): ...
+    def register_pattern(self, pattern: Pattern):
+        ...
 
     @overload
-    def register_pattern(self, matcher: Callable, replacement: Callable): ...
+    def register_pattern(self, matcher: Callable, replacement: Callable):
+        ...
 
     @overload
-    def register_pattern(
-        self, matcher: Callable, replacement: Callable, stage: FxStage
-    ): ...
+    def register_pattern(self, matcher: Callable, replacement: Callable, stage: FxStage):
+        ...
 
     def register_pattern(self, *args):
         if len(args) == 1:
@@ -109,3 +109,17 @@ class PatternManager(Optimizer):
             if len(args) == 3:
                 _Pattern._support_stages = [args[2]]
             self._patterns[_Pattern._pattern_group].append(_Pattern())
+
+    def insert_patterns(self, patterns: List[Pattern]):
+        tmp = {
+            PatternGroup.GROUP0: [],
+            PatternGroup.GROUP1: [],
+            PatternGroup.GROUP2: [],
+        }
+
+        for pattern in patterns:
+            tmp[pattern._pattern_group].append(pattern)
+
+        for group in self._patterns.keys():
+            tmp[group].extend(self._patterns[group])
+            self._patterns[group] = tmp[group]

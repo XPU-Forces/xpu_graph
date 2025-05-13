@@ -1,26 +1,15 @@
 import itertools
-from typing import Union, Callable
-from enum import Enum
-from unittest.mock import patch
 from contextlib import nullcontext
+from enum import Enum
+from typing import Callable, Union
+from unittest.mock import patch
 
 import torch
-import torch.utils._pytree as pytree
 import torch.fx as fx
-from torch.export.unflatten import _assign_attr, _AttrKind
-from torch.fx import map_arg
-from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
-from torch.fx.proxy import Proxy, GraphAppendingTracer
-from torch._guards import detect_fake_mode
-from torch._dispatch.python import enable_python_dispatcher
-
+import torch.utils._pytree as pytree
 from torch._decomp.decompositions_for_rng import PhiloxStateTracker
+from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.utils import preserve_rng_state
-
-from torch._functorch.aot_autograd import (
-    AOTConfig,
-    create_functional_call,
-)
 from torch._functorch._aot_autograd.collect_metadata_analysis import (  # noqa: F401
     run_functionalized_fw_and_collect_metadata,
 )
@@ -28,7 +17,14 @@ from torch._functorch._aot_autograd.dispatch_and_compile_graph import (
     aot_dispatch_autograd_graph,
     aot_dispatch_base_graph,
 )
-
+from torch._functorch.aot_autograd import AOTConfig, create_functional_call
+from torch._guards import detect_fake_mode
+from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.export.unflatten import _assign_attr, _AttrKind
+from torch.fx import map_arg
+from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
+from torch.fx.proxy import GraphAppendingTracer, Proxy
 
 FX_COUNT = itertools.count()
 
@@ -75,9 +71,7 @@ def trace_and_inline(
 
 
 def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
-    params_flat, params_spec, full_args, aot_config = _collect_params_and_inputs_info(
-        gm, example_inputs
-    )
+    params_flat, params_spec, full_args, aot_config = _collect_params_and_inputs_info(gm, example_inputs)
 
     params_len = len(params_flat)
 
@@ -93,11 +87,10 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     ctx = nullcontext if stage == FxStage.pregrad else torch.no_grad
     with ctx():
         fake_mode = detect_fake_mode(full_args)
+        if fake_mode is None:
+            fake_mode = FakeTensorMode(shape_env=ShapeEnv())
         shape_env = fake_mode.shape_env
-        fake_flat_args = [
-            fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
-            for x in full_args
-        ]
+        fake_flat_args = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in full_args]
 
         dispatched_gm, fw_metadata = _invoke_dispatcher(
             flat_fn, fake_flat_args, fake_mode, shape_env, aot_config, stage
@@ -170,9 +163,7 @@ def _collect_params_and_inputs_info(gm, example_inputs):
             aot_autograd_arg_pos_to_source.append(source)
             source_name = source.name() if source else str(source)
 
-            if "tensor_dict" in node.meta and node.meta["tensor_dict"].get(
-                "_dynamo_static_input_type", None
-            ):
+            if "tensor_dict" in node.meta and node.meta["tensor_dict"].get("_dynamo_static_input_type", None):
                 static_input_indices.append(pos)
             else:
                 print("Non-static input pos %s for source %s", pos, source_name)
@@ -183,14 +174,8 @@ def _collect_params_and_inputs_info(gm, example_inputs):
     dynamic_shapes = False
     # Try to infer `dynamic_shapes from inputs and graph nodes
     fake_mode = detect_fake_mode(full_args)
-    if (
-        fake_mode is None
-        and hasattr(gm, "_orig_mod")
-        and isinstance(gm._orig_mod, torch.fx.GraphModule)
-    ):
-        vals = [
-            node.meta["val"] for node in gm._orig_mod.graph.nodes if "val" in node.meta
-        ]
+    if fake_mode is None and hasattr(gm, "_orig_mod") and isinstance(gm._orig_mod, torch.fx.GraphModule):
+        vals = [node.meta["val"] for node in gm._orig_mod.graph.nodes if "val" in node.meta]
         fake_mode = detect_fake_mode(vals)
     dynamic_shapes = fake_mode is not None and fake_mode.shape_env is not None
 
@@ -212,12 +197,8 @@ def _collect_params_and_inputs_info(gm, example_inputs):
     return params_flat, params_spec, full_args, aot_config
 
 
-def _invoke_dispatcher(
-    flat_fn, fake_flat_args, fake_mode, shape_env, aot_config, stage
-):
-    python_dispatcher_mode = (
-        enable_python_dispatcher() if shape_env is not None else nullcontext()
-    )
+def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config, stage):
+    python_dispatcher_mode = enable_python_dispatcher() if shape_env is not None else nullcontext()
 
     needs_autograd = stage == FxStage.pregrad
     # See NOTE: [Deferring tensor pack/unpack hooks until runtime]
@@ -246,13 +227,9 @@ def _invoke_dispatcher(
                     )(*fake_flat_args)
 
         if needs_autograd and not aot_config.pre_dispatch:
-            dispatched_fn = aot_dispatch_autograd_graph(
-                flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata
-            )
+            dispatched_fn = aot_dispatch_autograd_graph(flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata)
         else:
-            dispatched_fn = aot_dispatch_base_graph(
-                flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata
-            )
+            dispatched_fn = aot_dispatch_base_graph(flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata)
         if isinstance(dispatched_fn, tuple):
             dispatched_fn = dispatched_fn[0]
     return dispatched_fn, fw_metadata
@@ -334,16 +311,11 @@ def _insert_mutations(gm, fw_metadata, input_nodes):
     return_nodes_to_copy = {}
     for return_node, inp_node in zip(mutated_outs, mutated_inps):
         with gm.graph.inserting_before(output_node):
-            copy_node = gm.graph.call_function(
-                torch.ops.aten.copy_.default, (inp_node, return_node)
-            )
+            copy_node = gm.graph.call_function(torch.ops.aten.copy_.default, (inp_node, return_node))
             return_nodes_to_copy[return_node] = copy_node
 
     user_output_nodes = outputs[num_mutated_outs:]
-    output_args = [
-        return_nodes_to_copy[node] if node in return_nodes_to_copy else node
-        for node in user_output_nodes
-    ]
+    output_args = [return_nodes_to_copy[node] if node in return_nodes_to_copy else node for node in user_output_nodes]
     with gm.graph.inserting_before(output_node):
         # Only return user outputs
         new_output = gm.graph.output(tuple(output_args))

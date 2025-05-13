@@ -1,8 +1,10 @@
-from typing import Any, Dict
-from .compiler import XpuGraph, optimize_graph
-from .config import Target, OptLevel, XpuGraphConfig
-from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
 import dataclasses
+from typing import Any, Dict
+
+from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
+from .compiler import XpuGraph, optimize_graph
+from .config import OptLevel, Target, XpuGraphConfig
+from .passes.patterns.plugin_pattern import *
 
 __all__ = [
     "XpuGraph",
@@ -14,6 +16,11 @@ __all__ = [
     "default_cache",
     "mlu_compiler",
     "ascend_compiler",
+    "register_plugin_pattern",
+    "register_this_as_plugin_pattern",
+    "register_this_as_pattern_constraint",
+    "deregister_plugin_patterns",
+    "enable_plugin_patterns",
 ]
 
 
@@ -36,6 +43,7 @@ def ascend_compiler(
     )
     return XpuGraph(config, cache)
 
+
 def npu_compiler(
     freeze: bool = False,
     opt_level: OptLevel = OptLevel.level1,
@@ -54,6 +62,7 @@ def npu_compiler(
         vendor_compiler_config=vendor_compiler_config,
     )
     return XpuGraph(config, cache)
+
 
 def mlu_compiler(
     is_training: bool,
@@ -80,16 +89,12 @@ def mlu_compiler(
     elif isinstance(patch_configs["cache"], str):
         cache = XpuGraphLocalCache(patch_configs["cache"])
     else:
-        assert isinstance(
-            patch_configs["cache"], XpuGraphCache
-        ), "cache must be a XpuGraphCache instance"
+        assert isinstance(patch_configs["cache"], XpuGraphCache), "cache must be a XpuGraphCache instance"
         cache = patch_configs["cache"]
 
     default_config = _MLU_TRAIN_CONFIG if is_training else _MLU_INFER_CONFIG
 
-    if "opt_level" in patch_configs and not isinstance(
-        patch_configs["opt_level"], OptLevel
-    ):
+    if "opt_level" in patch_configs and not isinstance(patch_configs["opt_level"], OptLevel):
         patch_configs["opt_level"] = OptLevel(int(patch_configs["opt_level"]))
     patch_configs = {
         field.name: patch_configs[field.name]

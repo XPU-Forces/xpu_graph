@@ -1,5 +1,6 @@
 dataclasses
-torch>=2.3.1
+expecttest
+lintrunner
 pydot
 pytest
-lintrunner
+torch>=2.3.1

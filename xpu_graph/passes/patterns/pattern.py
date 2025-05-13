@@ -1,15 +1,15 @@
-from typing import Any
-import torch
-import torch.fx as fx
-import re
-import os
 import inspect
+import os
+import re
 from enum import Enum
 
+import torch
+import torch.fx as fx
+
 from xpu_graph.config import OptLevel
+from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
-from xpu_graph.fx_utils import FxStage
 
 
 class PatternGroup(Enum):
@@ -128,15 +128,11 @@ class AutoMatchPattern(Pattern):
 
         line = lines[0]
         if re.match(r"^\s*$", line):
-            return self._parse_lines(
-                rule_name, lines[1:], type_map.copy(), links.copy()
-            )
+            return self._parse_lines(rule_name, lines[1:], type_map.copy(), links.copy())
         src, dst, types = self._parse_mermaid(line)
         type_map.update(types)
         if not src or not dst:
-            return self._parse_lines(
-                rule_name, lines[1:], type_map.copy(), links.copy()
-            )
+            return self._parse_lines(rule_name, lines[1:], type_map.copy(), links.copy())
         succ = False
         for slot in dst[1]:
             if (dst[0], slot) in links:
@@ -217,19 +213,13 @@ class AutoMatchPattern(Pattern):
         rule = self._rule_map[rule_name]
 
         for target in rule.type_map[rule.end_name]:
-            candidates = [
-                node
-                for node in gm.graph.nodes
-                if node.op == "call_function" and node.target == target
-            ]
+            candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target == target]
 
             candidates.reverse()
             for cdd in candidates:
                 node_map = {}
                 node_map[rule.end_name] = cdd
-                node_map, matched_rule_set = self._get_match_subgraph(
-                    rule, rule.end_name, node_map, set()
-                )
+                node_map, matched_rule_set = self._get_match_subgraph(rule, rule.end_name, node_map, set())
                 if node_map is None or len(matched_rule_set) != len(rule.links):
                     continue
                 if self.rewriter(gm, rule_name, node_map):
@@ -237,16 +227,11 @@ class AutoMatchPattern(Pattern):
 
         return changed
 
-    def _get_match_subgraph(
-        self, rule: PatternRule, node_alias: str, node_map: dict, matched_rule_set: set
-    ):
+    def _get_match_subgraph(self, rule: PatternRule, node_alias: str, node_map: dict, matched_rule_set: set):
         for i, parent_node in enumerate(node_map[node_alias].args):
             if not (node_alias, i) in rule.links:
                 continue
-            if (
-                not isinstance(parent_node, fx.Node)
-                or parent_node.op != "call_function"
-            ):
+            if not isinstance(parent_node, fx.Node) or parent_node.op != "call_function":
                 return None, set()
             parent_alias, parent_slot = rule.links[(node_alias, i)]
 
@@ -264,9 +249,7 @@ class AutoMatchPattern(Pattern):
             node_map[parent_alias] = parent_node
             matched_rule_set.add((node_alias, i))
 
-            node_map, matched_rule_set = self._get_match_subgraph(
-                rule, parent_alias, node_map, matched_rule_set
-            )
+            node_map, matched_rule_set = self._get_match_subgraph(rule, parent_alias, node_map, matched_rule_set)
 
         return node_map, matched_rule_set
 
