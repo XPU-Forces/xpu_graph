@@ -10,8 +10,10 @@ import torch.fx as fx
 from torch.export.unflatten import _assign_attr, _AttrKind
 from torch.fx import map_arg
 from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.proxy import Proxy, GraphAppendingTracer
 from torch._guards import detect_fake_mode
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch._dispatch.python import enable_python_dispatcher
 
 from torch._decomp.decompositions_for_rng import PhiloxStateTracker
@@ -93,6 +95,8 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     ctx = nullcontext if stage == FxStage.pregrad else torch.no_grad
     with ctx():
         fake_mode = detect_fake_mode(full_args)
+        if fake_mode is None:
+            fake_mode = FakeTensorMode(shape_env=ShapeEnv())
         shape_env = fake_mode.shape_env
         fake_flat_args = [
             fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x

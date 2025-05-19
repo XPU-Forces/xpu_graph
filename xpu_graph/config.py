@@ -50,6 +50,9 @@ class XpuGraphConfig:
         False
     )
     constant_folding: bool = True
+    export_mode: bool = (
+        False  # Export model with AOTI inductor, only take effects when "is_training" is False.
+    )
 
     # So far we only support configure "mode", because we mainly use "Inductor" as a vendor's compiler.
     # mode must be one of {"cudagraphs", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"},
