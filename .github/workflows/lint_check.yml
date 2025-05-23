@@ -1,0 +1,24 @@
+name: Run lint check
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash
+jobs:
+  run-tests:
+    name: Run Lint Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Check
+        shell: bash
+        run: |
+          pwd
+          bash .github/workflows/scripts/lint_check.sh ${{ github.event.pull_request.base.ref }}
