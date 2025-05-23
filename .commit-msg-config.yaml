@@ -1,0 +1,9 @@
+fail_fast: false
+repos:
+  - repo: local
+    hooks:
+      - id: commit-msg-check
+        name: commit-msg-check
+        language: script
+        entry: /bin/bash .linter/commit_msg_check.sh
+        stages: [commit-msg]
