@@ -12,21 +12,19 @@ __all__ = ["ConstantFolding"]
 
 
 def _no_folding(node: fx.Node):
-    no_fold_call_function_list = [
-        torch.ops.aten.t.default,
-        torch.ops.aten.lift_fresh_copy.default,
-    ]
+    no_fold_call_function_list = []
     if node.op == "call_function":
         return node.target in no_fold_call_function_list
 
 
 class ConstantFolding(Optimizer):
 
-    def __init__(self):
+    def __init__(self, freezing):
         super().__init__()
+        self.freezing = freezing
 
     def _all_input_constant(self, node: fx.Node):
-        return all(is_constant(arg) for arg in node.args)
+        return all(is_constant(arg, self.freezing) for arg in node.args)
 
     def process(self, gm: torch.fx.GraphModule):
         changed = False
@@ -68,9 +66,8 @@ class ConstantFolding(Optimizer):
                 with disable_fake_mode():
                     constant_value = node.target(*new_args, **node.kwargs)
 
-                constant_name = node.name + "_constant_folding"
                 constant_name = get_constant_manager(gm).register_constant(
-                    constant_value, constant_name
+                    constant_value, node.name
                 )
                 with graph.inserting_before(get_attr_insert_point):
                     constant_node = graph.create_node("get_attr", constant_name)

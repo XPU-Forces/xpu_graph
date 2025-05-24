@@ -34,7 +34,7 @@ class PassManager:
         if self._config.constant_folding:
             from .constant_folding import ConstantFolding
 
-            self._passes.append(ConstantFolding())
+            self._passes.append(ConstantFolding(self._config.freeze))
 
         self._passes.append(self._pattern_manager)
 

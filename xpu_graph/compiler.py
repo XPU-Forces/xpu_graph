@@ -7,13 +7,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .passes.pass_manager import PassManager
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import (
-    logger,
-    setup_logger,
-    local_logger,
-    NodesStatistics,
-    GitLikeDiffer
-)
+from .utils import logger, setup_logger, local_logger, NodesStatistics, GitLikeDiffer
 from .cache import XpuGraphCache, default_cache, SerializeWrapper
 from .fx_utils import FxStage, dispatch_graph, decompose_for_inductor
 import logging
@@ -208,6 +202,16 @@ class XpuGraph:
         else:
             torch._inductor.config.freezing = False
 
+        if self._config.target != Target.none:
+            if torch._dynamo.config.trace_numpy:
+                self._orig_ctx["torch._dynamo.config.numpy_default_float"] = (
+                    torch._dynamo.config.numpy_default_float
+                )
+                logger.info(
+                    "xpu_graph set the default traced numpy float dtype to float32"
+                )
+                torch._dynamo.config.numpy_default_float = "float32"
+
         if self._cache is not None:
             self._orig_ctx["self._cache.orig_ctx"] = self._cache._set_cache_ctx()
 
@@ -215,5 +219,9 @@ class XpuGraph:
         torch._inductor.config.freezing = self._orig_ctx[
             "torch._inductor.config.freezing"
         ]
+        if "torch._dynamo.config.numpy_default_float" in self._orig_ctx:
+            torch._dynamo.config.numpy_default_float = self._orig_ctx[
+                "torch._dynamo.config.numpy_default_float"
+            ]
         if self._cache is not None:
             self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])
