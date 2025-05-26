@@ -20,5 +20,7 @@ jobs:
       - name: Lint Check
         shell: bash
         run: |
-          pwd
+          PR_TITLE=pr_title.txt
+          echo "${{ github.event.pull_request.title }}" > ${PR_TITLE}
+          bash .linter/commit_msg_check.sh ${PR_TITLE}
           bash .github/workflows/scripts/lint_check.sh ${{ github.event.pull_request.base.ref }}

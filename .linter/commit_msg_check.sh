@@ -2,7 +2,7 @@
 
 # commit message
 commit_msg=`cat $1`
-msg_re="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|release)(\(.+\))?: .{1,100}"
+msg_re="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|release)(\(.+\))?: \w{1,100}"
 error_msg="
 [commit type](module): descriptions\n
 1. commit type should be feat/fix/docs/style/refactor/perf/test/build/ci/chore/relase.\n
