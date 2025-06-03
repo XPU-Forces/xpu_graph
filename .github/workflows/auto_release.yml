@@ -1,0 +1,62 @@
+name: Auto Release
+on:
+  # pull_request:
+  #   branches: ['master', 'liuyuan/*']
+  #   paths: ['xpu_graph/version.py']
+  #   types: [opened, synchronize, reopened]
+  push:
+    branches: ['master', 'liuyuan/*']
+    paths: ['xpu_graph/version.py']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release.'
+        require: true
+        type: string
+      branch_or_commit:
+        description: "branch or commit to be tagged."
+        type: string
+        defautl: "master"
+  # milestone:
+  #   types: [closed]
+
+env:
+  XPU_GRAPH_PRIVATE_TOKEN: ${{ secrets.XPU_GRAPH_PRIVATE_TOKEN }}
+
+defaults:
+  run:
+    shell: bash
+jobs:
+  release_automatically:
+    if: github.event_name == 'push'
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          pip3 install "setuptools>=65.5.0" "build>=1.2.2"
+          python3 -m build .
+      - name: Release
+        run: |
+          python3 .github/workflows/scripts/rest_api.py --artifacts $(ls ./dist/*.whl) --private_token ${XPU_GRAPH_PRIVATE_TOKEN}
+
+
+  release_manually:
+    if: github.event_name == 'workflow_dispatch'
+    name: Release
+    runs-on: ubuntu-latest
+    env:
+      XPU_GRAPH_VERSION: ${{ inputs.version }} # NOTE(liuyuan): specially designed for command sed.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Change Version
+        run: |
+          sed -E "s|(__version__\s+=\s+).*|\1${XPU_GRAPH_VERSION}|g" xpu_graph/version.py
+      - name: Build
+        run: |
+          pip3 install "setuptools>=65.5.0" "build>=1.2.2"
+          python3 -m build .
+      - name: Release
+        run: |
+          python3 .github/workflows/scripts/rest_api.py --tag_name ${{ inputs.version }} --branch_or_commit ${{ inputs.branch_or_commit }} --desc "Release xpu-graph ${{ inputs.version }}" --artifacts $(ls ./dist/*.whl) --private_token ${XPU_GRAPH_PRIVATE_TOKEN}
