@@ -46,7 +46,6 @@ class FuseSliceModule(torch.nn.Module):
         else:
             return output.view(len(self.slices_index), input_tensor.shape[0], slice_len)
 
-
 class FuseSliceCatSameInputModule(torch.nn.Module):
     def forward(self, input_tensor, slices):
         if len(input_tensor.shape) != 2:
@@ -66,7 +65,7 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
 class FuseSliceCatSameInputModule_v2(torch.nn.Module):
     def __init__(self, many_slices):
         super().__init__()
-        self.use_triton = False  # True
+        self.use_triton = True
         from torch._subclasses.fake_tensor import unset_fake_temporarily
 
         device = torch.mlu.current_device()
