@@ -39,6 +39,19 @@ class FuseSliceModule(torch.nn.Module):
             return output.view(len(self.slices_index), input_tensor.shape[0], slice_len)
 
 
+class FuseSplitModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor, split_size: int, dim: int):
+        if len(x.shape) != 2:
+            raise NotImplementedError("input must be 2d")
+        split_num = x.shape[1] // split_size
+        if split_num * split_size != x.shape[1]:
+            raise NotImplementedError("fused split don't support.")
+        slices_index = list(range(0, x.shape[1], split_size))
+        start_indices = torch.tensor(slices_index, device=x.device, dtype=torch.int32)
+        output = fused_slice_low(x, start_indices, split_size, x.shape[0], x.stride(0))
+        return output
+
+
 class FuseSliceCatSameInputModule(torch.nn.Module):
     def forward(self, input_tensor, slices):
         if len(input_tensor.shape) != 2:
@@ -162,6 +175,7 @@ def get_structure_replacements(config):
         "CustomRMSNorm": RMSNormModule,
         "CustomLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
+        "FusedSplit": FuseSplitModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
