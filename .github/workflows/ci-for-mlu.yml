@@ -9,6 +9,8 @@ on:
       - 'xpu_graph/backend/npu.py'
       - 'xpu_graph/passes/patterns/targets/ascend/'
       - 'xpu_graph/passes/patterns/targets/npu/'
+      - 'xpu_graph/docs'
+      - 'xpu_graph/.github/workflows/ci-for-npu.yml'
       - 'tests/ascend'
       - 'tests/npu'
       - 'tests/ops'
