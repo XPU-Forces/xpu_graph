@@ -1,8 +1,10 @@
+from typing import List
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from typing import List
+
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
@@ -68,7 +70,9 @@ def single_mul_sum_cat(
     value1 = tl.load(input_block_ptr1, boundary_check=(0,), padding_option=0)
     value0 = value0 * value1
     value0 = tl.reshape(value0, [BLOCK_SIZE_R, BLOCK_SIZE_S1, BLOCK_SIZE_S2])
-    value0 = tl.sum(value0, axis=1)
+    value = tl.empty([BLOCK_SIZE_R, BLOCK_SIZE_S2], dtype=value0.dtype)
+    for i in range(BLOCK_SIZE_R):
+        value[i : i + 1, :] = tl.sum(value0[i : i + 1, :, :], axis=1)
     output_block_ptr = tl.make_block_ptr(
         base=output,
         shape=(input1_row, BLOCK_SIZE_S2 * 2),
@@ -77,10 +81,31 @@ def single_mul_sum_cat(
         block_shape=(BLOCK_SIZE_R, BLOCK_SIZE_S2),
         order=(1, 0),
     )
-    tl.store(output_block_ptr, value0, boundary_check=(0,))
+    tl.store(output_block_ptr, value, boundary_check=(0,))
 
 
 @libentry.libentry()
+@libentry.libtuner(
+    configs=[
+        triton.Config(
+            {
+                "BLOCK_SIZE_R": m,
+            },
+            num_stages=3,
+            num_warps=1,
+        )
+        for m in [28, 28 * 2]
+    ],
+    key=[
+        "is_input0_multi_dim",
+        "is_input1_multi_dim",
+        "is_input2_multi_dim",
+        "is_input3_multi_dim",
+        "BLOCK_SIZE_C",
+        "BLOCK_SIZE_S1",
+        "BLOCK_SIZE_S2",
+    ],
+)
 @triton.jit
 def mlu_triton_mul_sum_cat_kernel(
     mul0,
@@ -171,13 +196,10 @@ def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
     input_row = max(mul1.shape[0], mul2.shape[0])
     s0, s1, s2 = mul1.shape
 
-    block_size_r = input_row
     block_size_c = s1 * s2
     size_of_dtype = 2
     if mul1.dtype == torch.float32:
         size_of_dtype = 4
-    if block_size_r * block_size_c * size_of_dtype * 4 > props.max_nram_size:
-        block_size_r = props.max_nram_size // (size_of_dtype * block_size_c * 4)
 
     output_tensors = torch.empty(
         (input_row, s2 * 2),
@@ -208,10 +230,9 @@ def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
         1 if mul2.shape[0] > 1 else 0,
         1 if mul3.shape[0] > 1 else 0,
         1 if mul4.shape[0] > 1 else 0,
-        block_size_r,
-        s1 * s2,
-        s1,
-        s2,
+        BLOCK_SIZE_C=s1 * s2,
+        BLOCK_SIZE_S1=s1,
+        BLOCK_SIZE_S2=s2,
     )
 
     return output_tensors

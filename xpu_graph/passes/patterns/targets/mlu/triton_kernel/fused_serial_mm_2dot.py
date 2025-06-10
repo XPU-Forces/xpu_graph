@@ -38,6 +38,7 @@ def relu(x):
     return tl.maximum(x, zero)
 
 
+@libentry.libentry()
 @libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},
@@ -49,7 +50,6 @@ def relu(x):
         "EVEN_K1": lambda args: args["K1"] % args["BLOCK_SIZE_K1"] == 0,
     }
 )
-@libentry.libentry()
 @triton.jit
 def fused_serial_mm_2dot_kernel(
     d_ptr,
@@ -82,6 +82,10 @@ def fused_serial_mm_2dot_kernel(
     pid = tl.program_id(axis=0)
     num_pid_k1: tl.constexpr = tl.cdiv(K1, BLOCK_SIZE_K1)
     pid_m = pid
+
+    m_num = M // BLOCK_SIZE_M + (M % BLOCK_SIZE_M != 0)
+    if pid_m >= m_num:
+        return
 
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     mask_m = offs_m < M
@@ -160,7 +164,9 @@ def fuse_serial_mm_2dot(
     N1, N2 = c.shape
 
     # TODO: ASSERT K1/N1/N2
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),)
+    # grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']), )\
+    align_dimx = 4
+    grid = lambda META: ((triton.cdiv(M, META["BLOCK_SIZE_M"]) + align_dimx - 1) // align_dimx * align_dimx,)
     fused_serial_mm_2dot_kernel[grid](
         d,
         a,

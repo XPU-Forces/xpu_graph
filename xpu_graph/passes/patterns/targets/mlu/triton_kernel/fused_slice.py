@@ -1,9 +1,13 @@
+from typing import List
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from typing import List
+
 from . import libentry
+from .get_mlu_devinfo import get_device_properties
+
 
 @libentry.libentry()
 @triton.jit
@@ -59,12 +63,13 @@ def fused_slice_low(
     n_rows: int,
     input_stride: int,
 ) -> torch.Tensor:
+    props = get_device_properties()
     block_size_r = n_rows
     block_size_c = slice_len
     size_of_dtype = 2
     if src_tensor.dtype == torch.float32:
         size_of_dtype = 4
-    nram_limit = 384 * 1024
+    nram_limit = props.max_nram_size
     if block_size_r * block_size_c * size_of_dtype > nram_limit:
         block_size_r = nram_limit // size_of_dtype // block_size_c
 
@@ -74,10 +79,7 @@ def fused_slice_low(
         device=src_tensor.device,
         dtype=src_tensor.dtype,
     )
-    processor_count = torch.mlu.get_device_properties(
-        torch.mlu.current_device()
-    ).multi_processor_count
-    grid = (processor_count, 1, 1)
+    grid = (props.total_cores, 1, 1)
     mlu_triton_slice_low_kernel[grid](
         src_tensor,
         output_tensors,
