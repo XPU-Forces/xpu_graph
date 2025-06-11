@@ -3,7 +3,7 @@ from typing import Callable, List, overload
 import torch
 import torch.fx as fx
 
-from xpu_graph.config import Target, XpuGraphConfig
+from xpu_graph.config import OptLevel, Target, XpuGraphConfig
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
@@ -85,15 +85,17 @@ class PatternManager(Optimizer):
     def register_pattern(self, matcher: Callable, replacement: Callable):
         ...
 
-    @overload
-    def register_pattern(self, matcher: Callable, replacement: Callable, stage: FxStage):
-        ...
-
-    def register_pattern(self, *args):
+    def register_pattern(self, *args, **kwargs):
         if len(args) == 1:
             pat = args[0]
-            self._patterns[pat._pattern_group].append(pat)
-        elif len(args) == 2 or len(args) == 3:
+            if pat._opt_level <= self._opt_level:
+                self._patterns[pat._pattern_group].append(pat)
+                pat._set_level(self._opt_level)
+            else:
+                logger.warning(
+                    f"xpu_graph skip pattern {pat} with opt_level {pat._opt_level} and current opt_level is {self._opt_level}"
+                )
+        elif len(args) == 2:
 
             class _Pattern(Pattern):
                 def __init__(self):
@@ -106,9 +108,18 @@ class PatternManager(Optimizer):
 
                     return len(match)
 
-            if len(args) == 3:
-                _Pattern._support_stages = [args[2]]
-            self._patterns[_Pattern._pattern_group].append(_Pattern())
+            if "supported_stages" in kwargs:
+                _Pattern._support_stages = kwargs["supported_stages"]
+            if "opt_level" in kwargs:
+                _Pattern._opt_level = kwargs["opt_level"]
+            pat = _Pattern()
+            if pat._opt_level <= self._opt_level:
+                self._patterns[pat._pattern_group].append(pat)
+                pat._set_level(self._opt_level)
+            else:
+                logger.warning(
+                    f"xpu_graph skip pattern {pat} with opt_level {pat._opt_level} and current opt_level is {self._opt_level}"
+                )
 
     def insert_patterns(self, patterns: List[Pattern]):
         tmp = {
@@ -123,3 +134,9 @@ class PatternManager(Optimizer):
         for group in self._patterns.keys():
             tmp[group].extend(self._patterns[group])
             self._patterns[group] = tmp[group]
+
+    def _set_level(self, level: OptLevel):
+        self._opt_level = level
+        for group in self._patterns.keys():
+            for pattern in self._patterns[group]:
+                pattern._set_level(level)

@@ -77,3 +77,9 @@ class Optimizer(ABC):
         graph = fx.passes.graph_drawer.FxGraphDrawer(gm, self.__class__.__name__)
         graph.get_dot_graph().write_svg(f"{filename}.svg")
         opt_times += 1
+
+    def _set_level(self, opt_level: OptLevel):
+        assert (
+            self.__class__._opt_level <= opt_level
+        ), f"opt_level {opt_level} is not supported by {self.__class__.__name__}."
+        self._opt_level = opt_level

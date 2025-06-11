@@ -1,5 +1,6 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.utils import logger
 
@@ -37,6 +38,8 @@ class PassManager:
             self._passes.append(ConstantFolding(self._config.freeze))
 
         self._passes.append(self._pattern_manager)
+        for pass_ in self._passes:
+            pass_._set_level(self._config.opt_level)
 
     def reset_enable_passes_with_stage(self, stage: FxStage):
         self._enable_passes = []
@@ -51,18 +54,12 @@ class PassManager:
 
         changed = True
         while changed:
-            from xpu_graph.passes.fake_tensor_prop import FakeTensorProp
-
             from torch._guards import detect_fake_mode
             from torch._subclasses.fake_tensor import FakeTensor
 
-            assert all(
-                [
-                    isinstance(inp, FakeTensor)
-                    for inp in example_inputs
-                    if isinstance(inp, torch.Tensor)
-                ]
-            )
+            from xpu_graph.passes.fake_tensor_prop import FakeTensorProp
+
+            assert all([isinstance(inp, FakeTensor) for inp in example_inputs if isinstance(inp, torch.Tensor)])
             fake_mode = detect_fake_mode(example_inputs)
 
             FakeTensorProp(gm, fake_mode).propagate_dont_convert_inputs(*example_inputs)
