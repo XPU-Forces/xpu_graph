@@ -1,8 +1,11 @@
+from typing import List, Tuple
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from typing import List, Tuple
+
+from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
 
@@ -78,6 +81,7 @@ def mlu_triton_sum_3d_input_dim_2_kernel(
         tl.store(output_ptr_, data, boundary_check=(1, 0))
 
 
+@libentry.libentry()
 @triton.jit
 def mlu_triton_sum_3d_input_kernel(
     input_ptrs,
@@ -199,55 +203,3 @@ def fused_sum_3d_input_fake(
         )
         outputs.append(output)
     return outputs
-
-
-"""
-size_list = [
-    torch.Size([384, 3, 8]),
-    torch.Size([384, 10, 8]),
-    torch.Size([384, 2, 8]),
-    torch.Size([384, 7, 8]),
-    torch.Size([384, 8, 8]),
-    torch.Size([384, 8, 8]),
-    torch.Size([384, 10, 8]),
-    torch.Size([384, 4, 8]),
-    torch.Size([384, 4, 8]),
-    torch.Size([384, 6, 8]),
-    torch.Size([384, 4, 8]),
-    torch.Size([384, 28, 4]),
-    torch.Size([384, 10, 8]),
-    torch.Size([384, 9, 1]),
-    torch.Size([384, 9, 1]),
-    torch.Size([384, 9, 1]),
-    torch.Size([384, 9, 1]),
-    torch.Size([384, 9, 1]),
-    torch.Size([384, 9, 1]),
-    torch.Size([384, 21, 2]),
-    torch.Size([384, 31, 2]),
-    torch.Size([384, 5, 2]),
-    torch.Size([384, 7, 1]),
-    torch.Size([384, 21, 2]),
-    torch.Size([384, 31, 2]),
-    torch.Size([384, 5, 2]),
-    torch.Size([384, 7, 1])
-]
-
-sorted_sizes = sorted(size_list, key=lambda s: torch.tensor(s).prod().item(), reverse=True)
-inputs = [torch.randn(size, dtype=torch.float32, device="mlu:0") for size in sorted_sizes]
-
-# input_tensor = torch.randn(tuple(size_list[11]), dtype=torch.float32, device="mlu:0")
-# inputs = [input_tensor.clone() for _ in range(12)]
-
-# print(inputs)
-output = fused_sum_3d_input(inputs, dim=1)
-output1 = [torch.sum(input, dim=[1]) for input in inputs]
-
-quantiles = [0.5, 0.2, 0.8]
-ms, min_ms, max_ms = triton.testing.do_bench(lambda: fused_sum_3d_input(inputs, dim=1),
-                                             quantiles=quantiles)
-
-print(f"{ms:.3f}ms")
-print(output1[0][0])
-print(output[0][0])
-exit()
-"""

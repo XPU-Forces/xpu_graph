@@ -1,14 +1,13 @@
+from typing import Callable
+
 import torch
-from torch import nn, fx
+from torch import fx, nn
 
 # import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
+
+from ..utils.check_ops import check_slice_op, check_stack_op, get_shape
 from ..utils.submodule_manager import register_new_submodule
-from typing import Callable
-from ..utils.check_ops import (
-    check_slice_op,
-    check_stack_op,
-)
 
 
 def custom_getitem(tensor_list, index):
@@ -50,6 +49,21 @@ def find_slice_nodes(graph_module):
     for node in graph_module.graph.nodes:
         if not check_slice_op(node):
             continue
+        if not isinstance(node.args[1], int):
+            continue
+        if not isinstance(node.args[2], int):
+            continue
+        if not isinstance(node.args[3], int):
+            continue
+
+        # slice dim must be lowest dim
+        src_node = node.args[0]
+        axis = node.args[1]
+        if axis != -1:
+            dim = len(get_shape(src_node))
+            if axis != dim - 1:
+                continue
+
         # Skip slice nodes that are directly connected to the output node.
         if len(node.users) == 1:
             if next(iter(node.users)).target == "output":

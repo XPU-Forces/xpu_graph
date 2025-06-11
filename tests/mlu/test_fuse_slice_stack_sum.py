@@ -1,13 +1,9 @@
 import torch
 import torch_mlu
+
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import (
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
-from xpu_graph.test_utils import is_similar
-
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "mlu:0"
 aten = torch.ops.aten
@@ -245,6 +241,8 @@ class TestSliceStackSum:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             stack_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedSliceStackSum changed graph" in caplog.text
+        if pattern_func in [fn3]:
+            assert "Pattern.ComboSum3dInp changed graph" in caplog.text
 
 
 if __name__ == "__main__":

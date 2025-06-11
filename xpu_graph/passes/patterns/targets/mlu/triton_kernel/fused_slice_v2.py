@@ -1,8 +1,10 @@
+from typing import List, Tuple
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from typing import List, Tuple
+
 
 @triton.jit
 def mlu_triton_slice_low_kernel_v2(
@@ -23,7 +25,7 @@ def mlu_triton_slice_low_kernel_v2(
         if slice_idx % program_dim == program_id:
             output_ptr = output_ptrs[slice_idx]
             start_index = tl.load(start_indices_ptr + slice_idx)
-            slice_len = tl.load(slice_lens_ptr+ slice_idx)
+            slice_len = tl.load(slice_lens_ptr + slice_idx)
             loop = (input_row + BLOCK_SIZE_R - 1) // BLOCK_SIZE_R
             loop_c = (slice_len + BLOCK_SIZE_C - 1) // BLOCK_SIZE_C
             for l in range(loop):
@@ -54,11 +56,11 @@ def fused_slice_low_v2(
     start_indices: torch.Tensor,
     slice_lens: torch.Tensor,
     slice_lens_list: List[int],
-) -> List[torch.Tensor]: 
+) -> List[torch.Tensor]:
     n_rows = src_tensor.shape[0]
     input_stride = src_tensor.stride(0)
     block_size_r = n_rows
-    block_size_c = 64 
+    block_size_c = 64
     size_of_dtype = 2
     if src_tensor.dtype == torch.float32:
         size_of_dtype = 4
@@ -67,9 +69,7 @@ def fused_slice_low_v2(
         block_size_r = nram_limit // size_of_dtype // block_size_c
     block_size_r = min(n_rows, block_size_r)
 
-    processor_count = torch.mlu.get_device_properties(
-        torch.mlu.current_device()
-    ).multi_processor_count
+    processor_count = torch.mlu.get_device_properties(torch.mlu.current_device()).multi_processor_count
     grid = (processor_count, 1, 1)
     num_slices = len(start_indices)
 
@@ -102,7 +102,7 @@ def fused_slice_low_v2_fake(
     start_indices: torch.Tensor,
     slice_lens: torch.Tensor,
     slice_lens_list: List[int],
-) -> List[torch.Tensor]: 
+) -> List[torch.Tensor]:
     outputs = []
     for s in slice_lens_list:
         output = torch.empty(

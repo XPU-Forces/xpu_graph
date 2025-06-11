@@ -1,14 +1,10 @@
 import pytest
-
 import torch
 import torch_mlu
+
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import (
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
-
+from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "mlu:0"
 aten = torch.ops.aten
@@ -340,7 +336,10 @@ def slice_test(xpu_graph_backend, func):
 class TestCatSlice:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=True, opt_level=OptLevel.level1, vendor_compiler_config=False,
+            is_training=False,
+            freeze=True,
+            opt_level=OptLevel.level1,
+            vendor_compiler_config=False,
         )
 
     @pytest.mark.parametrize(
