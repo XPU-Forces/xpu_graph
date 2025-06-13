@@ -10,7 +10,7 @@ from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
 _devprop = get_device_properties()
-TOTAL_CORE_NUM = _devprop.total_cores
+TOTAL_CORE_NUM = _devprop.max_cores
 
 
 def do_config_prune(configs, named_args, **kwargs):
@@ -43,6 +43,7 @@ def relu(x):
     return tl.maximum(x, zero)
 
 
+@libentry.libentry()
 @libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},
@@ -54,7 +55,6 @@ def relu(x):
         "EVEN_K1": lambda args: args["K1"] % args["BLOCK_SIZE_K1"] == 0,
     }
 )
-@libentry.libentry()
 @triton.jit
 def fused_serial_mm_3dot_kernel(
     o_ptr,
@@ -95,6 +95,10 @@ def fused_serial_mm_3dot_kernel(
     num_pid_k1: tl.constexpr = tl.cdiv(K1, BLOCK_SIZE_K1)
     pid_m = pid
 
+    m_num = M // BLOCK_SIZE_M + (M % BLOCK_SIZE_M != 0)
+    if pid_m >= m_num:
+        return
+
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     mask_m = offs_m < M
     offs_k1 = tl.arange(0, BLOCK_SIZE_K1)
@@ -115,13 +119,21 @@ def fused_serial_mm_3dot_kernel(
             if EVEN_K1:
                 a = tl.load(a_ptrs, cache_modifier=".ca")
             else:
-                a = tl.load(a_ptrs, mask=offs_k1[None, :] < k_remaining, other=0.0, cache_modifier=".ca")
+                a = tl.load(
+                    a_ptrs,
+                    mask=offs_k1[None, :] < k_remaining,
+                    other=0.0,
+                    cache_modifier=".ca",
+                )
         else:
             if EVEN_K1:
                 a = tl.load(a_ptrs, mask=mask_m[:, None], other=0.0, cache_modifier=".ca")
             else:
                 a = tl.load(
-                    a_ptrs, mask=mask_m[:, None] & (offs_k1[None, :] < k_remaining), other=0.0, cache_modifier=".ca"
+                    a_ptrs,
+                    mask=mask_m[:, None] & (offs_k1[None, :] < k_remaining),
+                    other=0.0,
+                    cache_modifier=".ca",
                 )
         b = tl.load(b_ptrs, mask=offs_k1[:, None] < k_remaining, cache_modifier=".ca")
         accumulator += tl.dot(a, b, allow_tf32=False)
@@ -174,11 +186,11 @@ configs1 = [
 ]
 
 
+@libentry.libentry()
 @libentry.libtuner(
     configs=configs1,
     key=["M", "K1", "N1", "N2", "N3"],
 )
-@libentry.libentry()
 @triton.jit
 def fused_serial_mm_3dot_big_m_kernel(
     o_ptr,
@@ -288,7 +300,8 @@ def fuse_serial_mm_3dot(
     # TODO: ASSERT K1/N1/N2
     m_threshold_perf_core = 256
     if TOTAL_CORE_NUM * m_threshold_perf_core > M:
-        grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),)
+        align_dimx = 4
+        grid = lambda META: ((triton.cdiv(M, META["BLOCK_SIZE_M"]) + align_dimx - 1) // align_dimx * align_dimx,)
         fused_serial_mm_3dot_kernel[grid](
             o,
             a,

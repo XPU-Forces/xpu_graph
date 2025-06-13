@@ -5,14 +5,17 @@
 #
 # Modified by xpu_graph for internal use.
 
+import builtins
 import functools
 import inspect
+import math
 import os
 import sqlite3
 import threading
+import time
 import weakref
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 import torch_mlu
@@ -25,6 +28,7 @@ ATTRS = {
     (3, 0): 4,
     (3, 1): 4,
     (3, 2): 8,
+    (3, 3): 8,
 }
 version = triton.__version__.split(".")
 major_version, minor_version = eval(version[0]), eval(version[1])
@@ -54,6 +58,107 @@ def config_cache_dir() -> Path:
     return _config_cache_dir
 
 
+if major_version == 2:
+
+    def all_kwargs(self):
+        return {
+            **self.kwargs,
+            **{
+                k: getattr(self, k)
+                for k in (
+                    "num_warps",
+                    "num_ctas",
+                    "num_stages",
+                    "num_buffers_warp_spec",
+                    "num_consumer_groups",
+                    "reg_dec_producer",
+                    "reg_inc_consumer",
+                    "maxnreg",
+                )
+                if hasattr(self, k)
+            },
+        }
+
+    setattr(triton.Config, "all_kwargs", all_kwargs)
+
+
+STRATEGY = {
+    None: lambda v: v,
+    "log": lambda v: math.ceil(math.log2(v)),
+}
+
+
+class LibCache:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(LibCache, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        self.global_cache: Dict = {}
+        self.volumn: Dict = {}
+        self.cache_path = config_cache_dir() / f"TunedConfig_{major_version}_{minor_version}.db"
+        self.preload()
+        weakref.finalize(self, self.store)
+
+    def __getitem__(self, key):
+        if key not in self.global_cache:
+            self.global_cache[key] = {}
+        return self.global_cache[key]
+
+    def preload(self):
+        connect = sqlite3.connect(self.cache_path)
+        c = connect.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+        tables = [row[0] for row in c.fetchall()]
+        for operator in tables:
+            c.execute(f"CREATE TABLE IF NOT EXISTS {operator} (key TEXT PRIMARY KEY, config TEXT)")
+            cursor = c.execute(f"SELECT key, config from {operator}")
+            cache = self.__getitem__(operator)
+
+            for row in cursor:
+                key_str, config_str = row
+                key = [eval(k) for k in key_str[1:-1].split(", ")]
+
+                cfg_ls = [item.split(": ") for item in config_str.split(", ")]
+                kwargs = {}
+                numargs = {}
+                attrs = ATTRS[(major_version, minor_version)]
+                for k, v in cfg_ls[:-attrs]:
+                    kwargs[k] = eval(v)
+                for k, v in cfg_ls[-attrs:]:
+                    numargs[k] = eval(v)
+                # In Triton v2.2 and v2.3, enable_persistent is stored in config cache
+                # but not defined as initialization parameter
+                numargs.pop("enable_persistent", None)
+                config = triton.Config(kwargs, **numargs)
+                cache[tuple(key)] = config
+            self.volumn[operator] = len(cache)
+        connect.close()
+
+    def store(self):
+        connect = sqlite3.connect(self.cache_path)
+        c = connect.cursor()
+        for operator, cache in self.global_cache.items():
+            if len(cache) == self.volumn.get(operator, 0):
+                continue
+
+            c.execute(f"CREATE TABLE IF NOT EXISTS {operator} (key TEXT PRIMARY KEY, config TEXT)")
+            for key, config in cache.items():
+                c.execute(
+                    f"INSERT OR IGNORE INTO {operator} (key, config) VALUES (?, ?)",
+                    (str(key), config.__str__()),
+                )
+
+        connect.commit()
+        connect.close()
+
+
+libcache = LibCache()
+
+
 class LibTuner(triton.runtime.Autotuner):
     def __init__(
         self,
@@ -65,10 +170,13 @@ class LibTuner(triton.runtime.Autotuner):
         restore_value,
         pre_hook=None,
         post_hook=None,
-        prune_configs_by: Dict = None,
+        prune_configs_by: Optional[Dict] = None,
         warmup=25,
         rep=100,
         use_cuda_graph=False,
+        do_bench=None,
+        strategy=None,
+        share=None,
     ):
         if major_version == 2:
             super().__init__(
@@ -101,51 +209,71 @@ class LibTuner(triton.runtime.Autotuner):
                 use_cuda_graph,
             )
         self.__name__ = self.base_fn.__name__
-        self.cache_path = config_cache_dir() / "TunedConfig.db"
-        self.preload()
-        weakref.finalize(self, self.store)
+        self.keys = key
+        self.strategy = strategy
+        self.share = share
+        self.cache = libcache[share] if share else libcache[self.__name__]
+        if strategy:
+            assert len(self.strategy) == len(self.keys), "Invalid number of strategies"
 
-    def preload(self):
-        connect = sqlite3.connect(self.cache_path)
-        c = connect.cursor()
-        c.execute(f"CREATE TABLE IF NOT EXISTS {self.__name__} (key TEXT PRIMARY KEY, config TEXT)")
-        cursor = c.execute(f"SELECT key, config from {self.__name__}")
+    def get_key(self, args):
+        if self.strategy is None:
+            key = [args[k] for k in self.keys if k in args]
+            return key
+        key = []
+        for i, k in enumerate(self.keys):
+            s = STRATEGY[self.strategy[i]]
+            v = s(args[k])
+            key.append(v)
+        return key
 
-        for row in cursor:
-            key_str, config_str = row
-            key = [eval(k) for k in key_str[1:-1].split(", ")]
-
-            cfg_ls = [item.split(": ") for item in config_str.split(", ")]
-            kwargs = {}
-            numargs = {}
-            attrs = ATTRS[(major_version, minor_version)]
-            for k, v in cfg_ls[:-attrs]:
-                kwargs[k] = eval(v)
-            for k, v in cfg_ls[-attrs:]:
-                numargs[k] = eval(v)
-            # In Triton v2.2 and v2.3, enable_persistent is stored in config cache
-            # but not defined as initialization parameter
-            numargs.pop("enable_persistent", None)
-            config = triton.Config(kwargs, **numargs)
-            self.cache[tuple(key)] = config
-
-        connect.close()
-        self.volumn = len(self.cache)
-
-    def store(self):
-        if len(self.cache) == self.volumn:
-            return
-        connect = sqlite3.connect(self.cache_path)
-        c = connect.cursor()
-        c.execute(f"CREATE TABLE IF NOT EXISTS {self.__name__} (key TEXT PRIMARY KEY, config TEXT)")
-        for key, config in self.cache.items():
-            c.execute(
-                f"INSERT OR IGNORE INTO {self.__name__} (key, config) VALUES (?, ?)",
-                (str(key), config.__str__()),
+    def run(self, *args, **kwargs):
+        self.nargs = dict(zip(self.arg_names, args))
+        used_cached_result = True
+        if len(self.configs) > 1:
+            all_args = {**self.nargs, **kwargs}
+            _args = {k: v for (k, v) in all_args.items() if k in self.arg_names}
+            # key = [_args[key] for key in self.keys if key in _args]
+            key = self.get_key(_args)
+            for _, arg in _args.items():
+                if hasattr(arg, "dtype"):
+                    key.append(str(arg.dtype))
+            key = tuple(key)
+            if key not in self.cache:
+                # prune configs
+                used_cached_result = False
+                pruned_configs = self.prune_configs(kwargs)
+                bench_start = time.time()
+                timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
+                bench_end = time.time()
+                self.bench_time = bench_end - bench_start
+                self.cache[key] = builtins.min(timings, key=timings.get)
+                full_nargs = {
+                    **self.nargs,
+                    **kwargs,
+                    **self.cache[key].all_kwargs(),
+                }
+                self.pre_hook(full_nargs, reset_only=True)
+                self.configs_timings = timings
+            config = self.cache[key]
+        else:
+            config = self.configs[0]
+        self.best_config = config
+        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
+            print(
+                f"Triton autotuning for function {self.base_fn.__name__} finished after "
+                f"{self.bench_time:.2f}s; best config selected: {self.best_config};"
             )
-
-        connect.commit()
-        connect.close()
+        if config.pre_hook is not None:
+            full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
+            config.pre_hook(full_nargs)
+        ret = self.fn.run(
+            *args,
+            **kwargs,
+            **config.all_kwargs(),
+        )
+        self.nargs = None
+        return ret
 
 
 def libtuner(
@@ -159,6 +287,9 @@ def libtuner(
     warmup=25,
     rep=100,
     use_cuda_graph=False,
+    do_bench=None,
+    strategy=None,
+    share=None,
 ):
     """
     Decorator for triton library autotuner.
@@ -178,6 +309,9 @@ def libtuner(
             warmup=warmup,
             rep=rep,
             use_cuda_graph=use_cuda_graph,
+            do_bench=do_bench,
+            strategy=strategy,
+            share=share,
         )
 
     return decorator
@@ -237,11 +371,17 @@ class LibEntry(triton.KernelInterface):
         for i, arg in enumerate(args):
             if i in self.specialize_indices:
                 k_args.append(arg)
-                spec_args.append(arg)
+                if isinstance(arg, tuple):
+                    for item in arg:
+                        spec_args.append(item.value if isinstance(item, triton.language.constexpr) else item)
+                else:
+                    spec_args.append(arg)
             elif i in self.do_not_specialize_indices:
                 k_args.append(arg)
                 dns_args.append(arg)
             else:
+                if major_version == 3 and minor_version == 3:
+                    k_args.append(arg)
                 const_args.append(arg)
         for p in self.jit_function.params[len(args) :]:
             if p.name in kwargs:
@@ -253,6 +393,8 @@ class LibEntry(triton.KernelInterface):
 
             if p.is_constexpr:
                 const_args.append(val)
+                if major_version == 3 and minor_version == 3:
+                    k_args.append(val)
             elif p.do_not_specialize:
                 dns_args.append(val)
                 k_args.append(val)
@@ -261,7 +403,6 @@ class LibEntry(triton.KernelInterface):
                 k_args.append(val)
 
         entry_key = self.key(spec_args, dns_args, const_args)
-        # device = torch_device_fn.current_device()
         device = torch.mlu.current_device()
         cache = self.kernel_cache[device]
         while entry_key not in cache:
@@ -274,6 +415,8 @@ class LibEntry(triton.KernelInterface):
                 fn = self.fn
                 # collect constexpr arguments for grid computation
                 constexprs = {}
+                tune_constexprs = {}
+                heur_constexprs = {}
                 while not isinstance(fn, triton.runtime.JITFunction):
                     if isinstance(fn, triton.runtime.Autotuner):
                         config = fn.best_config
@@ -281,25 +424,32 @@ class LibEntry(triton.KernelInterface):
                         constexprs["num_stages"] = config.num_stages
                         constexprs["num_ctas"] = config.num_ctas
                         constexprs = {**constexprs, **config.kwargs}
+                        tune_constexprs = {**tune_constexprs, **config.kwargs}
                     elif isinstance(fn, triton.runtime.Heuristics):
                         for v, heur in fn.values.items():
-                            constexprs[v] = heur(
+                            heur_constexprs[v] = heur(
                                 {
                                     **dict(zip(fn.arg_names, args)),
                                     **kwargs,
                                     **constexprs,
                                 }
                             )
+                            constexprs[v] = heur_constexprs[v]
                     else:
                         raise RuntimeError("Invalid Runtime Function")
                     fn = fn.fn
                 for p in self.jit_function.params:
                     if p.is_constexpr and p.name not in constexprs and (p.default is not inspect._empty):
                         constexprs[p.name] = p.default
-                cache[entry_key] = (kernel, constexprs)
+                cache[entry_key] = (
+                    kernel,
+                    constexprs,
+                    tune_constexprs,
+                    heur_constexprs,
+                )
             return kernel, constexprs
 
-        kernel, constexprs = cache[entry_key]
+        kernel, constexprs, tune_constexprs, heur_constexprs = cache[entry_key]
 
         if callable(grid):
             # collect all arguments to the grid fn，ie:
@@ -311,7 +461,10 @@ class LibEntry(triton.KernelInterface):
             grid = grid(meta)
         grid = grid + (1, 1)
 
-        kernel[grid[0:3]](*[x for x in k_args if x is not None])
+        if major_version == 3 and minor_version == 3:
+            kernel[grid[0:3]](*k_args, *tune_constexprs, *heur_constexprs)
+        else:
+            kernel[grid[0:3]](*[x for x in k_args if x is not None])
         return kernel, constexprs
 
 
