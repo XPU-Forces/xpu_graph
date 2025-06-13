@@ -19,5 +19,8 @@ jobs:
         run: |
           PR_TITLE=pr_title.txt
           echo "${{ github.event.pull_request.title }}" > ${PR_TITLE}
-          bash .linter/commit_msg_check.sh ${PR_TITLE}
-          bash .github/workflows/scripts/lint_check.sh ${{ github.event.pull_request.base.ref }}
+          bash scripts/commit_msg_check.sh ${PR_TITLE}
+
+          echo "fetching the HEAD of origin target branch."
+          git fetch --depth=1 origin ${{ github.event.pull_request.base.ref }}
+          bash scripts/lint_check.sh origin/${{ github.event.pull_request.base.ref }}

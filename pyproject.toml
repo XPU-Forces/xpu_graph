@@ -9,15 +9,10 @@ dynamic = ["version"]
 authors = [
   {name='jyjyjyjyjyjyjyj',email='a17621680413@163.com'},
   {name='mingfa-byted',email='wangmingfa@bytedance.com'},
-  {name='peaceorwell',email='zhouyusong@cambricon.com'},
   {name='yfchen-byted',email='chenyifan.42@bytedance.com'},
   {name='yhjyhj333',email='yhjyyy2024@163.com'},
-  {name='Yujiao Ji',email='jiyujiao@cambricon.com'},
-  {name='zhangjihang-BD',email='151138177+zhangjihang-BD@users.noreply.github.com'},
   {name='zhangjihang',email='zhangjihang@bytedance.com'},
   {name='zhouyusong',email='12744832+peacewell@user.noreply.gitee.com'},
-  {name='zhouyusong',email='zhouyusong@cambricon.com'},
-  {name='张纪航BD',email='zhangjihang@bytedance.com'},
   {name='煎茶捣药',email='liuyuan.leo@bytedance.com'},
 ]
 maintainers = [
@@ -27,7 +22,8 @@ description = "A graph compiler based on Torch Dynamo."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-  'torch>=2.5.0,<2.8.0'
+  'torch>=2.5.0a0,<2.8.0',
+  'dataclasses',
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

@@ -3,4 +3,4 @@ expecttest
 lintrunner
 pydot
 pytest
-torch>=2.5.0
+torch>=2.5.0a0

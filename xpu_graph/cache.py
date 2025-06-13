@@ -12,10 +12,10 @@ from torch._dynamo.device_interface import get_interface_for_device
 from torch._inductor.utils import BoxedBool
 from torch.utils._python_dispatch import _disable_current_modes
 
-torch_version = torch.__version__
-if torch_version.startswith("2.6"):
+torch_version = torch.__version__[:3]
+if torch_version >= "2.6":
     from torch._inductor.codecache import FxGraphCache, PyCodeCache, get_path
-    from torch._inductor.compile_fx import CompiledFxGraph
+    from torch._inductor.output_code import CompiledFxGraph
 else:
     from torch._inductor.codecache import (
         CompiledFxGraph,

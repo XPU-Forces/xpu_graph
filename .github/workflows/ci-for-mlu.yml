@@ -1,8 +1,9 @@
-name: Run test suite
+name: Run test case on mlu
 on:
   pull_request:
     branches:
       - master
+    types: [opened, synchronize, reopened]
     paths_ignore:
       - 'xpu_graph/backend/ascend.py'
       - 'xpu_graph/backend/npu.py'
@@ -12,14 +13,13 @@ on:
       - 'tests/npu'
       - 'tests/ops'
       - 'docker/*'
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
 defaults:
   run:
     shell: bash
 jobs:
   run-tests:
-    name: Run MLU tests
+    name: Run mlu tests
     runs-on: MLU
     steps:
       - uses: actions/checkout@v4
@@ -27,4 +27,4 @@ jobs:
         shell: bash
         run: |
           echo "Running MLU tests..."
-          python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu tests
+          docker run --rm --network=host --ipc=host --pid=host --privileged=true -v ${{ github.workspace }}:/opt/tiger/xpu_graph -u tiger -w /opt/tiger/xpu_graph hub.byted.org/ci/xpu_graph:721da01c6ed48281ab1d42d033cfb451 python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu tests
