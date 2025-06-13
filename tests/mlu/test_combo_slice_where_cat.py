@@ -1,14 +1,17 @@
-import pytest
 import random
+
+import pytest
 import torch
 import torch_mlu
+
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import assertTensorsEqual
+from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "mlu:0"
 data_type = torch.float16
 aten = torch.ops.aten
+
 
 def fn0(inputs, slice_, batch):
     zeros = torch.zeros([batch, 32], device=device, dtype=data_type)
@@ -23,6 +26,7 @@ def fn0(inputs, slice_, batch):
     where_3 = torch.where(inputs, zeros, slice_6)
     output = torch.cat([slice_1, where_0, where_1, where_2, where_3], dim=-1)
     return output, slice_1
+
 
 def fn1(inputs, slice_, batch):
     zeros = torch.zeros([batch, 4], device=device, dtype=data_type)
@@ -49,9 +53,25 @@ def fn1(inputs, slice_, batch):
     where_8 = torch.where(inputs, zeros, slice_10)
     where_9 = torch.where(inputs, zeros, slice_11)
     where_10 = torch.where(inputs, zeros, slice_12)
-    cat = torch.cat([slice_1, where_0, where_1, where_2, where_3, where_4, where_5, where_6, where_7, where_8, where_9, where_10], dim=-1)
-    stack = torch.stack([slice_1, where_0, where_1, where_2, where_3, where_4, where_5, where_6, where_7, where_8, where_9, where_10], dim=0)
-    return cat, stack, slice_1
+    stack = torch.stack(
+        [
+            slice_1,
+            where_0,
+            where_1,
+            where_2,
+            where_3,
+            where_4,
+            where_5,
+            where_6,
+            where_7,
+            where_8,
+            where_9,
+            where_10,
+        ],
+        dim=0,
+    )
+    return stack, slice_1
+
 
 def where_slice_cat_test(xpu_graph_backend, func):
     batch = 512
@@ -65,9 +85,10 @@ def where_slice_cat_test(xpu_graph_backend, func):
     for i in range(len(res)):
         assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
 
+
 class TestWhereSliceCat:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2, is_training=False)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -76,10 +97,13 @@ class TestWhereSliceCat:
             fn1,
         ],
     )
-    def test_where_cat_patterns(self, pattern_func):
-        where_slice_cat_test(self.xpu_graph_backend, pattern_func)
+    def test_where_cat_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            where_slice_cat_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.ComboSliceWhereCat changed graph" in caplog.text
+
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2, is_training=False)
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
     where_slice_cat_test(xpu_graph_backend, fn0)
     where_slice_cat_test(xpu_graph_backend, fn1)

@@ -1,19 +1,21 @@
 from typing import Optional
 
 import torch
-from torch import nn, fx
 import torch_mlu
+from torch import fx, nn
+
+from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
-from xpu_graph.config import OptLevel
-from ...utils.submodule_manager import register_new_submodule
+
 from ...utils.check_ops import (
     check_cat_op,
-    check_where_op,
-    check_zeros_op,
     check_slice_op,
     check_stack_op,
+    check_where_op,
+    check_zeros_op,
 )
+from ...utils.submodule_manager import register_new_submodule
 from .triton_kernel.fused_slice_where_cat import fuse_slice_where_cat
 
 
@@ -21,9 +23,7 @@ class FusedSliceWhereCatReplacement(nn.Module):
     def __init__(self, slice_params):
         super().__init__()
         device = torch.mlu.current_device()
-        self.slice_param_tensor = torch.tensor(
-            slice_params, dtype=torch.int32, device="mlu:" + str(device)
-        )
+        self.slice_param_tensor = torch.tensor(slice_params, dtype=torch.int32, device="mlu:" + str(device))
         self.slice_num = int(len(slice_params))
 
     def forward(
@@ -81,12 +81,7 @@ def find_matching_nodes(cat_node):
         if not check_slice_op(y_):
             break
 
-        if (
-            condition_ == condition
-            and x_ == x
-            and y_.args[0] == y.args[0]
-            and y_.args[1] == y.args[1] == 1
-        ):
+        if condition_ == condition and x_ == x and y_.args[0] == y.args[0] and y_.args[1] == y.args[1] == 1:
             matched_nodes.append(node)
             slice_params.append(y_.args[2])
         else:
@@ -154,6 +149,7 @@ class FusedSliceWhereCat(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return False
         for node in reversed(graph_module.graph.nodes):
             is_change_stack, stack_params = _is_stack_to_cat(node)
             is_match, param_tuple, cat_dim = _is_slice_where_cat(node)
