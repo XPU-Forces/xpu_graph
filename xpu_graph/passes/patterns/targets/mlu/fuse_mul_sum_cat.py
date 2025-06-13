@@ -1,19 +1,16 @@
 from typing import Optional
+
 import torch
-from torch import nn, fx
 import torch_mlu
+from torch import fx, nn
+from torch.fx.subgraph_rewriter import replace_pattern
+
 from xpu_graph.config import OptLevel
+from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
-from ...utils.check_ops import (
-    check_cat_op,
-    check_sum_op,
-    check_meta_2d,
-    check_mul_op,
-)
-from torch.fx.subgraph_rewriter import replace_pattern
-from xpu_graph.fx_utils import FxStage
 
+from ...utils.check_ops import check_cat_op, check_meta_2d, check_mul_op, check_sum_op
 from .triton_kernel.fused_mul_sum_cat import fused_mul_sum_cat_2inp
 
 
@@ -25,28 +22,29 @@ class FusedMulSumCatReplacement(nn.Module):
         s1, s2 = mul_list[0].shape[1:]
         if any(x.shape[1:] != (s1, s2) for x in mul_list[1:]):
             return torch.cat(
-                [
-                    torch.sum(mul_list[i] * mul_list[i + 1])
-                    for i in range(0, len(mul_list), 2)
-                ],
+                [torch.sum(mul_list[i] * mul_list[i + 1]) for i in range(0, len(mul_list), 2)],
                 dim=1,
             )
 
         if len(mul_list) == 4:
-            return fused_mul_sum_cat_2inp([x.contiguous() for x in mul_list])
+            mul0, mul1, mul2, mul3 = mul_list
+            mul0 = mul0.contiguous()
+            mul1 = mul1.contiguous()
+            mul2 = mul2.contiguous()
+            mul3 = mul3.contiguous()
+            return fused_mul_sum_cat_2inp(
+                mul0,
+                mul1,
+                mul2,
+                mul3,
+            )
 
         batch_size = max(mul_list[0].shape[0], mul_list[1].shape[0])
         new_mul_list = [
-            (
-                mul_list[i].expand(batch_size, s1, s2)
-                if mul_list[i].shape[0] == 1
-                else mul_list[i]
-            )
+            (mul_list[i].expand(batch_size, s1, s2) if mul_list[i].shape[0] == 1 else mul_list[i])
             for i in list(range(0, len(mul_list), 2)) + list(range(1, len(mul_list), 2))
         ]
-        tmp = torch.cat(new_mul_list, dim=0).view(
-            2, len(new_mul_list) // 2, batch_size, s1, s2
-        )
+        tmp = torch.cat(new_mul_list, dim=0).view(2, len(new_mul_list) // 2, batch_size, s1, s2)
         tmp = tmp[0] * tmp[1]  # [-1, batch, s1, s2]
         output = torch.sum(tmp, dim=2).permute(1, 0, 2).reshape(batch_size, -1)
         return output
@@ -56,9 +54,7 @@ def find_mul_sum_pattern(gm):
     # Dictionary to store mapping from source nodes to sum nodes
     sum_dict = {}
     candidates = [
-        node
-        for node in gm.graph.nodes
-        if node.op == "call_function" and node.target == torch.ops.aten.sum.dim_IntList
+        node for node in gm.graph.nodes if node.op == "call_function" and node.target == torch.ops.aten.sum.dim_IntList
     ]
     for node in candidates:
         ### Identify sum operation: input 3D, output 2D ###
@@ -104,9 +100,7 @@ class FusedMulSumCat(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
-        graph_module.add_submodule(
-            "mlu_triton_mul_sum_cat_replacement", FusedMulSumCatReplacement()
-        )
+        graph_module.add_submodule("mlu_triton_mul_sum_cat_replacement", FusedMulSumCatReplacement())
 
         for node in graph_module.graph.nodes:
             is_cat, cat_axis = check_cat_op(node)
