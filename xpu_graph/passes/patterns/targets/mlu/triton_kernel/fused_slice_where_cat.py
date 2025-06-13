@@ -1,9 +1,13 @@
 import math
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
+
 from . import libentry
+from .get_mlu_devinfo import get_device_properties
+
 
 @libentry.libentry()
 @triton.jit
@@ -69,9 +73,8 @@ def mlu_triton_slice_where_cat_kernel(
             )
             tl.store(output_block_ptr, slice_where, boundary_check=(0,))
 
-@torch.library.custom_op(
-    "torch_mlu_triton::fuse_slice_where_cat", mutates_args=(), device_types="mlu"
-)
+
+@torch.library.custom_op("torch_mlu_triton::fuse_slice_where_cat", mutates_args=(), device_types="mlu")
 def fuse_slice_where_cat(
     where_tensor: torch.Tensor,
     slice_tensor: torch.Tensor,
@@ -84,6 +87,7 @@ def fuse_slice_where_cat(
         dtype=slice_tensor.dtype,
         device=slice_tensor.device,
     )
+    props = get_device_properties()
     where_stride = where_tensor.stride(0)
     slice_stride = slice_tensor.stride(0)
     output_stride = output_tensor.stride(0)
@@ -107,10 +111,7 @@ def fuse_slice_where_cat(
     block_i = ((slice_num + mini_block - 1) // mini_block) * mini_block
     total_jobs = slice_num
 
-    processor_count = torch.mlu.get_device_properties(
-        torch.mlu.current_device()
-    ).multi_processor_count
-    grid = (processor_count, 1, 1)
+    grid = (props.total_cores, 1, 1)
     mlu_triton_slice_where_cat_kernel[grid](
         output_tensor,
         where_tensor,
@@ -129,6 +130,7 @@ def fuse_slice_where_cat(
         block_i,
     )
     return output_tensor
+
 
 @fuse_slice_where_cat.register_fake
 def fuse_slice_where_cat_fake(
