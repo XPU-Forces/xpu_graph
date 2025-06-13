@@ -172,8 +172,8 @@ def mlu_triton_mul_sum_cat_kernel(
             mul2,
             mul3,
             output,
-            mul_stride0,
-            mul_stride1,
+            mul_stride2,
+            mul_stride3,
             output_stride,
             input2_row,
             input3_row,
@@ -190,46 +190,44 @@ def mlu_triton_mul_sum_cat_kernel(
 
 
 @torch.library.custom_op("torch_mlu_triton::fused_mul_sum_cat", mutates_args=())
-def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
+def fused_mul_sum_cat_2inp(
+    mul0: torch.Tensor,
+    mul1: torch.Tensor,
+    mul2: torch.Tensor,
+    mul3: torch.Tensor,
+) -> torch.Tensor:
     props = get_device_properties()
-    mul1, mul2, mul3, mul4 = mul_list
-    input_row = max(mul1.shape[0], mul2.shape[0])
-    s0, s1, s2 = mul1.shape
-
-    block_size_c = s1 * s2
-    size_of_dtype = 2
-    if mul1.dtype == torch.float32:
-        size_of_dtype = 4
-
+    input_row = max(mul0.shape[0], mul1.shape[0])
+    _, s1, s2 = mul0.shape
     output_tensors = torch.empty(
         (input_row, s2 * 2),
         device=mul1.device,
         dtype=mul1.dtype,
     )
+    slice_len = s1 * s2
 
-    total_jobs = mul2.shape[0] if s0 == 1 else s0
     grid = (props.total_cores, 1, 1)
     mlu_triton_mul_sum_cat_kernel[grid](
-        mul1.view(mul1.shape[0], -1),
-        mul2.view(mul2.shape[0], -1),
-        mul3.view(mul3.shape[0], -1),
-        mul4.view(mul4.shape[0], -1),
+        mul0,
+        mul1,
+        mul2,
+        mul3,
         output_tensors,
-        mul1.stride(0),
-        mul2.stride(0),
-        mul3.stride(0),
-        mul4.stride(0),
-        output_tensors.stride(0),
-        total_jobs,
+        slice_len,
+        slice_len,
+        slice_len,
+        slice_len,
+        s2 * 2,
+        input_row,
+        mul0.shape[0],
         mul1.shape[0],
         mul2.shape[0],
         mul3.shape[0],
-        mul4.shape[0],
-        s1 * s2,  # slice_len,
+        slice_len,
+        1 if mul0.shape[0] > 1 else 0,
         1 if mul1.shape[0] > 1 else 0,
         1 if mul2.shape[0] > 1 else 0,
         1 if mul3.shape[0] > 1 else 0,
-        1 if mul4.shape[0] > 1 else 0,
         BLOCK_SIZE_C=s1 * s2,
         BLOCK_SIZE_S1=s1,
         BLOCK_SIZE_S2=s2,
@@ -239,11 +237,15 @@ def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
 
 
 @fused_mul_sum_cat_2inp.register_fake
-def fused_mul_sum_cat_2inp_fake(mul_list: List[torch.Tensor]) -> torch.Tensor:
-    mul1, mul2, _, _ = mul_list
-    input_row = max(mul1.shape[0], mul2.shape[0])
+def fused_mul_sum_cat_2inp_fake(
+    mul0: torch.Tensor,
+    mul1: torch.Tensor,
+    mul2: torch.Tensor,
+    mul3: torch.Tensor,
+) -> torch.Tensor:
+    input_row = max(mul0.shape[0], mul1.shape[0])
     output_tensors = torch.zeros(
-        (input_row, mul1.shape[2] * 2),
+        (input_row, mul0.shape[2] * 2),
         device=mul1.device,
         dtype=mul1.dtype,
     )
