@@ -1,8 +1,8 @@
-from typing import Optional, Dict, Any, Union
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-import warnings
+from typing import Any, Dict, Optional, Union
 
 
 class Target(Enum):
@@ -36,9 +36,7 @@ class XpuGraphConfig:
 
     is_training: bool  # Must fill, if is_training is True, XpuGraph will work as a training compiler, otherwise a inference compiler
     debug: bool = False
-    target: Target = field(
-        default_factory=lambda: Target.none
-    )  # Target hardware backend
+    target: Target = field(default_factory=lambda: Target.none)  # Target hardware backend
     opt_level: OptLevel = field(default_factory=lambda: OptLevel.level1)
     dump_graph: bool = False
     enable_cache: bool = True
@@ -50,6 +48,13 @@ class XpuGraphConfig:
         False
     )
     constant_folding: bool = True
+    folding_freezed_params: bool = (
+        # Only take effects whe freeze is True and constant_folding is True
+        # When freeze is True, params exists as attributes in GraphModule.
+        # If folding_freezed_params is True, XpuGraph will treat freezed parameters as constants and fold them
+        # If folding_freezed_params is False, XpuGraph will not fold freezed parameters and allow parameter hot-swapping
+        True
+    )
 
     # So far we only support configure "mode", because we mainly use "Inductor" as a vendor's compiler.
     # mode must be one of {"cudagraphs", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"},
@@ -73,9 +78,7 @@ class XpuGraphConfig:
         elif opt_level_env == "3":
             self.opt_level = OptLevel.level3
         else:
-            warnings.warn(
-                "Illegal XPUGRAPH_OPT_LEVEL value, XPUGRAPH_OPT_LEVEL will not take effect."
-            )
+            warnings.warn("Illegal XPUGRAPH_OPT_LEVEL value, XPUGRAPH_OPT_LEVEL will not take effect.")
 
         vendor_compiler_mode = os.getenv("VENDOR_COMPILER_MODE", "Null")
         if vendor_compiler_mode != "Null":
@@ -86,8 +89,6 @@ class XpuGraphConfig:
                 "max-autotune",
                 "max-autotune-no-cudagraphs",
             ):
-                warnings.warn(
-                    "Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect."
-                )
+                warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
             else:
                 self.vendor_compiler_config = {"mode": vendor_compiler_mode}

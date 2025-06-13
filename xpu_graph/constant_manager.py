@@ -32,14 +32,12 @@ def get_constant_manager(gm):
 
 
 # TODO: Till now, only support get_attr node.
-def is_constant(arg, freezing=False):
+def is_constant(arg, include_params=False):
     if (
         isinstance(arg, fx.Node)
         and arg.op == "get_attr"
         and (
-            freezing
-            or arg.target.startswith(_TRACED_CONST_PREFIX)
-            or arg.target.startswith(_FOLDED_CONST_PREFIX)
+            include_params or arg.target.startswith(_TRACED_CONST_PREFIX) or arg.target.startswith(_FOLDED_CONST_PREFIX)
         )
     ):
         return True

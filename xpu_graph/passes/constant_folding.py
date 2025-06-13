@@ -1,12 +1,11 @@
-from xpu_graph.passes.optimizer import Optimizer
-
 import torch
-import torch.utils._pytree as pytree
 import torch.fx as fx
+import torch.utils._pytree as pytree
 
 from xpu_graph.config import OptLevel
-from xpu_graph.utils import logger
 from xpu_graph.constant_manager import get_constant_manager, is_constant
+from xpu_graph.passes.optimizer import Optimizer
+from xpu_graph.utils import logger
 
 __all__ = ["ConstantFolding"]
 
@@ -18,13 +17,12 @@ def _no_folding(node: fx.Node):
 
 
 class ConstantFolding(Optimizer):
-
-    def __init__(self, freezing):
+    def __init__(self, folding_params=False):
         super().__init__()
-        self.freezing = freezing
+        self.folding_params = folding_params
 
     def _all_input_constant(self, node: fx.Node):
-        return all(is_constant(arg, self.freezing) for arg in node.args)
+        return all(is_constant(arg, self.folding_params) for arg in node.args)
 
     def process(self, gm: torch.fx.GraphModule):
         changed = False
@@ -33,10 +31,7 @@ class ConstantFolding(Optimizer):
 
         # For better readability, we insert get_attr node in the front of graph
         for get_attr_insert_point in gm.graph.nodes:
-            if (
-                get_attr_insert_point.op != "get_attr"
-                and get_attr_insert_point.op != "placeholder"
-            ):
+            if get_attr_insert_point.op != "get_attr" and get_attr_insert_point.op != "placeholder":
                 break
 
         for node in graph.nodes:
@@ -66,9 +61,7 @@ class ConstantFolding(Optimizer):
                 with disable_fake_mode():
                     constant_value = node.target(*new_args, **node.kwargs)
 
-                constant_name = get_constant_manager(gm).register_constant(
-                    constant_value, node.name
-                )
+                constant_name = get_constant_manager(gm).register_constant(constant_value, node.name)
                 with graph.inserting_before(get_attr_insert_point):
                     constant_node = graph.create_node("get_attr", constant_name)
                     node.replace_all_uses_with(constant_node)
