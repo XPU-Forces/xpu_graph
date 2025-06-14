@@ -1,18 +1,15 @@
+import operator
 from typing import Optional
 
-import operator
 import torch
-from torch import nn, fx
 import torch_mlu
+from torch import fx, nn
+
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
-from ...utils.check_ops import (
-    check_add_op,
-    check_norm_op,
-    check_getitem_op,
-    get_shape
-)
+
+from ...utils.check_ops import check_add_op, check_getitem_op, check_norm_op, get_shape
 
 
 class FusedNormReplacement(nn.Module):
@@ -144,9 +141,7 @@ def _is_add_rmsnorm(
     return _is_add_norm(node, "rms_norm")
 
 
-def node_replacement(
-    node: fx.Node, graph_module: fx.GraphModule, match_str: str, params
-):
+def node_replacement(node: fx.Node, graph_module: fx.GraphModule, match_str: str, params):
     if params[-1]:
         with graph_module.graph.inserting_before(node):
             new_node = graph_module.graph.call_module(
@@ -184,10 +179,9 @@ class FusedAddLayerNorm(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return False
 
-        graph_module.add_submodule(
-            "mlu_tmo_fused_norm_replacement", FusedNormReplacement()
-        )
+        graph_module.add_submodule("mlu_tmo_fused_norm_replacement", FusedNormReplacement())
 
         for node in reversed(graph_module.graph.nodes):
             is_match, params = _is_add_layernorm(node)
@@ -203,10 +197,8 @@ class FusedAddRMSNorm(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-
-        graph_module.add_submodule(
-            "mlu_tmo_fused_norm_replacement", FusedNormReplacement()
-        )
+        return False
+        graph_module.add_submodule("mlu_tmo_fused_norm_replacement", FusedNormReplacement())
 
         for node in reversed(graph_module.graph.nodes):
             is_match, params = _is_add_rmsnorm(node)
