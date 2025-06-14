@@ -2,6 +2,7 @@ import torch
 import torch_mlu
 import triton
 import triton.language as tl
+
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
@@ -54,9 +55,7 @@ def fused_slice_cat(
     # 4 is int32(indices)
     block_size = min(props.max_nram_size // (size_of_dtype + 4), elements)
     num_blocks = (elements + block_size - 1) // block_size
-    output_tensor = torch.empty(
-        (n_rows, elements), dtype=input_tensor.dtype, device=input_tensor.device
-    )
+    output_tensor = torch.empty((n_rows, elements), dtype=input_tensor.dtype, device=input_tensor.device)
     mlu_triton_slice_cat_kernel[(props.total_cores, num_blocks)](
         input_tensor,
         output_tensor,
@@ -71,4 +70,4 @@ def fused_slice_cat(
 
 @fused_slice_cat.register_fake
 def fused_slice_cat_fake(input_tensor, indices_tensor, n_rows, elements, input_stride):
-    return torch.empty(n_rows, elements, device=input_tensor.device)
+    return torch.empty(n_rows, elements, device=input_tensor.device, dtype=input_tensor.dtype)
