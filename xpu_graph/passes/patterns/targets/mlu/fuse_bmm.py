@@ -1,17 +1,14 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from torch import nn, fx
 import torch_mlu
-from xpu_graph.utils import logger
+from torch import fx, nn
+
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
-from ...utils.check_ops import (
-    check_bmm_op,
-    check_add_op,
-    check_act_op,
-    check_view,
-)
+from xpu_graph.utils import logger
+
+from ...utils.check_ops import check_act_op, check_add_op, check_bmm_op, check_view
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
 NodeType = fx.Node
@@ -95,8 +92,7 @@ class BMMParam:
     def set_shape_param(self, shape_param):
         n = self.weight_shape[1] if self.trans_b == False else self.weight_shape[0]
         if len(shape_param) == 3:
-            if self.input_shape[0] == shape_param[0] and \
-               n == shape_param[2]:
+            if self.input_shape[0] == shape_param[0] and n == shape_param[2]:
                 self.shape_param = None
                 return True
         self.shape_param = shape_param
@@ -108,6 +104,7 @@ class FusedBMMReplacement(nn.Module):
         self, inputs, input_shape, weight, weight_shape, trans_b, residual, beta, bias, dtype, act, shape_param
     ):
         import torch_mlu_ops
+
         if not inputs.is_contiguous():
             inputs = inputs.contiguous()
         if not weight.is_contiguous():
@@ -171,24 +168,18 @@ def replace_node(graph_module, node, bmm_param, func_name):
 
 
 def match_bmm(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_replacement", FusedBMMReplacement()
-    )
+    graph_module.add_submodule("mlu_tmo_fused_bmm_replacement", FusedBMMReplacement())
     changed = False
     for node in reversed(graph_module.graph.nodes):
         is_match, bmm_param = _is_bmm(node)
         if is_match:
-            new_node = replace_node(
-                    graph_module, node, bmm_param, "mlu_tmo_fused_bmm_replacement"
-            )
+            new_node = replace_node(graph_module, node, bmm_param, "mlu_tmo_fused_bmm_replacement")
             changed = True
     return changed
 
 
 def match_bmm_add(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_add_replacement", FusedBMMReplacement()
-    )
+    graph_module.add_submodule("mlu_tmo_fused_bmm_add_replacement", FusedBMMReplacement())
     changed = False
     for node in reversed(graph_module.graph.nodes):
         if not check_add_op(node):
@@ -208,23 +199,18 @@ def match_bmm_add(graph_module):
         bias = node.args[1]
         if not bmm_param.set_bias(bias):
             continue
-        new_node = replace_node(
-            graph_module, node, bmm_param, "mlu_tmo_fused_bmm_add_replacement"
-        )
+        new_node = replace_node(graph_module, node, bmm_param, "mlu_tmo_fused_bmm_add_replacement")
         assert new_node.args[0] == bmm_param.input
         graph_module.graph.erase_node(bmm_node)
         changed = True
     return changed
 
+
 def match_bmm_act(graph_module):
     # bmm+act
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_act_replacement", FusedBMMReplacement()
-    )
+    graph_module.add_submodule("mlu_tmo_fused_bmm_act_replacement", FusedBMMReplacement())
     # bmm+bias+act
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_add_act_replacement", FusedBMMReplacement()
-    )
+    graph_module.add_submodule("mlu_tmo_fused_bmm_add_act_replacement", FusedBMMReplacement())
     changed = False
     for node in reversed(graph_module.graph.nodes):
         is_act, act_str = check_act_op(node)
@@ -244,17 +230,14 @@ def match_bmm_act(graph_module):
         if not bmm_param.set_act(act_str):
             continue
         if bmm_node.target == "mlu_tmo_fused_bmm_replacement":
-            new_node = replace_node(
-                graph_module, node, bmm_param, "mlu_tmo_fused_bmm_act_replacement"
-            )
+            new_node = replace_node(graph_module, node, bmm_param, "mlu_tmo_fused_bmm_act_replacement")
         elif bmm_node.target == "mlu_tmo_fused_bmm_add_replacement":
-            new_node = replace_node(
-                graph_module, node, bmm_param, "mlu_tmo_fused_bmm_add_act_replacement"
-            )
+            new_node = replace_node(graph_module, node, bmm_param, "mlu_tmo_fused_bmm_add_act_replacement")
         assert new_node.args[0] == bmm_param.input
         graph_module.graph.erase_node(bmm_node)
         changed = True
     return changed
+
 
 def match_bmm_view(graph_module, target_str):
     changed = False
@@ -278,6 +261,7 @@ def match_bmm_view(graph_module, target_str):
         changed = True
     return changed
 
+
 class FusedBMM(Pattern):
     _opt_level = OptLevel.level2
 
@@ -285,18 +269,12 @@ class FusedBMM(Pattern):
         is_modified = False
         is_modified |= match_bmm(graph_module)
         is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         is_modified |= match_bmm_add(graph_module)
         is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_add_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         is_modified |= match_bmm_act(graph_module)
         is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_act_replacement")
         is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_add_act_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         return is_modified
