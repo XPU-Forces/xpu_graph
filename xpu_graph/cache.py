@@ -117,6 +117,8 @@ class SerializeWrapper(torch.nn.Module):
             (compiled_fn,) = arg_tuple
             # Torch Inductor config is lazy initialized. invoke it manually
             for device in compiled_fn.device_types:
+                if device == "cpu":
+                    continue
                 logger.debug(f"Check interface for device: {device}")
                 get_interface_for_device(device)
             path = get_path(compiled_fn.cache_key, "py")[2]

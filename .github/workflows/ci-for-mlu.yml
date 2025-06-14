@@ -27,4 +27,4 @@ jobs:
         shell: bash
         run: |
           echo "Running MLU tests..."
-          docker run --rm --network=host --ipc=host --pid=host --privileged=true -v ${{ github.workspace }}:/opt/tiger/xpu_graph -u tiger -w /opt/tiger/xpu_graph hub.byted.org/ci/xpu_graph:721da01c6ed48281ab1d42d033cfb451 python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu tests
+          docker run --rm --network=host --ipc=host --pid=host --privileged=true -v ${{ github.workspace }}:/opt/tiger/xpu_graph -u tiger -w /opt/tiger/xpu_graph hub.byted.org/ci/xpu_graph:57aa59f47babcd4d2890799abc831d90 python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu tests
