@@ -8,7 +8,7 @@ from xpu_graph.test_utils import is_similar
 
 aten = torch.ops.aten
 device = "mlu:0"
-dtype = torch.bfloat16
+dtype = torch.float16
 
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
