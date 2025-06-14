@@ -1,14 +1,20 @@
-import torch
-from torch import nn, fx
-from xpu_graph.passes.patterns.pattern import Pattern
+import operator
 from typing import Callable
+
+import torch
+from torch import fx, nn
+
 from xpu_graph import OptLevel
+from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
+
 from ..utils.check_ops import (
     check_cat_op,
+    check_getitem_op,
+    check_meta_2d,
     check_slice_op,
     check_stack_op,
-    check_meta_2d,
     check_sum_op,
+    get_actual_node,
 )
 from ..utils.match_sub_list import match_sub_list
 
@@ -19,15 +25,12 @@ class MergeCatReplacement(nn.Module):
     def forward(self, input_tensor_list, cat_axis=0):
         return torch.cat(
             [
-                (
-                    input_tensor
-                    if len(input_tensor.shape) == 3
-                    else input_tensor.unsqueeze(0)
-                )
+                (input_tensor if len(input_tensor.shape) == 3 else input_tensor.unsqueeze(0))
                 for input_tensor in input_tensor_list
             ],
             axis=0,
         )
+
 
 def validate_slice_operation(n_list):
     if len(n_list) < 2:
@@ -50,6 +53,7 @@ def validate_slice_operation(n_list):
         return False, None, None
     return True, slice_input[0], slice_param
 
+
 def check_sum_enable(gm, node):
     if len(node.users) != 1:
         return False
@@ -60,10 +64,11 @@ def check_sum_enable(gm, node):
     if dim != [0]:
         return False
     with gm.graph.inserting_before(sum_node):
-        new_sum_node = gm.graph.call_function(torch.sum, args=(sum_node.args[0], [1]))
+        new_sum_node = gm.graph.call_function(torch.ops.aten.sum.dim_IntList, args=(sum_node.args[0], [1]))
         sum_node.replace_all_uses_with(new_sum_node)
         gm.graph.erase_node(sum_node)
     return True
+
 
 def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
     changed = False
@@ -86,11 +91,9 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
             )
 
         with graph_module.graph.inserting_before(node):
-            batch_node = graph_module.graph.call_method(
-                "size", args=(slice_node, 0)
-            )
+            batch_node = graph_module.graph.call_method("size", args=(slice_node, 0))
             reshape_node = graph_module.graph.call_function(
-                torch.ops.aten.reshape.default,
+                torch.ops.aten.view.default,
                 args=(slice_node, (batch_node, len(slice_param), -1)),
             )
             # skip trans is the next node is sum, and change sum dim
@@ -114,9 +117,7 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
                 )
         else:
             with graph_module.graph.inserting_before(node):
-                cat_node = graph_module.graph.call_module(
-                    "reshape_cat_module", args=(new_cat_input, -1)
-                )
+                cat_node = graph_module.graph.call_module("reshape_cat_module", args=(new_cat_input, -1))
         node.replace_all_uses_with(cat_node)
         slice_nodes = node.args[0]
         for slice_node in slice_nodes:
@@ -127,12 +128,14 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
 
     return changed
 
+
 class FusedSliceStackSum(Pattern):
     _opt_level = OptLevel.level2
-    '''
+    """
     slice + stack -> fuse_slice_cat + reshape + trans
     trans + sum -> sum
-    '''
+    """
+
     def __init__(self, target_mod: torch.nn.Module, *super_args):
         super().__init__(*super_args)
         self.target_mod = target_mod

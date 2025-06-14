@@ -1,15 +1,15 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from torch import nn, fx
 import torch_mlu
-from xpu_graph.utils import logger
+from torch import fx, nn
+
 from xpu_graph.config import OptLevel
-from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.fx_utils import FxStage
-from ...utils.check_ops import (
-    get_shape,
-)
+from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.utils import logger
+
+from ...utils.check_ops import get_shape
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
 NodeType = fx.Node
@@ -31,8 +31,7 @@ class FusedGatherToCopy(Pattern):
         candidates = [
             node
             for node in graph_module.graph.nodes
-            if node.op == "call_function"
-            and node.target == torch.ops.aten.gather.default
+            if node.op == "call_function" and node.target == torch.ops.aten.gather.default
         ]
         for gather_node in candidates:
             repeat_node = gather_node.args[2]
@@ -55,6 +54,4 @@ class FusedGatherToCopy(Pattern):
             repeat_node.replace_all_uses_with(new_node)
             graph_module.graph.erase_node(repeat_node)
             is_modified = True
-            graph_module.graph.lint()
-            graph_module.recompile()
         return is_modified

@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Tuple, Union
 
 import torch
@@ -143,6 +144,10 @@ class MMParam:
 
 
 class FusedMatMulReplacement(nn.Module):
+    def __init__(self, fast_act):
+        super().__init__()
+        self.fast_act = fast_act
+
     def forward(self, inputs, input_shape, weight, weight_shape, trans_b, bias, act):
         import torch_mlu_ops
 
@@ -172,7 +177,7 @@ class FusedMatMulReplacement(nn.Module):
                     tmp_act,
                     1.0,
                     0.0,
-                    False,
+                    self.fast_act,
                     False,
                     trans_b=trans_b,
                 )
@@ -189,7 +194,7 @@ class FusedMatMulReplacement(nn.Module):
             tmp_act,
             1.0,
             0.0 if bias is None else 1.0,
-            False,
+            self.fast_act,
             False,
             trans_b=trans_b,
         )
@@ -374,7 +379,8 @@ class FusedMatMul(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        graph_module.add_submodule("mlu_tmo_fused_matmul_replacement", FusedMatMulReplacement())
+        fast_act = True if self._opt_level == OptLevel.level3 else False
+        graph_module.add_submodule("mlu_tmo_fused_matmul_replacement", FusedMatMulReplacement(fast_act=fast_act))
         is_modified |= match_mm(graph_module)
 
         return is_modified
@@ -385,7 +391,8 @@ class FusedMatMulAdd(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        graph_module.add_submodule("mlu_tmo_fused_matmul_add_replacement", FusedMatMulReplacement())
+        fast_act = True if self._opt_level == OptLevel.level3 else False
+        graph_module.add_submodule("mlu_tmo_fused_matmul_add_replacement", FusedMatMulReplacement(fast_act=fast_act))
         is_modified |= match_mm_add1(graph_module)
         is_modified |= match_mm_add2(graph_module)
 
@@ -398,9 +405,12 @@ class FusedMatMulAct(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         # mm+act
         is_modified = False
-        graph_module.add_submodule("mlu_tmo_fused_matmul_act_replacement", FusedMatMulReplacement())
+        fast_act = True if self._opt_level == OptLevel.level3 else False
+        graph_module.add_submodule("mlu_tmo_fused_matmul_act_replacement", FusedMatMulReplacement(fast_act=fast_act))
         # mm+bias+act
-        graph_module.add_submodule("mlu_tmo_fused_matmul_add_act_replacement", FusedMatMulReplacement())
+        graph_module.add_submodule(
+            "mlu_tmo_fused_matmul_add_act_replacement", FusedMatMulReplacement(fast_act=fast_act)
+        )
         is_modified |= match_mm_act(graph_module)
 
         return is_modified
