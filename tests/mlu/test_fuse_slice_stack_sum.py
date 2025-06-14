@@ -210,7 +210,7 @@ def fn3(arg41_1):
 
 def stack_test(xpu_graph_backend, func):
     for batch in (10, 512, 31):
-        a = torch.randn(batch, 43106).to(device=device)
+        a = torch.rand(batch, 43106).to(device=device)
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res = compiled(a)
         res1 = func(a)
