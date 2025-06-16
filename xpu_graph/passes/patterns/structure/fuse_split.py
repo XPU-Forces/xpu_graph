@@ -73,7 +73,4 @@ class FusedSplit(Pattern):
             gm.graph.erase_node(node)
             changed = True
 
-        if changed:
-            gm.graph.lint()
-            gm.recompile()
         return changed

@@ -132,9 +132,10 @@ class TestCombineMatMul:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=False)
-    # combine_matmul_test(xpu_graph_backend, fn0)
-    # combine_matmul_test(xpu_graph_backend, fn1)
-    # combine_matmul_test(xpu_graph_backend, fn2)
-    # combine_matmul_test(xpu_graph_backend, fn4)
-    # combine_matmul_test(xpu_graph_backend, fn4)
+    combine_matmul_test(xpu_graph_backend, fn0)
+    combine_matmul_test(xpu_graph_backend, fn1)
+    combine_matmul_test(xpu_graph_backend, fn2)
+    combine_matmul_test(xpu_graph_backend, fn3)
+    combine_matmul_test(xpu_graph_backend, fn4)
+    combine_matmul_test(xpu_graph_backend, fn5)
     combine_matmul_test(xpu_graph_backend, fn6)

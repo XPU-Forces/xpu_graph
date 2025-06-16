@@ -41,17 +41,22 @@ class FusedCombineBmm(nn.Module):
         output = None
         if len(input_list[0].shape) == 3:
             output = self.forward_bmm(input_list, weight_list, bias_list, act)
+            if bias_list[0] is None:
+                bias_batch = None
+            else:
+                bias_list = [bias.unsqueeze(0) if len(bias.shape) == 1 else bias for bias in bias_list]
+                bias_batch = torch.stack(bias_list, dim=0)  # Stack all biases along a new dimension
+            # Add bias batch if available
+            if bias_batch is not None:
+                output = output + bias_batch
         else:
-            output = self.forward_mm(input_list, weight_list, bias_list, act)
-
-        if bias_list[0] is None:
-            bias_batch = None
-        else:
-            bias_list = [bias.unsqueeze(0) if len(bias.shape) == 1 else bias for bias in bias_list]
-            bias_batch = torch.stack(bias_list, dim=0)  # Stack all biases along a new dimension
-        # Add bias batch if available
-        if bias_batch is not None:
-            output = output + bias_batch
+            if bias_list[0] is None:
+                output = self.forward_mm(input_list, weight_list, [], [], [], act)
+            elif len(bias_list[0].shape) == 1:
+                output = self.forward_mm(input_list, weight_list, [], bias_list, [], act)
+            else:
+                beta = [1.0] * len(input_list)
+                output = self.forward_mm(input_list, weight_list, bias_list, [], beta, act)
 
         # Apply activation function if specified
         if act == "relu":
@@ -73,14 +78,14 @@ class FusedCombineBmm(nn.Module):
         output = torch.bmm(input_batch.view(-1, M, K), weight_batch.view(-1, K, N)).view(T, B, M, N)
         return output
 
-    def forward_mm(self, input_list, weight_list, bias_list, act: str):
+    def forward_mm(self, input_list, weight_list, c_list, bias_list, beta, act: str):
         output_list = torch.ops.torch_mlu.grouped_gemm(
             input_list,
             weight_list,
-            c=[],
-            bias=[],
+            c=c_list,
+            bias=bias_list,
             alpha=[],
-            beta=[],
+            beta=beta,
             trans_a=False,
             trans_b=False,
         )
@@ -180,7 +185,5 @@ class FusedCombineMatMul(Pattern):
             if len(candidates) < COMBINE_LEN:
                 continue
             changed = changed | combine_matmul(graph_module, candidates)
-            graph_module.graph.lint()
-            graph_module.recompile()
 
         return changed
