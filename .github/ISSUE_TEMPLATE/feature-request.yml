@@ -1,6 +1,6 @@
-name: Report a bug
-description: Report a bug in XPU_GRAPH
-labels: [ "bug" ]
+name: Request a feature
+description: Request a feature in XPU_GRAPH
+labels: [ "enhancement" ]
 
 body:
 - type: markdown
@@ -15,27 +15,37 @@ body:
         - If you can, try to diagnose and/or fix the issue yourself. We welcome high quality contributions.
 - type: textarea
   attributes:
-    label: Describe the bug🐛
+    label: Describe the feature🚀
     description: |
-      Please provide a clear and concise description of what the bug is.
-
-      If relevant, add a [minimal complete example](https://stackoverflow.com/help/minimal-reproducible-example) that reproduces the bug. It is very important for the snippet to be as simple as possible, so please take time to trim down any irrelevant code to help us debug efficiently. We are going to copy-paste your code and we expect to get the same result as you did, so include both the kernel and launching code as well as any relevant imports.
+      Please provide a clear and concise description of the feature proposal and outline the motivation for the proposal. Is your feature request related to a specific problem? e.g., *"I'm working on X and would like Y to be possible"*. If this is related to another GitHub issue, please link here too.
 
       If the code is too long (hopefully, it isn't), feel free to put it in a public gist and link it in the issue: https://gist.github.com.
 
-      Please also paste or describe the results you observe instead of the expected results. If you observe an error, please paste the error message including the **full** traceback of the exception. It may be relevant to wrap error messages in ```` ```triple quotes blocks``` ````.
     placeholder: |
-      A clear and concise description of what the bug is.
+      Please a clear and concise description of the feature proposal...
 
       ```python
-      # Sample code to reproduce the problem
+      # Sample code to use the feature. (Optional)
       ```
 
       ```
-      The error message you got, with the full traceback.
+      The feature should work as follows. (Optional)
       ```
   validations:
     required: true
+- type: textarea
+  attributes:
+    label: References
+    description: |
+      Background or any other related issues or contents.
+
+    placeholder: |
+      Some Background or any other related issues or contents.
+      [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
+      [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
+      [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
+    validations:
+      required: true
 - type: textarea
   attributes:
     label: Environment details
