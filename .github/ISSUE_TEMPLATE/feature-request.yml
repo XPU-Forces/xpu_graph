@@ -44,8 +44,8 @@ body:
       [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
       [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
       [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
-    validations:
-      required: true
+  validations:
+    required: true
 - type: textarea
   attributes:
     label: Environment details
