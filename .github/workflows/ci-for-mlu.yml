@@ -4,15 +4,15 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    paths_ignore:
-    - /**/npu/**
-    - /**/ascend/**
-    - /**/*npu*
-    - /**/*ascend*
-    - /**/docs
-    - /**/ops
-    - /**/docker/**
-    - /**/*docker*
+    # paths_ignore:
+    # - /**/npu/**
+    # - /**/ascend/**
+    # - /**/*npu*
+    # - /**/*ascend*
+    # - /**/docs
+    # - /**/ops
+    # - /**/docker/**
+    # - /**/*docker*
   push:
     branches:
     - master
