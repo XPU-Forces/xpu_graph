@@ -5,16 +5,14 @@ on:
     - master
     types: [ opened, synchronize, reopened ]
     paths_ignore:
-    - 'xpu_graph/backend/ascend.py'
-    - 'xpu_graph/backend/npu.py'
-    - 'xpu_graph/passes/patterns/targets/ascend/'
-    - 'xpu_graph/passes/patterns/targets/npu/'
-    - 'xpu_graph/docs'
-    - 'xpu_graph/.github/workflows/ci-for-npu.yml'
-    - 'tests/ascend'
-    - 'tests/npu'
-    - 'tests/ops'
-    - 'docker/*'
+    - /**/npu/**
+    - /**/ascend/**
+    - /**/*npu*
+    - /**/*ascend*
+    - /**/docs
+    - /**/ops
+    - /**/docker/**
+    - /**/*docker*
   push:
     branches:
     - master
