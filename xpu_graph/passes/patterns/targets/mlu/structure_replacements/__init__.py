@@ -2,6 +2,8 @@ import torch
 import torch.fx as fx
 import torch_mlu
 
+from ..triton_kernel.fused_serial_mm_2dot import fuse_serial_mm_2dot
+from ..triton_kernel.fused_serial_mm_3dot import fuse_serial_mm_3dot
 from ..triton_kernel.fused_slice import fused_slice_low
 from ..triton_kernel.fused_slice_cat import fused_slice_cat
 from ..triton_kernel.fused_slice_v2 import fused_slice_low_v2
@@ -157,6 +159,214 @@ class ComboSumModule(torch.nn.Module):
         return outputs
 
 
+class FastDenseLayerReplacement(torch.nn.Module):
+    def __init__(self, fast_act):
+        super().__init__()
+        self.fast_act = fast_act
+
+    def forward(self, inputs, weight, weight_trans, bias, act):
+        import torch_mlu_ops
+
+        # TODO(jyj): waiting for tmo version update
+        tmp_act = act
+        if act == "sigmoid":
+            tmp_act = "none"
+
+        # input last dim must be contiguous.
+        if inputs.stride()[-1] != 1:
+            inputs = inputs.contiguous()
+
+        if bias != None:
+            if isinstance(bias, int):
+                dim = weight.shape[1] if weight_trans == False else weight.shape[0]
+                bias = torch.tensor([bias] * dim, device=inputs.device, dtype=inputs.dtype)
+            bias_shape = bias.shape
+            if (len(bias_shape) == 2) & (bias_shape[0] == 1):
+                bias = bias.view(-1)
+                bias_shape = bias.shape
+            if len(bias_shape) == 1:
+                output = torch_mlu_ops.matmul(
+                    inputs,
+                    weight,
+                    bias,
+                    None,
+                    tmp_act,
+                    1.0,
+                    0.0,
+                    self.fast_act,
+                    False,
+                    trans_b=weight_trans,
+                )
+                if act == "sigmoid":
+                    return torch.sigmoid(output)
+                return output
+
+        # bias 2d or None
+        output = torch_mlu_ops.matmul(
+            inputs,
+            weight,
+            None,
+            bias,
+            tmp_act,
+            1.0,
+            0.0 if bias is None else 1.0,
+            self.fast_act,
+            False,
+            trans_b=weight_trans,
+        )
+        if act == "sigmoid":
+            return torch.sigmoid(output)
+        return output
+
+
+class FusedDenseTower2Replacement(torch.nn.Module):
+    def forward(
+        self,
+        tinyffn_input,
+        up_fc_weight,
+        up_fc_bias,
+        down_proj_weight,
+        down_proj_bias,
+        act_mode_up,
+        act_mode_down,
+        is_transb_up,
+        is_transb_down,
+        is_up_bias,
+        is_down_bias,
+        is_up_act,
+        is_down_act,
+    ):
+        if not tinyffn_input.is_contiguous():
+            tinyffn_input = tinyffn_input.contiguous()
+        if not up_fc_weight.is_contiguous():
+            up_fc_weight = up_fc_weight.contiguous()
+        if not down_proj_weight.is_contiguous():
+            down_proj_weight = down_proj_weight.contiguous()
+        output = fuse_serial_mm_2dot(
+            tinyffn_input,
+            up_fc_weight,
+            up_fc_bias,
+            down_proj_weight,
+            down_proj_bias,
+            is_up_bias,
+            is_down_bias,
+            is_up_act,
+            is_down_act,
+        )
+        return output
+
+
+def can_fuse_dense_tower2(
+    tinyffn_input,
+    up_fc_weight,
+    up_fc_bias,
+    down_proj_weight,
+    down_proj_bias,
+    act_mode_up,
+    act_mode_down,
+    is_transb_up,
+    is_transb_down,
+    is_up_bias,
+    is_down_bias,
+    is_up_act,
+    is_down_act,
+):
+    K1, N1 = up_fc_weight.shape
+    N2, O2 = down_proj_weight.shape
+
+    if N1 != N2:
+        return False, []
+
+    size_of_dtype = 2
+    input_dtype = tinyffn_input.dtype
+    if input_dtype == torch.float32:
+        size_of_dtype = 4
+    # Note: all weights should accommodate the wram size (512KB)
+    return (K1 * N1 + N2 * O2 + N1 + O2) <= (512 / size_of_dtype * 1024)
+
+
+class FusedDenseTower3Replacement(torch.nn.Module):
+    def forward(
+        self,
+        first_input,
+        first_weight,
+        first_bias,
+        up_fc_weight,
+        up_fc_bias,
+        down_proj_weight,
+        down_proj_bias,
+        act_mode_first,
+        act_mode_up,
+        act_mode_down,
+        is_transb_first,
+        is_transb_up,
+        is_transb_down,
+        is_first_bias,
+        is_up_bias,
+        is_down_bias,
+        is_first_act,
+        is_up_act,
+        is_down_act,
+    ):
+        if not first_input.is_contiguous():
+            first_input = first_input.contiguous()
+        if not first_weight.is_contiguous():
+            first_weight = first_weight.contiguous()
+        if not up_fc_weight.is_contiguous():
+            up_fc_weight = up_fc_weight.contiguous()
+        if not down_proj_weight.is_contiguous():
+            down_proj_weight = down_proj_weight.contiguous()
+        output = fuse_serial_mm_3dot(
+            first_input,
+            first_weight,
+            first_bias,
+            up_fc_weight,
+            up_fc_bias,
+            down_proj_weight,
+            down_proj_bias,
+            is_first_bias,
+            is_up_bias,
+            is_down_bias,
+            is_first_act,
+            is_up_act,
+            is_down_act,
+        )
+        return output
+
+
+def can_fuse_dense_tower3(
+    first_input,
+    first_weight,
+    first_bias,
+    up_fc_weight,
+    up_fc_bias,
+    down_proj_weight,
+    down_proj_bias,
+    act_mode_first,
+    act_mode_up,
+    act_mode_down,
+    is_transb_first,
+    is_transb_up,
+    is_transb_down,
+    is_first_bias,
+    is_up_bias,
+    is_down_bias,
+    is_first_act,
+    is_up_act,
+    is_down_act,
+):
+    K1, N1 = first_weight.shape
+    N1, N2 = up_fc_weight.shape
+    N2, N3 = down_proj_weight.shape
+
+    size_of_dtype = 2
+    input_dtype = first_input.dtype
+    if input_dtype == torch.float32:
+        size_of_dtype = 4
+    # Note: all weights should accommodate the wram size (512KB)
+    return (K1 * N1 + N1 * N2 + N2 * N3 + N1 + N2 + N3) <= (512 / size_of_dtype * 1024)
+
+
 def get_structure_replacements(config):
     return {
         "CustomRMSNorm": RMSNormModule,
@@ -166,4 +376,7 @@ def get_structure_replacements(config):
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
+        "FastDenseLayer": FastDenseLayerReplacement,
+        "FusedDenseTower2": (FusedDenseTower2Replacement, can_fuse_dense_tower2),
+        "FusedDenseTower3": (FusedDenseTower3Replacement, can_fuse_dense_tower3),
     }
