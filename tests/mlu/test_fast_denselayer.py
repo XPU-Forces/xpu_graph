@@ -181,11 +181,13 @@ class TestMatMul:
             assert "Pattern.FusedMatMulAdd changed graph" in caplog.text
         else:
             assert "Pattern.FusedMatMulAct changed graph" in caplog.text
+        assert "Pattern.FastDenseLayer changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
     matmul_test(xpu_graph_backend, fn1)
+    matmul_test(xpu_graph_backend, fn6)
     matmul_test(xpu_graph_backend, fn9)
     matmul_test(xpu_graph_backend, fn20)
     matmul_test(xpu_graph_backend, fn17)
