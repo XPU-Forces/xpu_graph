@@ -48,7 +48,7 @@ jobs:
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         pip install -e '.[dev]'
         echo "Running npu tests..."
-        python3 -m pytest --ignore=tests/mlu --ignore=tests/xpu_ops --ignore=tests/common/test_inference.py --cov=xpu_graph tests
+        python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu tests/ascend
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
