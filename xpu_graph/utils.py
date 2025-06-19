@@ -1,15 +1,25 @@
+import difflib
+import functools
 import logging
+import os
 import sys
 import time
-import functools
-import os
-import difflib
 
 import torch
 
 
 class _LoggerWrapper:
     def __init__(self, logger):
+        if len(logger.handlers) == 0:
+            # Skip if handlers already exist
+            fmt = logging.Formatter(
+                fmt="%(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+            handler = logging.StreamHandler(stream=sys.stdout)
+            handler.setFormatter(fmt)
+            logger.addHandler(handler)
+            logger.propagate = False
         self._logger = logger
 
     def __getattr__(self, name):
@@ -26,23 +36,10 @@ logger = _LoggerWrapper(logging.getLogger("xpu_graph"))
 
 
 def setup_logger(loglevel):
-    if len(logger.handlers) == 0:
-        # Skip if handlers already exist
-        fmt = logging.Formatter(
-            fmt="%(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler = logging.StreamHandler(stream=sys.stdout)
-        handler.setFormatter(fmt)
-        logger.addHandler(handler)
-        logger.propagate = False
-
     logger.setLevel(loglevel)
 
 
-_debug_entries = [
-    "xpu_graph." + name for name in os.getenv("XPUGRAPH_LOGS", "").split(",")
-]
+_debug_entries = ["xpu_graph." + name for name in os.getenv("XPUGRAPH_LOGS", "").split(",")]
 
 
 class local_logger:
@@ -58,11 +55,10 @@ class local_logger:
         self.orig_logger = logger._logger
         self.logger.setLevel(self.level)
         logger._logger = self.logger
+        return logger
 
     def __exit__(self, exc_type, exc_value, traceback):
         logger._logger = self.orig_logger
-        self.logger = None
-        self.orig_logger = None
 
 
 def xpu_timer(func):
@@ -113,9 +109,7 @@ class NodesStatistics:
                 else:
                     node_map[callee] = 1
 
-        node_map = dict(
-            sorted(node_map.items(), key=lambda item: item[1], reverse=True)
-        )
+        node_map = dict(sorted(node_map.items(), key=lambda item: item[1], reverse=True))
         for node_name, cnt in node_map.items():
             self.statistics[name][node_name] = cnt
 
@@ -137,9 +131,7 @@ class NodesStatistics:
 
             prev_cnt = None
             for i, nodes_statistics in enumerate(self.statistics.values()):
-                node_cnt = (
-                    nodes_statistics[node_name] if node_name in nodes_statistics else 0
-                )
+                node_cnt = nodes_statistics[node_name] if node_name in nodes_statistics else 0
                 cnt_str = f"{node_cnt}"
                 if i >= 1:
                     gap = node_cnt - prev_cnt
@@ -148,6 +140,7 @@ class NodesStatistics:
                 prev_cnt = node_cnt
 
         return "\n" + "\n".join(statistics_str)
+
 
 class GitLikeDiffer:
     differ = difflib.Differ()
@@ -173,8 +166,8 @@ class GitLikeDiffer:
             else:
                 # TODO(liuyuan): Is this necessary? Maybe we should ignore it. Maybe.
                 result.append(line)
-        return '\n'.join(result) if is_diff else "\033[32mNo difference found!\033[0m"
-    
+        return "\n".join(result) if is_diff else "\033[32mNo difference found!\033[0m"
+
     def __init__(self, lhs, rhs):
         self.lhs = lhs
         self.rhs = rhs

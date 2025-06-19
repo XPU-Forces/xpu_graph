@@ -17,14 +17,15 @@ class PassManager:
         Optimizer._debug = self._config.debug
         Optimizer._dump_graph = self._config.dump_graph
 
-        from .patterns.pattern_manager import PatternManager
-
-        self._pattern_manager = PatternManager(self._config)
-
         from .dce import Dce
+        from .patterns.pattern_manager import PatternManager
 
         if Dce._opt_level <= self._config.opt_level:
             self._passes.append(Dce())
+
+        self._pattern_manager = PatternManager(self._config)
+        # WARNING(liuyuan): MUST try pattern match before algebra.
+        self._passes.append(self._pattern_manager)
 
         from .cse import Cse
 

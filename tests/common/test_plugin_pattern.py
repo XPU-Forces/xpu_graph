@@ -47,10 +47,6 @@ def constraint_reg_success_log(x, y, postfix=None):
 
 
 class TestPluginPattern:
-    # WARNING(liuyuan): MUST construct a dummy compiler before any need_xpu_graph_logs.
-    def setup_method(self):
-        self.xpu_graph = XpuGraph(XpuGraphConfig(is_training=False, debug=True))
-
     def test_basic(self, caplog):
         with need_xpu_graph_logs():
             with enable_plugin_patterns():
@@ -264,3 +260,99 @@ class TestPluginPattern:
             input_tensor = torch.rand(1024, 1024 * 1024)
             assert is_similar(compiled(input_tensor)[0], replace(input_tensor))
             assert is_similar(compiled_2(input_tensor)[0], replace(input_tensor)) == False
+
+    def test_pattern_with_control_op(self, caplog):
+        with enable_plugin_patterns():
+
+            def x():
+                return torch.empty(
+                    (1024, 1024),
+                    device=torch.device("cpu"),
+                    requires_grad=False,
+                    dtype=torch.float16,
+                )
+
+            def w():
+                return torch.empty(
+                    (1024,),
+                    device=torch.device("cpu"),
+                    requires_grad=False,
+                    dtype=torch.float32,
+                )
+
+            def b():
+                return torch.empty(
+                    (1024,),
+                    device=torch.device("cpu"),
+                    requires_grad=False,
+                    dtype=torch.float32,
+                )
+
+            def replace_layer_norm_2(x):
+                return x * 2
+
+            def replace_layer_norm(x, weight, bias):
+                return x + weight + bias
+
+            @register_this_as_plugin_pattern(
+                (x(), None, None), replace_layer_norm_2, Target.none, postfix="w/o_weight_and_bias"
+            )
+            @register_this_as_plugin_pattern(
+                (x(), w(), w()), replace_layer_norm, Target.none, postfix="w_weight_and_bias"
+            )
+            def layer_norm(x, weight, bias):
+                eps = 1e-5
+                x = x.float()
+                mean = x.mean(dim=-1, keepdim=True)
+                var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
+                x_norm = (x - mean) / torch.sqrt(var + eps)
+                if weight is not None and bias is not None:
+                    x_norm = weight * x_norm + bias
+                x_norm_fp16 = x_norm.half()
+                return (x_norm_fp16,)
+
+            @register_this_as_pattern_constraint
+            def constraints0(x, weight, bias):
+                eps = 1e-5
+                if x.dtype != torch.float16:
+                    return False
+                return True
+
+            def another_one(x, weight, bias):
+                eps = 1e-5
+                x = x.float()
+                mean = x.mean(dim=-1, keepdim=True)
+                var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
+                x_norm = (x - mean) / torch.sqrt(var + eps)
+                x_norm = weight * x_norm + bias
+                x_norm_fp16 = x_norm.half()
+                return (x_norm_fp16,)
+
+            def the_other(x):
+                eps = 1e-5
+                x = x.float()
+                mean = x.mean(dim=-1, keepdim=True)
+                var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
+                x_norm = (x - mean) / torch.sqrt(var + eps)
+                x_norm_fp16 = x_norm.half()
+                return (x_norm_fp16,)
+
+            def all_in_one(x, weight, bias):
+                x = another_one(x, weight, bias)[0]
+                # WARNING(liuyuan); to satisfy the constraint.
+                x = x.to(torch.float16)
+                return the_other(x)
+
+            config = XpuGraphConfig(is_training=False, debug=True, target=Target.none)
+            self.xpu_graph = XpuGraph(config)
+
+            input_tensor = torch.randn((1024, 1024)).half()
+            w = torch.randn((1024,)).float()
+            b = torch.randn((1024,)).float()
+
+            compiled = torch.compile(all_in_one, backend=self.xpu_graph, dynamic=False)
+
+            assert is_similar(
+                compiled(input_tensor, w, b)[0],
+                replace_layer_norm_2(replace_layer_norm(input_tensor, w, b).to(torch.float16)),
+            )

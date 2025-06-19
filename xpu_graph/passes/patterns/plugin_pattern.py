@@ -3,11 +3,16 @@ from contextlib import contextmanager
 from typing import AnyStr, Callable, List, Union
 
 from torch import fx
-from torch.fx import subgraph_rewriter, symbolic_trace
+from torch.fx import symbolic_trace
+
+# from torch.fx import subgraph_rewriter
+from torch.fx.experimental.proxy_tensor import make_fx
 
 from xpu_graph.config import Target
 from xpu_graph.fx_utils import FxStage, dispatch_graph
-from xpu_graph.utils import logger
+from xpu_graph.passes.dce import Dce
+from xpu_graph.passes.patterns.pattern_match import subgraph_rewriter
+from xpu_graph.utils import local_logger
 
 from .pattern import Pattern
 
@@ -18,6 +23,16 @@ __all__ = [
     "deregister_plugin_patterns",
     "enable_plugin_patterns",
 ]
+
+__PLUGIN_PATTERN_LOCAL_LOGGER__ = local_logger("plugin_pattern")
+
+
+class DceIncPlaceHolder(Dce):
+    def process(self, gm):
+        for node in gm.graph.nodes:
+            if node.op == "placeholder" and len(node.users) == 0:
+                gm.graph.erase_node(node)
+        return super().process(gm)
 
 
 class PluginPattern(Pattern):
@@ -32,11 +47,18 @@ class PluginPattern(Pattern):
     ):
         super().__init__()
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
-        self._eager_pattern, _ = dispatch_graph(symbolic_trace(eager_func), example_inputs, stage=self._current_stage)
-        logger.debug("Pattern %s-%s : %s", eager_func.__module__, eager_func.__name__, self._eager_pattern.graph)
+        self._eager_pattern, _ = dispatch_graph(
+            make_fx(eager_func, tracing_mode="fake", pre_dispatch=is_training)(*example_inputs),
+            # symbolic_trace(eager_func),
+            example_inputs,
+            stage=self._current_stage,
+        )
+        DceIncPlaceHolder().process(self._eager_pattern)
         self._replacement = replacement
         self._filter_list = list(filter_list) if filter_list is not None else []
         self.name = name
+        with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+            logger.debug("Pattern %s : %s", self.name, self._eager_pattern.graph)
 
     @property
     def filter_list(self):
@@ -76,9 +98,9 @@ def register_plugin_pattern(
     assert len(example_inputs) == len(
         sign.parameters
     ), f"You should provide the same number of example inputs as the number of parameters in the function {func_name}"
-    assert inspect.signature(replacement) == sign, (
+    assert len(inspect.signature(replacement).parameters) <= len(sign.parameters), (
         f"The signature of the replacement function {replacement.__name__} "
-        f"should be the same as the signature of the function {func_name}."
+        f"should be less equal the signature of the function {func_name}."
     )
 
     def transform_check_funcs(func):
@@ -185,13 +207,18 @@ def register_this_as_pattern_constraint(func):
         placeholder_tensors = []
         for p in internalmatch.placeholder_nodes:
             placeholder_tensors.append(p.meta["val"])
+        assert len(signature.parameters) >= len(placeholder_tensors)
+        # NOTE(liuyuan): Fill the default value None for the missing parameters.
+        placeholder_tensors += [None] * (len(signature.parameters) - len(placeholder_tensors))
+
         result = func(*placeholder_tensors)
         assert isinstance(result, bool)
         return result
 
     for pattern in pattern_list:
         pattern.filter_list.append(param_check)
-    logger.debug("Register constraint %s for %s successfully.", func.__name__, func_name)
+    with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+        logger.debug("Register constraint %s for %s successfully.", func.__name__, func_name)
     return func
 
 
@@ -204,15 +231,16 @@ def deregister_plugin_patterns(func_or_func_name: Union[Callable, AnyStr], targe
     else:
         raise ValueError("func_or_func_name should be Callable or str")
 
-    if target:
-        if func_name in __PLUGIN_PATTERN_GROUP__.get(target, {}):
-            del __PLUGIN_PATTERN_GROUP__[target][func_name]
-            logger.debug("Deregister pattern %s successfully.", func_name)
-    else:
-        for target_patterns in __PLUGIN_PATTERN_GROUP__.values():
-            if func_name in target_patterns:
-                del target_patterns[func_name]
+    with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+        if target:
+            if func_name in __PLUGIN_PATTERN_GROUP__.get(target, {}):
+                del __PLUGIN_PATTERN_GROUP__[target][func_name]
                 logger.debug("Deregister pattern %s successfully.", func_name)
+        else:
+            for target_patterns in __PLUGIN_PATTERN_GROUP__.values():
+                if func_name in target_patterns:
+                    del target_patterns[func_name]
+                    logger.debug("Deregister pattern %s successfully.", func_name)
 
 
 @contextmanager

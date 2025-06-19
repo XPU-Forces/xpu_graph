@@ -96,9 +96,9 @@ class XpuGraph:
                         return cached_compiled
 
                 # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
-                original_gm_graph = gm.graph
+                original_gm_graph = str(gm.graph) if logger.isEnabledFor(logging.DEBUG) else None
                 with local_logger("before"):
-                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
+                    logger.debug(f"before xpu_graph, graph like:\n {original_gm_graph}")
                     logger.info(f"xpu_graph passes start {stage}...")
 
                 nodes_statistics.insert_statistics("before xpu_graph", gm)
