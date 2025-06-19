@@ -78,7 +78,7 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     params_len = len(params_flat)
 
     # Use the config similar to aot_export_module
-    aot_config.is_export = get_bool_env_var(__XPU_GRAPH_ENVS__["aot_config_is_export"], True)
+    aot_config.is_export = get_bool_env_var(__XPU_GRAPH_ENVS__.aot_config_is_export, True)
     aot_config.pre_dispatch = stage == FxStage.pregrad
     aot_config.no_tangents = True
     if decompositions is not None:
@@ -207,9 +207,13 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
     # If any saved tensor hooks are active, we **don't** want to trace them.
     # Instead, we'll let them run at runtime, around the custom autograd.Function
     # that we generate in torch.compile.
-    with torch.autograd.set_multithreading_enabled(
-        False
-    ), preserve_rng_state(), fake_mode, python_dispatcher_mode, PhiloxStateTracker():
+    with (
+        torch.autograd.set_multithreading_enabled(False),
+        preserve_rng_state(),
+        fake_mode,
+        python_dispatcher_mode,
+        PhiloxStateTracker(),
+    ):
         with enable_python_dispatcher():
             with patch("torch.cuda.set_rng_state", lambda *args: None):
                 if hasattr(aot_config, "static_input_indices"):

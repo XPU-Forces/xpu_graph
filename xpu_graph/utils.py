@@ -180,10 +180,14 @@ class GitLikeDiffer:
         return self.diff()
 
 
-__XPU_GRAPH_ENVS__ = {
-    "aot_config_is_export": "XPUGRAPH_DEPRECATED_AOT_CONFIG_IS_EXPORT",
-    "cache_dir": "XPUGRAPH_CACHE_DIR",
-}
+class __XPU_GRAPH_ENVS__:
+    aot_config_is_export = "XPUGRAPH_DEPRECATED_AOT_CONFIG_IS_EXPORT"
+    cache_dir = "XPUGRAPH_CACHE_DIR"
+    dump_dir = "XPUGRAPH_DUMP_DIR"
+    debug = "XPUGRAPH_DEBUG"
+    opt_level = "XPUGRAPH_OPT_LEVEL"
+    vendor_compiler_mode = "VENDOR_COMPILER_MODE"
+    logs = "XPUGRAPH_LOGS"
 
 
 def get_bool_env_var(name, default_value: bool):
