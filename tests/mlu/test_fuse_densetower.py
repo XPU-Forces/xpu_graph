@@ -89,7 +89,8 @@ class TestSerialMM:
     def test_serial_mm_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             serial_mm_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedSerialMM3Dot changed graph" in caplog.text
+        assert "Pattern.FusedDenseTower2 changed graph" in caplog.text
+        assert "Pattern.FusedDenseTower3 changed graph" in caplog.text
 
 
 if __name__ == "__main__":
