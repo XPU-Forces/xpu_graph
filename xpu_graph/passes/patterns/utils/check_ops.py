@@ -240,6 +240,13 @@ def check_trans_op(node: fx.Node) -> bool:
 def check_t_op(node: fx.Node) -> bool:
     return check_op(node, aten.t.default)
 
+def check_typecast_op(node: fx.Node) -> bool:
+    if node.target == 'to' or "dtype_cast" in str(node.target):
+        return True, "to"
+    if "_to_copy" in str(node.target):
+        return True, "to_copy"
+    else:
+        return False, None
 
 def check_act_op(
     node: fx.Node,
@@ -291,6 +298,8 @@ def check_norm_op(node: fx.node):
     if node.target == aten.native_layer_norm.default:
         return True, "layer_norm"
     if node.target == "rms_norm_op":
+        return True, "rms_norm"
+    if 'rms_norm' in str(node.target):
         return True, "rms_norm"
     return False, None
 

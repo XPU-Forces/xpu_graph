@@ -24,5 +24,6 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat not in (Pattern, AutoMatchPattern)
                 and pat._opt_level <= config.opt_level
             ):
-		patterns[pat._pattern_group].append(pat())
+                patterns[pat._pattern_group].append(pat())
+
     return patterns
