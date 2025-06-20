@@ -1,25 +1,27 @@
-import torch
-from torch import nn, fx
-from torch.fx.node import Node
-import torch.fx as fx
-from typing import Optional, Tuple, List
-import torch_npu
-from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.config import OptLevel
-from ...utils.check_ops import (
-    get_dtype,
-    check_slice_op,
-    check_unsqueeze_op,
-    check_expand_op,
-    check_npu_dtype_cast_op,
-    check_rsub_scalar_op,
-    check_mask_fill_op,
-    check_add_op,
-    check_mul_op,
-    check_trans_op,
-    check_softmax_op,
-)
+from typing import List, Optional, Tuple
 
+import torch
+import torch.fx as fx
+import torch_npu
+from torch import fx, nn
+from torch.fx.node import Node
+
+from xpu_graph.config import OptLevel
+from xpu_graph.passes.patterns.pattern import Pattern
+
+from ...utils.check_ops import (
+    check_add_op,
+    check_expand_op,
+    check_mask_fill_op,
+    check_mul_op,
+    check_rsub_scalar_op,
+    check_slice_op,
+    check_softmax_op,
+    check_trans_op,
+    check_unsqueeze_op,
+    get_dtype,
+)
+from .check_npu_ops import check_npu_dtype_cast_op
 
 """
 We try to match torch_cal() pattern, fuse all aten.ops in one triton kernel
@@ -61,9 +63,11 @@ def torch_cal(view_7, gather, gather_1, arg107_1, full_default):
 
 from .triton_kernel.fused_brc_permute_sum import fused_brc_permute_sum
 
+
 class BrcPermuteSumOperation(nn.Module):
     def forward(self, view_7, buf47, buf59, arg107_1, buf61):
         return torch.ops.torch_npu_triton.fused_brc_permute_sum(view_7, buf47, buf59, arg107_1, buf61)
+
 
 class FusedBrcPermuteSum(Pattern):
     _opt_level = OptLevel.level2
@@ -104,7 +108,7 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             slice_unqueeze = user
             break
-        if (slice_unqueeze == None):
+        if slice_unqueeze == None:
             return None
         # slice -> unqueeze -> unqueeze
         slice_unqueeze2 = None
@@ -115,7 +119,7 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             slice_unqueeze2 = user
             break
-        if (slice_unqueeze2 == None):
+        if slice_unqueeze2 == None:
             return None
         # slice -> unqueeze -> unqueeze -> expand
         slice_unqueeze2_expand = None
@@ -126,7 +130,7 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             slice_unqueeze2_expand = user
             break
-        if (slice_unqueeze2_expand == None):
+        if slice_unqueeze2_expand == None:
             return None
         # slice -> unqueeze -> unqueeze -> expand -> cast
         slice_unqueeze2_expand_cast = None
@@ -137,7 +141,7 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             slice_unqueeze2_expand_cast = user
             break
-        if (slice_unqueeze2_expand_cast == None):
+        if slice_unqueeze2_expand_cast == None:
             return None
         # slice -> unqueeze -> unqueeze -> expand -> cast -> rsub
         slice_unqueeze2_expand_cast_rsub = None
@@ -148,7 +152,7 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             slice_unqueeze2_expand_cast_rsub = user
             break
-        if (slice_unqueeze2_expand_cast_rsub == None):
+        if slice_unqueeze2_expand_cast_rsub == None:
             return None
         # slice -> unqueeze -> unqueeze -> expand -> cast -> rsub -> cast
         slice_unqueeze2_expand_cast_rsub_cast = None
@@ -159,18 +163,21 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             slice_unqueeze2_expand_cast_rsub_cast = user
             break
-        if (slice_unqueeze2_expand_cast_rsub_cast == None):
+        if slice_unqueeze2_expand_cast_rsub_cast == None:
             return None
         # slice -> unqueeze -> unqueeze -> expand -> cast -> rsub -> cast -> masked_fill
         slice_unqueeze2_expand_cast_rsub_mskfil = None
         for user in slice_unqueeze2_expand_cast_rsub.users:
             if not check_mask_fill_op(user):
                 continue
-            if not ((user.args[0] == slice_unqueeze2_expand_cast_rsub) and (user.args[1] == slice_unqueeze2_expand_cast_rsub_cast)):
+            if not (
+                (user.args[0] == slice_unqueeze2_expand_cast_rsub)
+                and (user.args[1] == slice_unqueeze2_expand_cast_rsub_cast)
+            ):
                 continue
             slice_unqueeze2_expand_cast_rsub_mskfil = user
             break
-        if (slice_unqueeze2_expand_cast_rsub_mskfil == None):
+        if slice_unqueeze2_expand_cast_rsub_mskfil == None:
             return None
         input4 = slice_unqueeze2_expand_cast_rsub_mskfil.args[2]
         # slice -> unqueeze -> unqueeze -> expand -> cast -> rsub -> cast -> masked_fill
@@ -183,9 +190,9 @@ class FusedBrcPermuteSum(Pattern):
             add = user
             add_other = next((e for e in user.args if e != slice_unqueeze2_expand_cast_rsub_mskfil), None)
             break
-        if (add == None):
+        if add == None:
             return None
-        if (add_other == None):
+        if add_other == None:
             return None
         # -> add <- add
         if not check_add_op(add_other):
@@ -207,7 +214,7 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             add_add_mul_add = arg
             break
-        if (add_add_mul_add == None):
+        if add_add_mul_add == None:
             return None
         # -> add <- add <- mul <- add <- transpose
         add_add_mul_add_trans = None
@@ -229,12 +236,10 @@ class FusedBrcPermuteSum(Pattern):
                 continue
             add_softmax = user
             break
-        if (add_softmax == None):
+        if add_softmax == None:
             return None
         final = add_softmax
-        return [
-            input0, input1, input2, input3, input4, final
-        ]
+        return [input0, input1, input2, input3, input4, final]
 
     def process(self, gm: fx.GraphModule):
         graph = gm.graph
@@ -255,9 +260,7 @@ class FusedBrcPermuteSum(Pattern):
             final.replace_all_uses_with(fused_node)
             changed = True
 
-            nodes_to_remove = [
-                input0, input1, input2, input3, input4, final
-            ]
+            nodes_to_remove = [input0, input1, input2, input3, input4, final]
             for node in nodes_to_remove:
                 if isinstance(node, ()) and len(node.users) == 0:
                     graph.erase_node(node)
