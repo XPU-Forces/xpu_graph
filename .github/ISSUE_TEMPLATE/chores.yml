@@ -1,0 +1,53 @@
+name: Chores
+description: Any chores.
+labels: [ "ignore-for-release" ]
+
+body:
+- type: markdown
+  attributes:
+    value: |
+      #### Disclaimer
+      The core XPU_GRAPH team is small and has very limited capacity. We may not have time to look into your report.
+      For the best results, please:
+        - Avoid submitting duplicates. Search through [the existing and past issues](https://github.com/BD-Seed-HHW/xpu_graph/issues?q=is%3Aissue) first to see if it's been reported previously.
+        - Check if the issue persists with a build from the latest source.
+        - Provide all relevant information in the initial report, to prevent unnecessary back and forth discussion.
+        - If you can, try to diagnose and/or fix the issue yourself. We welcome high quality contributions.
+
+- type: textarea
+  attributes:
+    label: Your plan.
+    description: |
+      Please provide a clear and concise description of what you are going to do.
+
+      If the code is too long (hopefully, it isn't), feel free to put it in a public gist and link it in the issue: https://gist.github.com.
+
+    placeholder: |
+      A clear and concise description of what you are going to do.
+
+      ```python
+      # Sample code to use the feature. (Optional)
+      ```
+
+      ```
+      The feature should work as follows. (Optional)
+      ```
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: References
+    description: |
+      Background or any other related issues or contents.
+
+    placeholder: |
+      Some Background or any other related issues or contents.
+      [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
+      [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
+      [Some Docs](https://github.com/BD-Seed-HHW/xpu_graph/wiki)
+  validations:
+    required: true
+- type: markdown
+  attributes:
+    value: >
+      Thanks for contributing 🎉!

@@ -2,18 +2,23 @@ name: Run test case on mlu
 on:
   pull_request:
     branches:
-      - master
-    types: [opened, synchronize, reopened]
-    paths_ignore:
-      - 'xpu_graph/backend/ascend.py'
-      - 'xpu_graph/backend/npu.py'
-      - 'xpu_graph/passes/patterns/targets/ascend/'
-      - 'xpu_graph/passes/patterns/targets/npu/'
-      - 'tests/ascend'
-      - 'tests/npu'
-      - 'tests/ops'
-      - 'docker/*'
+    - master
+    types: [ opened, synchronize, reopened ]
+    # paths_ignore:
+    # - /**/npu/**
+    # - /**/ascend/**
+    # - /**/*npu*
+    # - /**/*ascend*
+    # - /**/docs
+    # - /**/ops
+    # - /**/docker/**
+    # - /**/*docker*
+  push:
+    branches:
+    - master
   workflow_dispatch:
+env:
+  XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
 defaults:
   run:
     shell: bash
@@ -21,10 +26,24 @@ jobs:
   run-tests:
     name: Run mlu tests
     runs-on: MLU
+    container:
+      image: hub.byted.org/ci/xpu_graph:934ebcfdd670bcea94aa0a0ed247a576
+      options: --privileged=true --ipc=host --pid=host --user root --network host
     steps:
-      - uses: actions/checkout@v4
-      - name: Running mlu tests
-        shell: bash
-        run: |
-          echo "Running MLU tests..."
-          docker run --rm --network=host --ipc=host --pid=host --privileged=true -v ${{ github.workspace }}:/opt/tiger/xpu_graph -u tiger -w /opt/tiger/xpu_graph hub.byted.org/ci/xpu_graph:57aa59f47babcd4d2890799abc831d90 python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu tests
+    - uses: actions/checkout@v4
+    - name: Running mlu tests
+      shell: bash
+      run: |
+        export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
+        pip install -e '.[dev]'
+        echo "Running MLU tests..."
+        python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu --cov=xpu_graph tests
+    - uses: codecov/codecov-action@v5
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      with:
+        flags: mlu
+        name: mlu-codecov
+        use_pypi: true
+        fail_ci_if_error: true
+        verbose: true

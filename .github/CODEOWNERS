@@ -1,0 +1,21 @@
+# These owners will be the default owners for everything in
+# the repo. Unless a later match takes precedence, they'll be
+# asked to review changes.
+# Global Reviewer
+* chenyifan.42@bytedance.com @zhangjihang-BD
+
+# MLU Reviewer
+**/*mlu* @zhangjihang-BD chenyifan.42@bytedance.com
+**/*mlu*/** @zhangjihang-BD chenyifan.42@bytedance.com
+
+# NPU Reviewer
+**/*npu* wangmingfa@bytedance.com liuyuan.leo@bytedance.com
+**/*npu*/** wangmingfa@bytedance.com liuyuan.leo@bytedance.com
+**/*ascend* wangmingfa@bytedance.com liuyuan.leo@bytedance.com
+**/*ascend*/** wangmingfa@bytedance.com liuyuan.leo@bytedance.com
+
+# Plugin Pattern Reviewer
+xpu_graph/passes/patterns/plugin_pattern.py liuyuan.leo@bytedance.com
+
+# Github Config Reviewer
+.github/* wangmingfa@bytedance.com liuyuan.leo@bytedance.com

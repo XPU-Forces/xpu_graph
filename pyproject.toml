@@ -37,9 +37,11 @@ classifiers = [
 # license = ""
 # license-files = ["LICEN[CS]E*"]
 [project.optional-dependencies]
-test = [
+dev = [
     "pytest >= 7.0.0",
+    "pytest-cov >= 6.0.0",
     "setuptools >= 65",
+    "expecttest",
 ]
 
 
