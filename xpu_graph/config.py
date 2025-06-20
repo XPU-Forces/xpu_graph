@@ -82,13 +82,16 @@ class XpuGraphConfig:
 
         vendor_compiler_mode = os.getenv("VENDOR_COMPILER_MODE", "Null")
         if vendor_compiler_mode != "Null":
-            if vendor_compiler_mode not in (
-                "default",
-                "cudagraphs",
-                "reduce-overhead",
-                "max-autotune",
-                "max-autotune-no-cudagraphs",
-            ):
-                warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
+            if vendor_compiler_mode == "none":
+                self.vendor_compiler_config = None
             else:
-                self.vendor_compiler_config = {"mode": vendor_compiler_mode}
+                if vendor_compiler_mode not in (
+                    "default",
+                    "cudagraphs",
+                    "reduce-overhead",
+                    "max-autotune",
+                    "max-autotune-no-cudagraphs",
+                ):
+                    warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
+                else:
+                    self.vendor_compiler_config = {"mode": vendor_compiler_mode}
