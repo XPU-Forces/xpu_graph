@@ -1,0 +1,24 @@
+# Release Major.Minor.Patch-\<pre-release\>+\<build\> [详情参考语义化版本](https://semver.org/lang/zh-CN/)
+
+## 主要依赖库版本描述[^3]
+- python3.10
+- pytorch
+- [torch-mlu]
+- [torch-npu]
+
+## 主要特性与改进[^4]
+-
+
+## 相关模块API的重大变动[^1]
+-
+
+## 弃用特性声明[^2]
+-
+
+## Bug修复与其他改动
+-
+
+[^1]: 若无，可不写；
+[^2]: 若无，可不写；
+[^3]: 一些依赖的组件版本号,其中分为硬性依赖,如PYTHON版本和PyTorch版本,以及不同后端的可选依赖;
+[^4]: 开头需要总结性的描述语言，随后逐项列出变化；如果子仓release note中的改动对用户感知，则选择性地带上表述；
