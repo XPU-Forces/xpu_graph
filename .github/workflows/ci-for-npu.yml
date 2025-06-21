@@ -3,6 +3,7 @@ on:
   pull_request:
     branches:
     - master
+    - demo
     types: [ opened, synchronize, reopened ]
     paths_ignore:
     - "/doc/**"
