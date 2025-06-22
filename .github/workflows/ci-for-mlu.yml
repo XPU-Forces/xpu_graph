@@ -12,6 +12,8 @@ on:
     - /xpu_graph/backends/*.py
     - "!/xpu_graph/backends/__init__.py"
     - "!/xpu_graph/backends/mlu.py"
+    - /xpu_graph/patterns/passes/targets/*/**
+    - "!/xpu_graph/patterns/passes/targets/mlu/**"
   push:
     branches:
     - master
