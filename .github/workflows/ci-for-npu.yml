@@ -4,24 +4,20 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    # paths_ignore:
-    # - /**/mlu/**
-    # - /**/*mlu*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths_ignore:
+    - /docs/**
+    - /doc/**
+    - /README.md
+    - /.github/ISSUE_TEMPLATE/**
   push:
     branches:
     - develop
     - master
-    # paths_ignore:
-    # - /**/*mlu*/**
-    # - /**/*mlu*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths_ignore:
+    - /docs/**
+    - /doc/**
+    - /README.md
+    - /.github/ISSUE_TEMPLATE/**
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
