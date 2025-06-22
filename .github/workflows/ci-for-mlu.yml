@@ -9,6 +9,9 @@ on:
     - /doc/**
     - /README.md
     - /.github/ISSUE_TEMPLATE/**
+    - /xpu_graph/backends/*.py
+    - "!/xpu_graph/backends/__init__.py"
+    - "!/xpu_graph/backends/mlu.py"
   push:
     branches:
     - master
