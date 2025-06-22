@@ -5,6 +5,7 @@ if [ -n "$ZSH_VERSION" ]; then
 elif [ -n "$BASH_VERSION" ]; then
   REPO_DIR=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 fi
+# DUMMY for tests
 
 TMP_FILE=tmp.md
 rm -rf $TMP_FILE || true
