@@ -29,6 +29,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Check updates
+      id: update
       shell: bash
       run: |
         if [[ -n "$GITHUB_BASE_REF" ]]; then
@@ -38,8 +39,9 @@ jobs:
         fi
         git fetch origin $TARGET_REF
         ./scripts/check_updates_for_backends.sh origin/$TARGET_REF mlu
+        echo "updated=$?" >> $GITHUB_OUTPUT
     - name: Running mlu tests
-      if: failure()
+      if: steps.update.outputs.updated == '1'
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
@@ -47,11 +49,12 @@ jobs:
         echo "Running MLU tests..."
         python3 -m pytest --cov=xpu_graph tests/common tests/mlu
     - uses: codecov/codecov-action@v5
+      if: steps.update.outputs.updated == '1' && success()
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         flags: mlu
         name: mlu-codecov
         use_pypi: true
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         verbose: true
