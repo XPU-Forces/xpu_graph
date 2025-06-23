@@ -28,7 +28,17 @@ jobs:
       options: --privileged=true --ipc=host --pid=host --user root --network host
     steps:
     - uses: actions/checkout@v4
+    - name: Check updates
+      shell: bash
+      run: |
+        if [[ -n "$GITHUB_BASE_REF" ]]; then
+          TARGET_REF="$GITHUB_BASE_REF"
+        else
+          TARGET_REF="origin/master"
+        fi
+        ./scripts/check_updates_for_backends.sh $TARGET_REF mlu
     - name: Running mlu tests
+      if: failure()
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
