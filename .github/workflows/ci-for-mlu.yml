@@ -37,7 +37,7 @@ jobs:
         else
           TARGET_REF="master"
         fi
-        git fetch origin $TARGET_REF
+        git fetch --depth=1 origin $TARGET_REF
         ./scripts/check_updates_for_backends.sh origin/$TARGET_REF mlu || echo "updated=$?" >> $GITHUB_OUTPUT
     - name: Running mlu tests
       if: steps.update.outputs.updated == '1'
