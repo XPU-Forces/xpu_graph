@@ -219,6 +219,39 @@ class FastDenseLayerReplacement(torch.nn.Module):
         return output
 
 
+class FastBatchDenseLayerReplacement(torch.nn.Module):
+    def forward(self, inputs, weight, weight_trans, residual, bias, act):
+        import torch_mlu_ops
+
+        if not inputs.is_contiguous():
+            inputs = inputs.contiguous()
+        if not weight.is_contiguous():
+            weight = weight.contiguous()
+        if residual is not None:
+            beta = 1.0
+        else:
+            beta = 0.0
+
+        dtype = inputs.dtype
+
+        output = torch_mlu_ops.batch_matmul(
+            inputs,
+            weight,
+            residual,
+            1.0,
+            beta,
+            1.0,
+            1.0,
+            False,
+            weight_trans,
+            None,
+            bias,
+            act,
+            dtype,
+        )
+        return output
+
+
 class FusedDenseTower2Replacement(torch.nn.Module):
     def forward(
         self,
@@ -377,6 +410,7 @@ def get_structure_replacements(config):
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
         "FastDenseLayer": FastDenseLayerReplacement,
+        "FastBatchDenseLayer": FastBatchDenseLayerReplacement,
         "FusedDenseTower2": (FusedDenseTower2Replacement, can_fuse_dense_tower2),
         "FusedDenseTower3": (FusedDenseTower3Replacement, can_fuse_dense_tower3),
     }

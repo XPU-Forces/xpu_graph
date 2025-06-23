@@ -184,9 +184,35 @@ def validate_transpose_operation(key_transpose):
     return (dim1, dim2) in valid_dimensions
 
 
-def _is_fa(node: fx.Node):
-    if node.target != "mlu_tmo_fused_bmm_replacement":
+def validate_attention_shape(q_shape, trans_k_shape, v_shape, mask_shape, scale_shape):
+    total_bn = max(q_shape[0], trans_k_shape[0], v_shape[0])
+    mask_scale_shape = torch.broadcast_shapes(mask_shape, scale_shape)
+    if len(mask_scale_shape) > 4:
         return False, []
+    elif len(mask_scale_shape) == 4:
+        batch_size, num_heads = mask_scale_shape[:2]
+    elif len(mask_scale_shape) == 3:
+        batch_size = 1
+        num_heads = mask_scale_shape[0]
+    else:
+        batch_size = 1
+        num_heads = 1
+    if num_heads == 1:
+        if total_bn % batch_size != 0:
+            return False, []
+        else:
+            return True, [batch_size, total_bn // batch_size, q_shape[1], v_shape[-1]]
+    else:
+        if total_bn % num_heads != 0:
+            return False, []
+        else:
+            return True, [total_bn // num_heads, num_heads, q_shape[1], v_shape[-1]]
+
+
+def _is_fa(node: fx.Node):
+    if node.target != "fused_bmm_replacement":
+        return False, []
+    trans_v = node.args[2]
     softmax_node = get_actual_node(node, 0)
     if not check_softmax_op(softmax_node):
         return False, []
@@ -194,10 +220,10 @@ def _is_fa(node: fx.Node):
     bmm_1_node = get_actual_node(softmax_node, 0)
 
     # (optional) find add
-    add_params = (None, False)
-    is_scale_op, addinput1, params = check_sub_or_add_op(bmm_1_node)
-    if is_scale_op:
-        add_params = params
+    bias_params = (None, False)
+    is_bias_op, addinput1, params = check_sub_or_add_op(bmm_1_node)
+    if is_bias_op:
+        bias_params = params
         bmm_1_node = get_actual_node(bmm_1_node, 0)
 
     # (optional) find div or mul
@@ -207,28 +233,48 @@ def _is_fa(node: fx.Node):
         scale_params = params
         bmm_1_node = get_actual_node(bmm_1_node, 0)
 
-    if bmm_1_node.target != "mlu_tmo_fused_bmm_replacement":
-        if bmm_1_node.target != "mlu_tmo_fused_bmm_add_replacement":
+    if bmm_1_node.target != "fused_bmm_replacement":
+        if bmm_1_node.target != "fused_bmm_add_replacement":
             return False, []
-        if add_params[0] != None:
-            logger.warning("Flash attention pass: Too many add operations")
+        if is_bias_op or is_scale_op:
+            logger.debug("Flash attention pass: Too many add operations")
             return False, []
-        add_params[0] = bmm_1_node.args[2]
-        add_params[1] = True
+        bias = bmm_1_node.args[3] or bmm_1_node.args[4]
+        is_bias_op = bias is not None
+        if is_bias_op:
+            bias_params = (bias, True)
 
-    if node.args[-1] is None:
-        output_shape = [node.args[1][0], node.args[1][1], node.args[3][2]]
+    trans_k = bmm_1_node.args[2]
+
+    dtype = node.meta["val"].dtype
+
+    q_node = bmm_1_node.args[0]
+    k_node = bmm_1_node.args[1]
+    v_node = node.args[1]
+    if is_bias_op and isinstance(bias_params[0], fx.Node):
+        mask_shape = bias_params[0].meta["val"].shape
     else:
-        output_shape = list(node.args[-1])
+        mask_shape = []
+    if is_scale_op and isinstance(scale_params[0], fx.Node):
+        scale_shape = scale_params[0].meta["val"].shape
+    else:
+        scale_shape = []
+    is_valid, output_shape = validate_attention_shape(
+        q_node.meta["val"].shape, k_node.meta["val"].shape, v_node.meta["val"].shape, mask_shape, scale_shape
+    )
+    if not is_valid:
+        return False, []
 
     return True, [
-        bmm_1_node.args[0],
-        bmm_1_node.args[2],
-        node.args[2],
+        trans_k,
+        trans_v,
+        q_node,
+        k_node,
+        v_node,
         scale_params,
-        add_params,
+        bias_params,
         output_shape,
-        node.args[-3],
+        dtype,
     ]
 
 
@@ -243,21 +289,35 @@ class FusedFlashAttention(Pattern):
             matched, fa_param = _is_fa(node)
             if not matched:
                 continue
+
+            trans_k, trans_v, q, k, v, scale, bias, output_shape, dtype = fa_param
             with graph_module.graph.inserting_before(node):
+                if trans_k:
+                    k = graph_module.graph.call_function(
+                        torch.ops.aten.transpose.int,
+                        (k, -1, -2),
+                    )
+                if trans_v:
+                    v = graph_module.graph.call_function(
+                        torch.ops.aten.transpose.int,
+                        (v, -1, -2),
+                    )
                 fused = graph_module.graph.call_module(
                     "flash_attn_transpose",
-                    args=tuple(fa_param),
+                    args=(q, k, v, scale, bias, output_shape, dtype),
                 )
-
-            key_trans = fa_param[1]
-            if validate_transpose_operation(key_trans):
-                fa_param[1] = key_trans.args[0]
+                view = graph_module.graph.call_function(
+                    torch.ops.aten.view.default,
+                    (fused, node.meta["val"].shape),
+                )
+            if validate_transpose_operation(k):
+                k = k.args[0]
                 with graph_module.graph.inserting_before(node):
                     fused = graph_module.graph.call_module(
                         "flash_attn_base",
-                        args=tuple(fa_param),
+                        args=(q, k, v, scale, bias, output_shape, dtype),
                     )
-            node.replace_all_uses_with(fused)
+            node.replace_all_uses_with(view)
             modified = True
 
         return modified
