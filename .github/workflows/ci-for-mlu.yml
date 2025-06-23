@@ -40,6 +40,7 @@ jobs:
         git fetch origin $TARGET_REF
         ./scripts/check_updates_for_backends.sh origin/$TARGET_REF mlu
         echo "updated=$?" >> $GITHUB_OUTPUT
+        exit 0
     - name: Running mlu tests
       if: steps.update.outputs.updated == '1'
       shell: bash
