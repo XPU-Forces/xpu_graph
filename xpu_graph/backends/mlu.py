@@ -5,6 +5,7 @@ import torch_mlu
 
 
 def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kwargs) -> torch.nn.Module:
+    # DUMMY
     mode = config_dict.get("mode", "reduce-overhead")
     cpp_wrapper = config_dict.get("cpp_wrapper", False)
 
