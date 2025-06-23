@@ -45,9 +45,10 @@ jobs:
         if [[ -n "$GITHUB_BASE_REF" ]]; then
           TARGET_REF="$GITHUB_BASE_REF"
         else
-          TARGET_REF="origin/master"
+          TARGET_REF="master"
         fi
-        ./scripts/check_updates_for_backends.sh $TARGET_REF mlu
+        git fetch origin $TARGET_REF
+        ./scripts/check_updates_for_backends.sh origin/$TARGET_REF npu ascend
     - name: Running npu tests
       if: failure()
       shell: bash
