@@ -48,8 +48,7 @@ jobs:
           TARGET_REF="master"
         fi
         git fetch origin $TARGET_REF
-        ./scripts/check_updates_for_backends.sh origin/$TARGET_REF npu ascend
-        echo "updated=$?" >> $GITHUB_OUTPUT
+        ./scripts/check_updates_for_backends.sh origin/$TARGET_REF npu ascend || echo "updated=$?" >> $GITHUB_OUTPUT
         exit 0
     - name: Running npu tests
       if: steps.update.outputs.updated == '1'
