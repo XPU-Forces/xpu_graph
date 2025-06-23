@@ -42,6 +42,7 @@ jobs:
       id: update
       shell: bash
       run: |
+        export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         if [[ -n "$GITHUB_BASE_REF" ]]; then
           TARGET_REF="$GITHUB_BASE_REF"
         else
