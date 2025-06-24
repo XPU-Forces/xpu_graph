@@ -1,4 +1,4 @@
-name: DEMO workflow
+name: DEMO workflow for mlu
 on:
   pull_request:
     branches:
@@ -6,6 +6,8 @@ on:
     types: [ opened, synchronize, reopened ]
     paths-ignore:
     - '/README.md'
+    - '/tests/*/**'
+    - '!/tests/common/**'
 defaults:
   run:
     shell: bash
@@ -17,4 +19,4 @@ jobs:
       - name: Hello World
         shell: bash
         run: |
-          echo "Hello World"
+          echo "triggerd by changes"
