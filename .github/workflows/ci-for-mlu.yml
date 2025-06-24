@@ -4,18 +4,17 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    # paths_ignore:
-    # - /**/npu/**
-    # - /**/ascend/**
-    # - /**/*npu*
-    # - /**/*ascend*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
   push:
     branches:
     - master
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
