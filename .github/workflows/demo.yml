@@ -6,8 +6,8 @@ on:
     types: [ opened, synchronize, reopened ]
     paths-ignore:
     - '**/README.md'
-    - '/tests/*/**'
-    - '!/tests/common/**'
+    - 'tests/*/**'
+    - '!tests/common/**'
 defaults:
   run:
     shell: bash
