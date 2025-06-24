@@ -8,6 +8,17 @@ on:
     - 'docs/**'
     - 'doc/**'
     - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/npu/**'
+    - '!tests/ascend/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/npu.py'
+    - '!xpu_graph/backends/ascend.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/npu/**'
+    - '!xpu_graph/passes/patterns/targets/ascend/**'
   push:
     branches:
     - develop
@@ -16,6 +27,17 @@ on:
     - 'docs/**'
     - 'doc/**'
     - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/npu/**'
+    - '!tests/ascend/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/npu.py'
+    - '!xpu_graph/backends/ascend.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/npu/**'
+    - '!xpu_graph/passes/patterns/targets/ascend/**'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}

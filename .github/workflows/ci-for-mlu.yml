@@ -8,6 +8,14 @@ on:
     - 'docs/**'
     - 'doc/**'
     - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/mlu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/mlu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/mlu/**'
   push:
     branches:
     - master
@@ -15,6 +23,14 @@ on:
     - 'docs/**'
     - 'doc/**'
     - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/mlu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/mlu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/mlu/**'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
