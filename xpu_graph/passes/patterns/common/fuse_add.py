@@ -12,7 +12,7 @@ from xpu_graph.utils import logger
 from ..utils.check_ops import check_add_op, check_mm_op, check_view, get_shape
 
 
-class FusedAdd(Pattern):
+class FusedAddN(Pattern):
     _opt_level = OptLevel.level2
     _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad, FxStage.backward]
     """

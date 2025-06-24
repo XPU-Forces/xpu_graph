@@ -36,7 +36,7 @@ def can_fuse_test(xpu_graph, func, *args):
     assert is_similar(expect, res)
 
 
-class TestFusedAdd:
+class TestFusedAddN:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig(
             is_training=False,
@@ -62,7 +62,7 @@ class TestFusedAdd:
         """Test cases that should be fused"""
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
             can_fuse_test(self.xpu_graph, func, *args)
-        assert "Pattern.FusedAdd changed graph" in caplog.text
+        assert "Pattern.FusedAddN changed graph" in caplog.text
 
 
 if __name__ == "__main__":
