@@ -1,0 +1,20 @@
+name: DEMO workflow
+on:
+  pull_request:
+    branches:
+    - demo
+    types: [ opened, synchronize, reopened ]
+    paths-ignore:
+    - '/README.md'
+defaults:
+  run:
+    shell: bash
+jobs:
+  run-tests:
+    name: Hello World
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello World
+        shell: bash
+        run: |
+          echo "Hello World"
