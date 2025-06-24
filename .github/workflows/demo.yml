@@ -1,0 +1,23 @@
+name: DEMO workflow
+on:
+  pull_request:
+    branches:
+    - demo
+    types: [ opened, synchronize, reopened ]
+    paths_ignore:
+    - '**/README.md'
+  workflow_dispatch:
+env:
+  XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  run-tests:
+    name: Hello World
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello World
+        shell: bash
+        run: |
+          echo "Hello World"
