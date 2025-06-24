@@ -55,6 +55,6 @@ jobs:
       with:
         flags: npu
         name: npu-codecov
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         use_pypi: true
         verbose: true
