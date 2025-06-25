@@ -30,7 +30,7 @@ def fn1(x1, x2, x3, x4, x5, x6, x7, x8):
     return out
 
 
-def mul_sum_cat_test(xpu_graph_backend, func):
+def dot_cat_test(xpu_graph_backend, func):
     batch = 1024
     dtype = torch.half
     a = torch.rand(batch, 80, 32, dtype=dtype, device="mlu")
@@ -52,7 +52,7 @@ def mul_sum_cat_test(xpu_graph_backend, func):
     is_similar(res.cpu().float(), res1.cpu().float())
 
 
-class TestMulSumCat:
+class TestDotCat:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False)
 
@@ -63,15 +63,13 @@ class TestMulSumCat:
             fn1,
         ],
     )
-    def test_mul_sum_cat_patterns(self, caplog, pattern_func):
+    def test_dot_cat_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            mul_sum_cat_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedMulSumCat changed graph" in caplog.text
+            dot_cat_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedDotCat changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False,
-    )
-    mul_sum_cat_test(xpu_graph_backend, fn0)
-    mul_sum_cat_test(xpu_graph_backend, fn1)
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, debug=True)
+    dot_cat_test(xpu_graph_backend, fn0)
+    dot_cat_test(xpu_graph_backend, fn1)

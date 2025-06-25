@@ -2,6 +2,7 @@ import torch
 import torch.fx as fx
 import torch_mlu
 
+from ..triton_kernel.fused_dot_cat import fused_dot_cat_2inp
 from ..triton_kernel.fused_serial_mm_2dot import fuse_serial_mm_2dot
 from ..triton_kernel.fused_serial_mm_3dot import fuse_serial_mm_3dot
 from ..triton_kernel.fused_slice import fused_slice_low
@@ -145,6 +146,32 @@ class FuseSliceCatSameInputModule_v2(torch.nn.Module):
             )
 
 
+class FusedDotCatModule(torch.nn.Module):
+    def forward(self, x_list, y_list):
+        group_size = len(x_list)
+        if group_size == 2:
+            x0, x1 = x_list
+            y0, y1 = y_list
+            x0 = x0.contiguous()
+            y0 = y0.contiguous()
+            x1 = x1.contiguous()
+            y1 = y1.contiguous()
+            return fused_dot_cat_2inp(
+                x0,
+                y0,
+                x1,
+                y1,
+            )
+
+        batch_size = max(x_list[0].shape[0], y_list[0].shape[0])
+        s1, s2 = x_list[0].shape[1:]
+        xy_list = [x.expand(batch_size, s1, s2) for x in x_list + y_list]
+        xy = torch.stack(xy_list).view(2, group_size, batch_size, s1, s2)
+        tmp = xy[0] * xy[1]  # [group, batch, s1, s2]
+        output = torch.sum(tmp, dim=2).transpose(0, 1).reshape(batch_size, -1)
+        return output
+
+
 class SliceSumCatOperation(torch.nn.Module):
     def __init__(self, slice_param):
         """
@@ -218,6 +245,7 @@ def get_structure_replacements(config):
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
+        "FusedDotCat": FusedDotCatModule,
         "FusedSliceSumCat": (SliceSumCatOperation, can_fuse_slice_sum_cat),
         "ComboSum3dInp": ComboSumModule,
         "CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
