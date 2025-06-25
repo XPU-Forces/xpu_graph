@@ -19,6 +19,10 @@ on:
     - 'xpu_graph/passes/patterns/targets/*/**'
     - '!xpu_graph/passes/patterns/targets/npu/**'
     - '!xpu_graph/passes/patterns/targets/ascend/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-npu.yml'
+    - '!.github/workflows/ci-for-ascend.yml'
   push:
     branches:
     - develop
@@ -38,6 +42,10 @@ on:
     - 'xpu_graph/passes/patterns/targets/*/**'
     - '!xpu_graph/passes/patterns/targets/npu/**'
     - '!xpu_graph/passes/patterns/targets/ascend/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-npu.yml'
+    - '!.github/workflows/ci-for-ascend.yml'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}

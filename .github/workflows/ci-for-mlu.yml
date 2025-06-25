@@ -16,6 +16,9 @@ on:
     - '!xpu_graph/backends/mlu.py'
     - 'xpu_graph/passes/patterns/targets/*/**'
     - '!xpu_graph/passes/patterns/targets/mlu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-mlu.yml'
   push:
     branches:
     - master
@@ -31,6 +34,9 @@ on:
     - '!xpu_graph/backends/mlu.py'
     - 'xpu_graph/passes/patterns/targets/*/**'
     - '!xpu_graph/passes/patterns/targets/mlu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-mlu.yml'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
