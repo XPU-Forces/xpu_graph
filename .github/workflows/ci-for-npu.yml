@@ -25,7 +25,6 @@ on:
     - '!.github/workflows/ci-for-ascend.yml'
   push:
     branches:
-    - develop
     - master
     paths-ignore:
     - 'docs/**'
