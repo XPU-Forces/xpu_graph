@@ -518,10 +518,9 @@ def get_structure_replacements(config):
     return {
         "FusedRMSNorm": RMSNormModule,
         "FusedSlice": FuseSliceModule,
-        "FusedCatSlice": FuseSliceCatSameInputModule,
-        "FusedSliceSumCat": (SliceSumCatOperation, can_fuse_slice_sum_cat),
-        "FusedSliceStackSum": FuseSliceCatSameInputModule,
+        "FusedSliceCat": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
+        "FusedSliceSumCat": (SliceSumCatOperation, can_fuse_slice_sum_cat),
         "FusedDotCat": FusedDotCatModule,
         "ComboSum3dInp": ComboSumModule,
         "FastDenseLayer": FastDenseLayerReplacement,
