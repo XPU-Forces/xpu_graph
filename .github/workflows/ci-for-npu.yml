@@ -11,18 +11,14 @@ on:
     - 'tests/*/**'
     - '!tests/common/**'
     - '!tests/npu/**'
-    - '!tests/ascend/**'
     - 'xpu_graph/backends/*.py'
     - '!xpu_graph/backends/__init__.py'
     - '!xpu_graph/backends/npu.py'
-    - '!xpu_graph/backends/ascend.py'
     - 'xpu_graph/passes/patterns/targets/*/**'
     - '!xpu_graph/passes/patterns/targets/npu/**'
-    - '!xpu_graph/passes/patterns/targets/ascend/**'
     - '.github/ISSUE_TEMPLATE/**'
     - '.github/workflows/ci-for-*.yml'
     - '!.github/workflows/ci-for-npu.yml'
-    - '!.github/workflows/ci-for-ascend.yml'
   push:
     branches:
     - master
@@ -33,18 +29,14 @@ on:
     - 'tests/*/**'
     - '!tests/common/**'
     - '!tests/npu/**'
-    - '!tests/ascend/**'
     - 'xpu_graph/backends/*.py'
     - '!xpu_graph/backends/__init__.py'
     - '!xpu_graph/backends/npu.py'
-    - '!xpu_graph/backends/ascend.py'
     - 'xpu_graph/passes/patterns/targets/*/**'
     - '!xpu_graph/passes/patterns/targets/npu/**'
-    - '!xpu_graph/passes/patterns/targets/ascend/**'
     - '.github/ISSUE_TEMPLATE/**'
     - '.github/workflows/ci-for-*.yml'
     - '!.github/workflows/ci-for-npu.yml'
-    - '!.github/workflows/ci-for-ascend.yml'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
@@ -71,7 +63,7 @@ jobs:
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         pip install -e '.[dev]'
         echo "Running npu tests..."
-        python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu tests/ascend
+        python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
