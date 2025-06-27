@@ -1,18 +1,9 @@
-from typing import Optional
+from torch import fx
 
-import operator
-import torch
-from torch import nn, fx
-import torch_mlu
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.utils import logger
-from ...utils.check_ops import (
-    check_getitem_op,
-    check_mul_op,
-    check_norm_op
-)
 
+from ..utils.check_ops import check_mul_op, check_norm_op
 
 
 def is_scale_layernorm(
@@ -37,9 +28,10 @@ def is_scale_layernorm(
         return False
     args = list(layernorm_node.args)
     args[4] = eps / scale / scale
-    args[0] = scale_node.args[0] 
+    args[0] = scale_node.args[0]
     layernorm_node.args = tuple(args)
     return True
+
 
 class FusedScaleLayernorm(Pattern):
     _opt_level = OptLevel.level2
