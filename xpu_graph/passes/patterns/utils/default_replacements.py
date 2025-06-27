@@ -338,3 +338,8 @@ class BatchDenseLayer(nn.Module):
         elif act_str == "silu":
             y = F.silu(y)
         return y
+
+
+class ScaledDotProductAttention(nn.Module):
+    def forward(self, q, k, v, attn_mask, scale):
+        return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)

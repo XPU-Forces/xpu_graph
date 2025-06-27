@@ -47,7 +47,7 @@ class ConstantFolding(Optimizer):
                 continue
             if self._all_input_constant(node):
                 changed = True
-                new_args = (getattr(gm, arg.target) for arg in node.args)
+                new_args = (getattr(gm, arg.target) if isinstance(arg, fx.Node) else arg for arg in node.args)
 
                 disable_fake_mode = None
                 from packaging import version
