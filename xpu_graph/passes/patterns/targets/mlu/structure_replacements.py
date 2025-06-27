@@ -6,6 +6,7 @@ from .triton_kernel.fused_serial_mm_2dot import fuse_serial_mm_2dot
 from .triton_kernel.fused_serial_mm_3dot import fuse_serial_mm_3dot
 from .triton_kernel.fused_slice import fused_slice_low
 from .triton_kernel.fused_slice_cat import fused_slice_cat
+from .triton_kernel.fused_slice_sum_cat import fuse_slice_sum_cat
 from .triton_kernel.fused_slice_v2 import fused_slice_low_v2
 from .triton_kernel.fused_sum_3d import fused_sum_3d_input
 from .triton_kernel.get_mlu_devinfo import get_device_properties
@@ -61,6 +62,50 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
             len(indices),
             input_tensor.stride(0),
         )
+
+
+class SliceSumCatOperation(torch.nn.Module):
+    def __init__(self, slice_param):
+        """
+        Args:
+            slice_param (list of tuples): A list of slice indices, where each tuple
+                                          contains (start_idx, end_idx) for slicing.
+        """
+        super().__init__()
+        device = torch.mlu.current_device()
+
+        slice_ = []
+        for param in slice_param:
+            slice_ += [param[0], param[1]]
+        self.slice_tensor = torch.tensor(slice_, dtype=torch.int32, device="mlu:" + str(device))
+
+        self.output_num = len(slice_param)
+        self.start = min([s[0] for s in slice_param])
+        self.end = max([s[1] for s in slice_param])
+        self.slice_param_list = slice_param
+
+    def forward(self, input):
+        """
+        Forward pass for the SliceSumCatOperation.
+
+        Args:
+            input (torch.Tensor): The input tensor of shape (batch, row, col).
+
+        Returns:
+            torch.Tensor: The output tensor of shape (batch, len(slice_param) * col). The processed tensor after slice -> sum -> cat operations.
+        """
+        batch, row, col = input.shape
+
+        return fuse_slice_sum_cat(input, self.slice_tensor, self.output_num, self.end)
+
+
+def can_fuse_slice_sum_cat(input, slice_param):
+    print(slice_param)
+    start = min([s[0] for s in slice_param])
+    end = max([s[1] for s in slice_param])
+    # Ensure the slicing range does not exceed 1024 for computational efficiency
+    # as the slice->sum operation is changed to masked-sum in optimized kernel
+    return end - start <= 1024
 
 
 class FuseSliceCatSameInputModule_v2(torch.nn.Module):
@@ -447,6 +492,7 @@ def get_structure_replacements(config):
         "FusedRMSNorm": RMSNormModule,
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
+        "FusedSliceSumCat": (SliceSumCatOperation, can_fuse_slice_sum_cat),
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
