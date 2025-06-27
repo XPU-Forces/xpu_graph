@@ -1,7 +1,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-import torch_mlu
 from torch import fx, nn
 
 from xpu_graph.config import OptLevel
@@ -9,7 +8,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 
-from ...utils.check_ops import get_shape
+from ..utils.check_ops import check_op
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
 NodeType = fx.Node
@@ -22,17 +21,13 @@ NodeType = fx.Node
 """
 
 
-class FusedGatherToCopy(Pattern):
+class ChangeRepeatToExpand(Pattern):
     _opt_level = OptLevel.level1
     _support_stages = [FxStage.inference, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        candidates = [
-            node
-            for node in graph_module.graph.nodes
-            if node.op == "call_function" and node.target == torch.ops.aten.gather.default
-        ]
+        candidates = [node for node in graph_module.graph.nodes if check_op(node, torch.ops.aten.gather.default)]
         for gather_node in candidates:
             repeat_node = gather_node.args[2]
             gather_dim = gather_node.args[1]
