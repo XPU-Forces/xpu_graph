@@ -8,8 +8,6 @@ flags:
     - xpu_graph/**/*test*
     - xpu_graph/**/*npu*/**
     - xpu_graph/**/*npu*
-    - xpu_graph/**/*ascend*/**
-    - xpu_graph/**/*ascend*
   npu:
     # paths:
     ignore:
@@ -23,8 +21,6 @@ flags:
   #   - xpu_graph/**/*mlu*
   #   - xpu_graph/**/*npu*/**
   #   - xpu_graph/**/*npu*
-  #   - xpu_graph/**/*ascend*/**
-  #   - xpu_graph/**/*ascend*
   #   - xpu_graph/**/tests/**
   #   - xpu_graph/**/*test*
 

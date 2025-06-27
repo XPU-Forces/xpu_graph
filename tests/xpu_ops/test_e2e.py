@@ -66,7 +66,8 @@ def test_e2e():
     from xpu_graph.config import XpuGraphConfig
 
     config = XpuGraphConfig()
-    config.target = xpu_graph.config.Target.ascend
+    config.target = xpu_graph.config.Target.npu
+    config.vendor_compiler_config = {"compiler": "ge"}
     config.debug = True
     config.opt_level = xpu_graph.config.OptLevel.level2
     config.execute_mode = xpu_graph.config.ExecuteMode.graph

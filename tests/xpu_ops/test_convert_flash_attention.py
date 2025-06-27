@@ -56,7 +56,7 @@ def test_flash_attention():
         .npu()
     )
 
-    config = XpuGraphConfig(target=xpu_graph.config.Target.ascend)
+    config = XpuGraphConfig(target=xpu_graph.config.Target.npu, vendor_compiler_config={"compiler": "ge"})
     compiled = torch.compile(_attention, backend=XpuGraph(config), dynamic=False)
 
     res = compiled(query, key, value)

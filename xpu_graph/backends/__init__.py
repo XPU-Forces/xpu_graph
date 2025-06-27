@@ -11,14 +11,7 @@ def vendor_compiler(
     config_dict: Optional[Dict[str, Any]],
     **extra_kwargs
 ) -> Callable:
-    if target == Target.ascend:
-        from .ascend import ascend_compile
-
-        logger.info("ascend_compile start...")
-        ascend_compiled = ascend_compile(gm, fake_inputs, config_dict, **extra_kwargs)
-        logger.info("ascend_compile complete")
-        return ascend_compiled
-    elif target == Target.npu:
+    if target == Target.npu:
         from .npu import npu_compile
 
         logger.info("npu_compile start...")
