@@ -13,11 +13,9 @@ from ...utils.check_ops import (
     check_act_op,
     check_add_op,
     check_addmm_op,
-    check_bmm_op,
     check_mm_op,
     check_t_op,
     check_trans_op,
-    check_view,
 )
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
@@ -248,40 +246,8 @@ def match_mm(graph_module):
     return changed
 
 
-def swap_view_between(graph_module, func1, func2):
-    for node in reversed(graph_module.graph.nodes):
-        if not func1(node):
-            continue
-        view_node = node.args[0]
-        if not check_view(view_node):
-            continue
-        mm_node = view_node.args[0]
-        if not func2(mm_node):
-            continue
-        if len(mm_node.users) != 1:
-            continue
-        if len(view_node.users) != 1:
-            continue
-
-        with graph_module.graph.inserting_before(view_node):
-            new_node = graph_module.graph.call_function(
-                node.target,
-                args=(mm_node,),
-                kwargs=node.kwargs,
-            )
-        view_node.args = (new_node,) + view_node.args[1:]
-        node.replace_all_uses_with(view_node)
-        graph_module.graph.erase_node(node)
-
-
 def match_mm_add1(graph_module):
     changed = False
-    # swap view
-    swap_view_between(
-        graph_module,
-        check_add_op,
-        lambda a: a.target != "mlu_tmo_fused_matmul_replacement",
-    )
 
     for node in reversed(graph_module.graph.nodes):
         if not check_add_op(node):
@@ -336,16 +302,6 @@ def match_mm_add2(graph_module):
 
 def match_mm_act(graph_module):
     changed = False
-    swap_view_between(
-        graph_module,
-        lambda a: check_act_op(a)[0],
-        lambda a: a.target != "mlu_tmo_fused_matmul_replacement",
-    )
-    swap_view_between(
-        graph_module,
-        lambda a: check_act_op(a)[0],
-        lambda a: a.target != "mlu_tmo_fused_matmul_add_replacement",
-    )
 
     for node in reversed(graph_module.graph.nodes):
         is_cat, act_str = check_act_op(node)

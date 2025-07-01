@@ -65,9 +65,9 @@ class XpuGraph:
 
         logger.info(f"{config}")
 
-        if self._config.target == Target.ascend:
+        if self._config.target == Target.npu and self._config.vendor_compiler_config["compiler"] == "ge":
             self._config.enable_cache = False
-            logger.warning("Target Ascend does not support cache.")
+            logger.warning("Target NPU ge-compiler does not support cache.")
 
         self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
         self._set_context()

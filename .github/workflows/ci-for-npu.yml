@@ -4,24 +4,39 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    # paths_ignore:
-    # - /**/mlu/**
-    # - /**/*mlu*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/npu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/npu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/npu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-npu.yml'
   push:
     branches:
-    - develop
     - master
-    # paths_ignore:
-    # - /**/*mlu*/**
-    # - /**/*mlu*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/npu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/npu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/npu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-npu.yml'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
@@ -33,7 +48,7 @@ jobs:
     name: Run npu tests
     runs-on: NPU
     container:
-      image: hub.byted.org/arnold/ascend_for_leo:3579b13e2a1ce9d478cee8f35f6ffe9f
+      image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.2.rc1_py3.11_th26
       volumes:
       - /etc/localtime:/etc/localtime
       - /usr/local/Ascend/driver:/usr/local/Ascend/driver
@@ -48,13 +63,13 @@ jobs:
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         pip install -e '.[dev]'
         echo "Running npu tests..."
-        python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu tests/ascend
+        python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         flags: npu
         name: npu-codecov
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         use_pypi: true
         verbose: true

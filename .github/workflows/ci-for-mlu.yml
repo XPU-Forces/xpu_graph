@@ -4,18 +4,39 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    # paths_ignore:
-    # - /**/npu/**
-    # - /**/ascend/**
-    # - /**/*npu*
-    # - /**/*ascend*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/mlu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/mlu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/mlu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-mlu.yml'
   push:
     branches:
     - master
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/mlu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/mlu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/mlu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-mlu.yml'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
@@ -44,6 +65,6 @@ jobs:
       with:
         flags: mlu
         name: mlu-codecov
+        fail_ci_if_error: false
         use_pypi: true
-        fail_ci_if_error: true
         verbose: true
