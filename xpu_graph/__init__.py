@@ -16,33 +16,13 @@ __all__ = [
     "XpuGraphCache",
     "default_cache",
     "mlu_compiler",
-    "ascend_compiler",
+    "npu_compiler",
     "register_plugin_pattern",
     "register_this_as_plugin_pattern",
     "register_this_as_pattern_constraint",
     "deregister_plugin_patterns",
     "enable_plugin_patterns",
 ]
-
-
-def ascend_compiler(
-    freeze: bool = False,
-    opt_level: OptLevel = OptLevel.level1,
-    constant_folding: bool = True,
-    cache: XpuGraphCache = default_cache(),
-    debug: bool = False,
-    vendor_compiler_config: Dict[str, Any] = {"mode": "default"},
-):
-    config = XpuGraphConfig(
-        is_training=False,
-        target=Target.ascend,
-        freeze=freeze,
-        opt_level=opt_level,
-        constant_folding=constant_folding,
-        debug=debug,
-        vendor_compiler_config=vendor_compiler_config,
-    )
-    return XpuGraph(config, cache)
 
 
 def npu_compiler(

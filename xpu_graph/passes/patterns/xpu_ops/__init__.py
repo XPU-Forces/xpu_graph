@@ -1,7 +1,7 @@
-import pkgutil
 import importlib
+import pkgutil
 
-from xpu_graph.passes.patterns.pattern import Pattern, AutoMatchPattern, PatternGroup
+from xpu_graph.passes.patterns.pattern import AutoMatchPattern, Pattern, PatternGroup
 from xpu_graph.utils import logger
 
 
@@ -20,6 +20,7 @@ def get_all_patterns(config):
             if (
                 isinstance(pat, type)
                 and issubclass(pat, Pattern)
+                and pat.__module__.startswith(__name__)
                 and pat not in (Pattern, AutoMatchPattern)
                 and pat._opt_level <= config.opt_level
             ):

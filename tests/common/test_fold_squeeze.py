@@ -1,36 +1,44 @@
 import pytest
-#import random
+
+# import random
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
-device = "mlu:0"
+device = "cpu"
 data_type = torch.float16
+
 
 def fn0(a):
     unsqueeze = torch.unsqueeze(a, dim=0)
     output = torch.squeeze(unsqueeze, dim=[0])
     return output
 
+
 def fn1(a):
     unsqueeze = torch.unsqueeze(a, dim=0)
     output = torch.squeeze(unsqueeze, dim=0)
     return output
+
 
 def fn2(a):
     unsqueeze = torch.unsqueeze(a, dim=0)
     output = torch.squeeze(unsqueeze)
     return output
 
+
 def fn3(a):
     unsqueeze = torch.unsqueeze(a, dim=0)
     output = torch.squeeze(unsqueeze)
     return output
 
+
 def fn4(a):
     squeeze = torch.squeeze(a)
     output = torch.squeeze(squeeze, dim=0)
     return output
+
 
 def fn5(a):
     squeeze0 = torch.squeeze(a, dim=0)
@@ -43,6 +51,7 @@ def fn5(a):
     squeeze6 = torch.squeeze(squeeze5, dim=0)
     squeeze7 = torch.squeeze(squeeze6)
     return squeeze7
+
 
 def fn6(a):
     squeeze0 = torch.squeeze(a, dim=0)
@@ -57,6 +66,7 @@ def fn6(a):
     squeeze8 = torch.squeeze(squeeze7, dim=0)
     return squeeze8
 
+
 def fn7(a):
     squeeze0 = torch.squeeze(a, dim=0)
     squeeze1 = torch.squeeze(squeeze0, dim=0)
@@ -70,6 +80,7 @@ def fn7(a):
     squeeze8 = torch.squeeze(squeeze7, dim=0)
     return squeeze8
 
+
 def fn8(a):
     squeeze0 = torch.squeeze(a, dim=0)
     squeeze1 = torch.squeeze(squeeze0, dim=0)
@@ -82,6 +93,7 @@ def fn8(a):
     squeeze7 = torch.squeeze(squeeze6)
     squeeze8 = torch.squeeze(squeeze7, dim=0)
     return squeeze8, squeeze6
+
 
 def squeeze_test(xpu_graph, func):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)

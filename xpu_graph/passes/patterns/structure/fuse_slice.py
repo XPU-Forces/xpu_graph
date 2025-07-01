@@ -3,7 +3,6 @@ from typing import Callable
 import torch
 from torch import fx, nn
 
-# import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ..utils.check_ops import check_slice_op, check_stack_op, get_shape
@@ -99,7 +98,7 @@ class FusedSlice(Pattern):
                 with graph_module.graph.inserting_before(replace_n[0]):
                     module_name = register_new_submodule(
                         graph_module,
-                        "mlu_triton_slice",
+                        "fused_triton_slice",
                         self.target_mod,
                         args=(start_indices,),
                     )
