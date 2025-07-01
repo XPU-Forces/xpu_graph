@@ -184,7 +184,9 @@ class TestMatMul:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
+    matmul_test(xpu_graph_backend, fn1)
+    matmul_test(xpu_graph_backend, fn9)
     matmul_test(xpu_graph_backend, fn20)
     matmul_test(xpu_graph_backend, fn17)
     matmul_test(xpu_graph_backend, fn18)
