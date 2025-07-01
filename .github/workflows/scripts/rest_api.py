@@ -39,6 +39,22 @@ parser.add_argument(
 )
 
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+parser.add_argument("--generate_notes", type=str2bool, default=False, help="Generate release notes.")
+parser.add_argument("--make_latest", type=str2bool, default=False, help="Mark as the latest release.")
+parser.add_argument("--pre_release", type=str2bool, default=False, help="Mark as a pre-release.")
+
+
 class AutoAttr:
     @classmethod
     def set_attr(cls, attr_name, request_type):
@@ -158,6 +174,7 @@ class GitHubRESTApi(AutoAttr):
     ):
         resp = self.query_release(tag_name)
         if resp.status == 200:
+            raise RuntimeError(f"Release {tag_name} already exists, please delete it first or use another tag name.")
             self.delete_release(json.loads(resp.data.decode("utf-8"))["id"])
 
         resp = self.create_release(tag_name, commit_id, desc, draft, prerelease, generate_release_notes, make_latest)
@@ -173,4 +190,12 @@ class GitHubRESTApi(AutoAttr):
 if __name__ == "__main__":
     args = parser.parse_args()
     client = GitHubRESTApi(args.repo, args.private_token, *args.tagger.split("+"))
-    client.release_artifact(args.tag_name, args.branch_or_commit, args.desc, list(args.artifacts))
+    client.release_artifact(
+        args.tag_name,
+        args.branch_or_commit,
+        args.desc,
+        list(args.artifacts),
+        generate_release_notes=args.generate_notes,
+        prerelease=args.pre_release,
+        make_latest=args.make_latest,
+    )

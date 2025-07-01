@@ -1,21 +1,23 @@
-import torch
-from torch import nn, fx
-import torch_mlu
 from typing import List, Tuple
+
+import torch
+import torch_mlu
+from torch import fx, nn
 
 from xpu_graph import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
+
 from ...utils.check_ops import (
-    check_copy,
     check_add_op,
     check_bmm_op,
-    check_softmax_op,
-    get_actual_node,
-    get_shape,
+    check_copy,
     check_div_or_mul_op,
+    check_softmax_op,
     check_sub_or_add_op,
     check_view,
+    get_actual_node,
+    get_shape,
 )
 
 
@@ -167,9 +169,7 @@ class FlashAttentionWithTranspose(nn.Module):
         output_dtype,
     ):
         key = key_transposed.transpose(-1, -2)
-        return self.flash_attention(
-            query, key, value, scale_params, add_params, output_shape, output_dtype
-        )
+        return self.flash_attention(query, key, value, scale_params, add_params, output_shape, output_dtype)
 
 
 def validate_transpose_operation(key_transpose):
@@ -198,14 +198,14 @@ def _is_fa(node: fx.Node):
     is_scale_op, addinput1, params = check_sub_or_add_op(bmm_1_node)
     if is_scale_op:
         add_params = params
-        bmm_1_node = addinput1
+        bmm_1_node = get_actual_node(bmm_1_node, 0)
 
     # (optional) find div or mul
     scale_params = (1.0, False)
     is_scale_op, div_input_node, params = check_div_or_mul_op(bmm_1_node)
     if is_scale_op:
         scale_params = params
-        bmm_1_node = div_input_node
+        bmm_1_node = get_actual_node(bmm_1_node, 0)
 
     if bmm_1_node.target != "mlu_tmo_fused_bmm_replacement":
         if bmm_1_node.target != "mlu_tmo_fused_bmm_add_replacement":
@@ -237,9 +237,7 @@ class FusedFlashAttention(Pattern):
 
     def process(self, graph_module: fx.GraphModule):
         graph_module.add_submodule("flash_attn_base", FlashAttentionReplacement())
-        graph_module.add_submodule(
-            "flash_attn_transpose", FlashAttentionWithTranspose()
-        )
+        graph_module.add_submodule("flash_attn_transpose", FlashAttentionWithTranspose())
         modified = False
         for node in reversed(graph_module.graph.nodes):
             matched, fa_param = _is_fa(node)

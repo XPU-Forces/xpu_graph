@@ -1,11 +1,13 @@
+import math
+
 import pytest
 import torch
 import torch_npu
+import xpu_ops
+
+import xpu_graph
 from xpu_graph.compiler import XpuGraph
 from xpu_graph.config import XpuGraphConfig
-import math
-import xpu_ops
-import xpu_graph
 
 xpu_ops.load_xpu_ops_npu()
 
@@ -19,12 +21,7 @@ def test_flash_attention():
     head_dim = 128
 
     def _attention(query, key, value):
-        mask = (
-            1
-            - torch.tril(
-                torch.ones(q_seq_length, kv_seq_length, dtype=torch.uint8)
-            ).npu()
-        )
+        mask = 1 - torch.tril(torch.ones(q_seq_length, kv_seq_length, dtype=torch.uint8)).npu()
         scale = 1.0 / math.sqrt(head_dim)
         output = torch_npu.npu_prompt_flash_attention(
             query,
@@ -40,23 +37,11 @@ def test_flash_attention():
         )
         return output
 
-    query = (
-        torch.randn(batch, q_head_num, q_seq_length, head_dim)
-        .to(dtype=torch.bfloat16)
-        .npu()
-    )
-    key = (
-        torch.randn(batch, kv_head_num, kv_seq_length, head_dim)
-        .to(dtype=torch.bfloat16)
-        .npu()
-    )
-    value = (
-        torch.randn(batch, kv_head_num, kv_seq_length, head_dim)
-        .to(dtype=torch.bfloat16)
-        .npu()
-    )
+    query = torch.randn(batch, q_head_num, q_seq_length, head_dim).to(dtype=torch.bfloat16).npu()
+    key = torch.randn(batch, kv_head_num, kv_seq_length, head_dim).to(dtype=torch.bfloat16).npu()
+    value = torch.randn(batch, kv_head_num, kv_seq_length, head_dim).to(dtype=torch.bfloat16).npu()
 
-    config = XpuGraphConfig(target=xpu_graph.config.Target.ascend)
+    config = XpuGraphConfig(target=xpu_graph.config.Target.npu, vendor_compiler_config={"compiler": "ge"})
     compiled = torch.compile(_attention, backend=XpuGraph(config), dynamic=False)
 
     res = compiled(query, key, value)
