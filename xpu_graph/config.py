@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional, Union
 
 
 class Target(Enum):
-    ascend = "ascend"
     mlu = "mlu"
     none = "none"
     npu = "npu"
