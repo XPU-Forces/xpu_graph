@@ -22,7 +22,6 @@ Closes #ISSUE_NUMBER
   - [ ] I have added tests.
     - `/tests/common` for `common` tests
     - `/tests/mlu` for `MLU` tests
-    - `/tests/npu` for `GE` tests
-    - `/tests/ascend` for `acl-graph` tests
+    - `/tests/npu` for `NPU` tests
     - `/tests/xpu_ops` for `xpu-ops` tests
   - [ ] This PR does not need a test because `FILL THIS IN`.

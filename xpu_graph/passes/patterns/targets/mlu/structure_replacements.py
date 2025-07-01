@@ -163,7 +163,7 @@ class ComboSumModule(torch.nn.Module):
         return outputs
 
 
-def get_structure_replacements():
+def get_structure_replacements(config):
     return {
         "FusedRMSNorm": RMSNormModule,
         "FusedSlice": FuseSliceModule,

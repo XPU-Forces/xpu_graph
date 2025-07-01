@@ -1,24 +1,15 @@
-from typing import Optional, Dict, Callable, Any
+from typing import Any, Callable, Dict, Optional
+
 import torch
+
 from xpu_graph.config import Target
 from xpu_graph.utils import logger
 
 
 def vendor_compiler(
-    gm: torch.fx.GraphModule,
-    fake_inputs: list,
-    target: Target,
-    config_dict: Optional[Dict[str, Any]],
-    **extra_kwargs
+    gm: torch.fx.GraphModule, fake_inputs: list, target: Target, config_dict: Optional[Dict[str, Any]], **extra_kwargs
 ) -> Callable:
-    if target == Target.ascend:
-        from .ascend import ascend_compile
-
-        logger.info("ascend_compile start...")
-        ascend_compiled = ascend_compile(gm, fake_inputs, config_dict, **extra_kwargs)
-        logger.info("ascend_compile complete")
-        return ascend_compiled
-    elif target == Target.npu:
+    if target == Target.npu:
         from .npu import npu_compile
 
         logger.info("npu_compile start...")
