@@ -21,6 +21,7 @@ def get_all_patterns(config: XpuGraphConfig):
             if (
                 isinstance(pat, type)
                 and issubclass(pat, Pattern)
+                and pat.__module__.startswith(__name__)
                 and pat not in (Pattern, AutoMatchPattern)
                 and pat._opt_level <= config.opt_level
             ):
