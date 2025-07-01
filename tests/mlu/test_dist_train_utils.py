@@ -1,18 +1,18 @@
 import os
+import random
+
+import numpy as np
 import torch
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch import nn, optim
-from torch.utils.data import DataLoader, Dataset
+import torch.multiprocessing as mp
 import torch_mlu
+from torch import nn, optim
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, Dataset
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-
-import random
-import numpy as np
-import torch.multiprocessing as mp
 
 
 def set_seed(seed):
@@ -21,6 +21,7 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.mlu.manual_seed(seed)
     torch.mlu.manual_seed_all(seed)
+
 
 set_seed(12)
 
@@ -47,9 +48,24 @@ class MatMulModel(nn.Module):
         return torch.matmul(x, self.weight) + self.bias
 
 
+def set_dist_env():
+    if "MASTER_ADDR" not in os.environ:
+        os.environ["MASTER_ADDR"] = "localhost"
+    if "MASTER_PORT" not in os.environ:
+        import socket
+        from contextlib import closing
+
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("localhost", 0))
+            port = s.getsockname()[1]
+
+        os.environ["MASTER_PORT"] = str(port)
+
+    print(f'Setting master: {os.environ["MASTER_ADDR"]}:{os.environ["MASTER_PORT"]}')
+
+
 def train_setup(rank, world_size):
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
     dist.init_process_group("cncl", rank=rank, world_size=world_size)
     torch.mlu.set_device(rank)
 

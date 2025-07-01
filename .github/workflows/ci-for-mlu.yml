@@ -55,6 +55,10 @@ jobs:
     - name: Running mlu tests
       shell: bash
       run: |
+        export DEV0=$(shuf -n 1 -e 0 2 4 6)
+        export DEV1=$(( $DEV0 + 1 ))
+        export MLU_VISIBLE_DEVICES=$DEV0,$DEV1
+        echo "MLU_VISIBLE_DEVICES: $MLU_VISIBLE_DEVICES"
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         pip install -e '.[dev]'
         echo "Running MLU tests..."
