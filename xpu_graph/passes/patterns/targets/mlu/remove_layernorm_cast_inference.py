@@ -1,8 +1,10 @@
 import torch
 import torch.fx as fx
-from xpu_graph.fx_utils import FxStage
+
 from xpu_graph.config import OptLevel
+from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern
+from xpu_graph.passes.patterns.utils.check_ops import check_op
 
 
 class RemoveLayerNormCastForward(AutoMatchPattern):
@@ -34,6 +36,10 @@ class RemoveLayerNormCastForward(AutoMatchPattern):
             return False
 
         layernorm.replace_input_with(layernorm.args[0], pre_cast.args[0])
+        if check_op(layernorm.args[2], torch.ops.aten._to_copy.default) and _can_remove(layernorm.args[2], post_cast):
+            layernorm.replace_input_with(layernorm.args[2], layernorm.args[2].args[0])
+        if check_op(layernorm.args[3], torch.ops.aten._to_copy.default) and _can_remove(layernorm.args[3], post_cast):
+            layernorm.replace_input_with(layernorm.args[3], layernorm.args[3].args[0])
         post_cast.replace_all_uses_with(getitem)
 
         return True
