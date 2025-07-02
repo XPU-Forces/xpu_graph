@@ -4,6 +4,7 @@ from xpu_graph.config import Target
 from xpu_graph.utils import logger
 
 
+
 def get_all_patterns(config) -> dict:
     if config.target == Target.mlu:
         from .mlu import get_all_patterns
