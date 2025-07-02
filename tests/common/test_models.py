@@ -45,10 +45,8 @@ class ConstantInplaceModel(nn.Module):
         y = x[indices].sum(-1)
         max_len = indices.max() + 1
         zeros = torch.zeros(max_len, dtype=y.dtype)
-        zeros.scatter_(0, indices, y)
-        result = torch.cat(
-            [zeros, torch.zeros(x.shape[0] - max_len, dtype=zeros.dtype)], dim=0
-        )
+        zeros = zeros.scatter_(0, indices, y)
+        result = torch.cat([zeros, torch.zeros(x.shape[0] - max_len, dtype=zeros.dtype)], dim=0)
         return result
 
 

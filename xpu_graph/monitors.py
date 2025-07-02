@@ -1,0 +1,154 @@
+import copy
+import itertools
+import os
+from typing import Callable
+
+import torch
+from torch.fx import GraphModule
+from torch.nn import Module
+
+from xpu_graph.config import get_dump_dir
+from xpu_graph.utils import logger
+
+CASE_CNT = itertools.count()
+
+
+def _invoke_forward(func, inputs):
+    with torch.enable_grad():
+        outputs = func(*inputs)
+    return outputs
+
+
+def _invoke_backward(func, inputs, outputs, grad_outputs):
+    inputs_ad_idx = [i for i, t in enumerate(inputs) if t.requires_grad]
+    inputs_ad = [t for t in inputs if t.requires_grad]
+    outputs_ad = [t for t in outputs if t.requires_grad]
+
+    outputs_ad_idx = [i for i, t in enumerate(outputs) if t.requires_grad]
+    grad_outputs_ad = [grad_outputs[idx] for idx in outputs_ad_idx]
+    grad_inputs_ad = torch.autograd.grad(outputs_ad, inputs_ad, grad_outputs_ad, allow_unused=True)
+
+    grad_inputs = [None] * len(inputs)
+    for i, g in zip(inputs_ad_idx, grad_inputs_ad):
+        grad_inputs[i] = g
+
+    return tuple(grad_inputs)
+
+
+class AutogradMonitor:
+    def __init__(self, golden_fn: Callable, mark=0, propagate_real=True):
+        # Note: The monitor is used for training.
+        # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
+        self.golden_fn = golden_fn
+        if isinstance(golden_fn, Module):
+            assert len(golden_fn.state_dict()) == 0
+        self.mark = mark
+        self.propagate_real = propagate_real
+
+    def guard(self, compiled_fn):
+        class MonitoredCompiled(torch.autograd.Function):
+            golden_func = self.golden_fn
+            target_func = compiled_fn
+
+            @staticmethod
+            def forward(ctx, *inputs):
+                logger.debug("Monitored forward")
+                detached_inputs = [t.detach().requires_grad_(t.requires_grad) for t in inputs]
+                # Currently, we assume no mutations on inputs
+                golden_outputs = _invoke_forward(MonitoredCompiled.golden_func, detached_inputs)
+                actual_outputs = _invoke_forward(MonitoredCompiled.target_func, detached_inputs)
+                try:
+                    torch.testing.assert_close(actual_outputs, golden_outputs)
+                except AssertionError as e:
+                    global CASE_CNT
+                    case_id = next(CASE_CNT)
+                    dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_forward_{case_id}")
+                    logger.warning(
+                        f"The forward pass diverges for {MonitoredCompiled.golden_func}\ncases saved_to: {dump_path}\nError: {e}"
+                    )
+                    os.makedirs(dump_path, exist_ok=True)
+                    if isinstance(MonitoredCompiled.golden_func, GraphModule):
+                        with open(os.path.join(dump_path, "golden_mod.py"), "w+t") as gm_f:
+                            mod_str = MonitoredCompiled.golden_func.print_readable(
+                                print_output=False, include_stride=True, include_device=True
+                            )
+                            gm_f.write(mod_str)
+
+                    dump_glob = {
+                        "inputs": detached_inputs,
+                        "golden_outputs": golden_outputs,
+                        "actual_outputs": actual_outputs,
+                    }
+                    torch.save(
+                        dump_glob,
+                        os.path.join(dump_path, "dump_glob_fwd.pt"),
+                    )
+
+                ctx.saved_states = {
+                    "inputs": detached_inputs,
+                    "golden_outputs": golden_outputs,
+                    "actual_outputs": actual_outputs,
+                }
+
+                # Note: wrap the results with a tuple, thus the backward function is guaranteed to be triggered
+                if self.propagate_real:
+                    return tuple(t.detach().requires_grad_(t.requires_grad) for t in actual_outputs)
+                else:
+                    return tuple(t.detach().requires_grad_(t.requires_grad) for t in golden_outputs)
+
+            @staticmethod
+            def backward(ctx, *grad_outputs):
+                logger.debug("Monitored backward")
+
+                inputs = ctx.saved_states["inputs"]
+                golden_outputs = ctx.saved_states["golden_outputs"]
+                actual_outputs = ctx.saved_states["actual_outputs"]
+
+                golden_grad_inputs = _invoke_backward(
+                    MonitoredCompiled.golden_func, inputs, golden_outputs, grad_outputs
+                )
+                actual_grad_inputs = _invoke_backward(
+                    MonitoredCompiled.target_func, inputs, actual_outputs, grad_outputs
+                )
+                try:
+                    torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs)
+                except AssertionError as e:
+                    global CASE_CNT
+                    case_id = next(CASE_CNT)
+                    dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_backward_{case_id}")
+                    logger.warning(
+                        f"The backward pass diverges for {MonitoredCompiled.golden_func}\ncases saved_to: {dump_path}\nError: {e}"
+                    )
+                    os.makedirs(dump_path, exist_ok=True)
+                    if isinstance(MonitoredCompiled.golden_func, GraphModule):
+                        with open(os.path.join(dump_path, "golden_mod.py"), "w+t") as gm_f:
+                            mod_str = MonitoredCompiled.golden_func.print_readable(
+                                print_output=False, include_stride=True, include_device=True
+                            )
+                            gm_f.write(mod_str)
+                    dump_glob = {
+                        "inputs": inputs,
+                        "grad_outputs": grad_outputs,
+                        "golden_grad_inputs": golden_grad_inputs,
+                        "actual_grad_inputs": actual_grad_inputs,
+                    }
+                    torch.save(
+                        dump_glob,
+                        os.path.join(dump_path, "dump_glob_bwd.pt"),
+                    )
+                if self.propagate_real:
+                    return actual_grad_inputs
+                else:
+                    return golden_grad_inputs
+
+        # Similar to what torch._functorch.autograd does, wrap the forward function again
+        def monitored_forward(*inputs):
+            return MonitoredCompiled.apply(*inputs)
+
+        if hasattr(compiled_fn, "zero_grad"):
+            monitored_forward.zero_grad = compiled_fn.zero_grad
+        if hasattr(compiled_fn, "named_parameters"):
+            monitored_forward.named_parameters = compiled_fn.named_parameters
+        if hasattr(compiled_fn, "named_buffers"):
+            monitored_forward.named_buffers = compiled_fn.named_buffers
+        return monitored_forward

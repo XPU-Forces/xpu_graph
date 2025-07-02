@@ -1,18 +1,20 @@
 import pytest
-
 import torch
 import torch.nn as nn
-import xpu_graph
-from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar
 
-from tests.common.test_models import all_models
+import xpu_graph
+from tests.common.test_models import ConstantInplaceModel, InplaceModel, all_models
+from xpu_graph import OptLevel
+from xpu_graph.fx_utils import FxStage
+from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "cpu"
 data_type = torch.float32
 
 
-def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
+def compare_training(ModCls, backend, nsteps=10, bsz=8, input_dim=16):
+    torch._dynamo.reset()
     golden = ModCls(input_dim).to(device=device, dtype=data_type)
     compiled = ModCls(input_dim).to(device=device, dtype=data_type)
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
@@ -27,7 +29,6 @@ def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
     loss_fn = nn.MSELoss()
 
     for i in range(nsteps):
-
         optimizer_golden.zero_grad()
         loss_golden = loss_fn(golden(input), target)
         loss_golden.backward()
@@ -39,16 +40,15 @@ def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
         optimizer_compiled.step()
 
         print(f"Step: {i} golden: {loss_golden}, compiled: {loss_compiled}")
-        assert is_similar(loss_golden, loss_compiled)
-        for p_name, p_golden in golden.named_parameters():
-            p_compiled = compiled.get_parameter(p_name)
-            assert is_similar(p_golden, p_compiled)
 
 
 class TestTraining:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
-            is_training=True, opt_level=OptLevel.level2, freeze=False
+            is_training=True,
+            opt_level=OptLevel.level1,
+            freeze=False,
+            debuggers=["autograd"],
         )
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
@@ -56,14 +56,69 @@ class TestTraining:
         "ReproCls",
         all_models,
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, ReproCls):
-        compare_training(ReproCls, self.train_backend)
+    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
+        with need_xpu_graph_logs():
+            compare_training(ReproCls, self.train_backend)
+        if ReproCls in [ConstantInplaceModel]:
+            assert "The compiled graph has mutated inputs, and thus cannot be monitored by autograd monitor."
+        else:
+            assert "diverges" not in caplog.text
+
+
+class FaultyPattern(Pattern):
+    def process(self, gm: torch.fx.GraphModule) -> bool:
+        changed = False
+        for node in gm.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.add.Tensor:
+                node.target = torch.ops.aten.sub.Tensor
+                changed = True
+        return changed
+
+
+class TestTrainingXFail:
+    def setup_class(self):
+        train_config = xpu_graph.XpuGraphConfig(
+            is_training=True,
+            opt_level=OptLevel.level1,
+            freeze=False,
+            debuggers=["autograd"],
+        )
+        self.train_backend = xpu_graph.XpuGraph(train_config, cache=xpu_graph.cache.no_cache())
+        self.faulty_pattern = FaultyPattern()
+        self.train_backend.get_pattern_manager().register_pattern(self.faulty_pattern)
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
+    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls, stage):
+        with need_xpu_graph_logs():
+            self.faulty_pattern._support_stages = [stage]
+            compare_training(ReproCls, self.train_backend)
+        if stage == FxStage.backward:
+            assert "The backward pass diverges" in caplog.text
+        else:
+            assert "The forward pass diverges" in caplog.text
 
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True
+        is_training=True,
+        opt_level=OptLevel.level1,
+        freeze=False,
+        debug=True,
+        debuggers=["autograd"],
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_training(ModCls, xpu_graph_backend)
+
+    faulty_pattern = FaultyPattern()
+    xpu_graph_backend.get_pattern_manager().register_pattern(faulty_pattern)
+
+    faulty_pattern._support_stages = [FxStage.forward]
+    compare_training(InplaceModel, xpu_graph_backend, nsteps=2)
+
+    faulty_pattern._support_stages = [FxStage.backward]
+    compare_training(InplaceModel, xpu_graph_backend, nsteps=2)

@@ -1,12 +1,11 @@
 import pytest
-
 import torch
 import torch.nn as nn
+
 import xpu_graph
+from tests.common.test_models import all_models
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar
-
-from tests.common.test_models import all_models
 
 device = "cpu"
 data_type = torch.float32
@@ -31,9 +30,7 @@ def compare_inference(ModCls, backend, bsz=8, input_dim=16):
 
 class TestInference:
     def setup_class(self):
-        infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=False
-        )
+        infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=False)
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
 
     @pytest.mark.parametrize(
@@ -46,9 +43,7 @@ class TestInference:
 
 class TestFreezeInference:
     def setup_class(self):
-        freeze_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=True
-        )
+        freeze_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=True)
         # Warning: DO NOT use create both freeze and non-freeze in the same test case,
         self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
 
@@ -61,17 +56,12 @@ class TestFreezeInference:
 
 
 if __name__ == "__main__":
-
-    config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True
-    )
+    config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True)
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)
 
-    config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True
-    )
+    config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True)
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)

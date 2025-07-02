@@ -6,7 +6,7 @@ from enum import Enum
 from functools import total_ordering
 from typing import Any, Dict, List, Optional
 
-from .utils import __XPU_GRAPH_ENVS__, logger
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
 
 class Target(Enum):
@@ -64,11 +64,18 @@ class XpuGraphConfig:
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
     vendor_compiler_config: Optional[Dict[str, Any]] = None
 
+    # When in debug mode, users can configure debuggers for rutime debugging
+    debuggers: Optional[List[str]] = None
+
     def _reset_config_with_env(self):
         import os
 
         if os.getenv(__XPU_GRAPH_ENVS__.debug) is not None:
             self.debug = get_bool_env_var(__XPU_GRAPH_ENVS__.debug, False)
+
+        if self.debug and os.getenv(__XPU_GRAPH_ENVS__.debuggers) is not None:
+            self.debuggers = os.getenv(__XPU_GRAPH_ENVS__.debuggers).split(",")
+            logger.info("DEBUGGERS: %s", self.debuggers)
 
         opt_level_env = os.getenv(__XPU_GRAPH_ENVS__.opt_level, str(self.opt_level.value))
         if opt_level_env == "0":
