@@ -1,27 +1,26 @@
-from typing import Optional, Union, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
-from torch import nn, fx
 import torch.nn.functional as F
-from typing import Callable, Optional, List
-from xpu_graph.config import OptLevel
+from torch import fx, nn
 
+from xpu_graph.config import OptLevel
+from xpu_graph.fx_utils import FxStage, trace_and_inline
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
-from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 from ..utils.check_ops import (
     check_add_op,
-    check_sub_op,
-    check_mul_op,
     check_div_or_mul_op,
-    check_pow_op,
     check_mean_op,
-    check_var_op,
-    check_sqrt_op,
+    check_mul_op,
+    check_pow_op,
     check_rsqrt_op,
-    get_input_node,
+    check_sqrt_op,
+    check_sub_op,
+    check_var_op,
     get_input_kw_node,
+    get_input_node,
     get_shape,
 )
 
@@ -51,16 +50,12 @@ def _is_unaffined_layernorm(
 
     sqrt, is_div = node1
     if is_div:
-        if check_sqrt_op(sqrt) or (
-            check_pow_op(sqrt) and get_input_node(sqrt, 1) == 0.5
-        ):
+        if check_sqrt_op(sqrt) or (check_pow_op(sqrt) and get_input_node(sqrt, 1) == 0.5):
             plus = get_input_node(sqrt, 0)
         else:
             return False, None
     else:
-        if check_rsqrt_op(sqrt) or (
-            check_pow_op(sqrt) and get_input_node(sqrt, 1) == -0.5
-        ):
+        if check_rsqrt_op(sqrt) or (check_pow_op(sqrt) and get_input_node(sqrt, 1) == -0.5):
             plus = get_input_node(sqrt, 0)
         else:
             return False, None
@@ -81,10 +76,7 @@ def _is_unaffined_layernorm(
         or get_input_node(var, 1) != [-1]
         or get_input_kw_node(var, "keepdim") != True
         or not isinstance(eps, (float, int))
-        or (
-            get_input_kw_node(var, "unbiased") != False
-            and get_input_kw_node(var, "correction") != 0
-        )
+        or (get_input_kw_node(var, "unbiased") != False and get_input_kw_node(var, "correction") != 0)
     ):
         return False, None
     return True, (input, eps)
@@ -92,9 +84,7 @@ def _is_unaffined_layernorm(
 
 def _is_unbiased_layernorm(
     node: fx.Node,
-) -> Tuple[
-    bool, Optional[Tuple[fx.Node, Optional[Union[float, int]], Optional[fx.Node]]]
-]:
+) -> Tuple[bool, Optional[Tuple[fx.Node, Optional[Union[float, int]], Optional[fx.Node]]]]:
     if check_mul_op(node):
         unaffined_ln = get_input_node(node, 0)
         weight = get_input_node(node, 1)
@@ -163,7 +153,12 @@ def _is_layernorm(
     return False, None
 
 
-def layernorm_replacement(input, weight, bias, epsilon):
+def layernorm_replacement(input, weight, bias, epsilon, dtype):
+    input = input.to(dtype)
+    if weight is not None:
+        weight = weight.to(dtype)
+    if bias is not None:
+        bias = bias.to(dtype)
     return F.layer_norm(input, input.shape[-1:], weight, bias, epsilon)
 
 
@@ -186,9 +181,10 @@ class FusedLayerNorm(Pattern):
 
             with graph_module.graph.inserting_before(node):
                 predispatch = self._current_stage == FxStage.pregrad
-                layer_norm_node = trace_and_inline(
-                    predispatch, graph_module, layernorm_replacement
-                )(input, weight, bias, eps)
+                result_dtype = node.meta["val"].dtype
+                layer_norm_node = trace_and_inline(predispatch, graph_module, layernorm_replacement)(
+                    input, weight, bias, eps, result_dtype
+                )
 
             node.replace_all_uses_with(layer_norm_node)
             changed = True
