@@ -51,7 +51,7 @@ def fuse_multiple_cat2(graph_module: fx.GraphModule, target_mod):
     changed = False
     cat_pattern_all = {}
     for node in graph_module.graph.nodes:
-        if "fuse_slice_cat_v2" in node.name:
+        if node.op == "call_module" and node.target.startswith("fuse_slice_cat_v2"):
             if node.args[0] not in cat_pattern_all:
                 cat_pattern_all[node.args[0]] = [(node, node.args[1])]
             else:
