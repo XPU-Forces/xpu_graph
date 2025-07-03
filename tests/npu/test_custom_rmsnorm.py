@@ -1,14 +1,9 @@
 import pytest
 import torch
-import torch_mlu
+
 import xpu_graph
-from xpu_graph.test_utils import is_similar
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 
 class RMSNorm1(torch.nn.Module):
@@ -45,8 +40,8 @@ class RMSNorm2(torch.nn.Module):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
-fn0 = RMSNorm1(hidden_size=(10,)).mlu()
-fn1 = RMSNorm2(hidden_size=(10,)).mlu()
+fn0 = RMSNorm1(hidden_size=(10,)).npu()
+fn1 = RMSNorm2(hidden_size=(10,)).half().npu()
 
 
 def fn2(hidden_states):
@@ -65,7 +60,9 @@ def fn3(hidden_states):
 
 def rmsnorm_test(xpu_graph, func):
     with torch.no_grad():
-        a = torch.randn(1, 10).mlu()
+        a = torch.randn(1, 10).npu()
+        if func == fn1:
+            a = a.half()
         compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
         if func != fn3:
             norm = compiled(a)
@@ -80,8 +77,8 @@ def rmsnorm_test(xpu_graph, func):
 
 class TestRMSNorm:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2
+        self.xpu_graph_backend = xpu_graph.npu_compiler(
+            opt_level=OptLevel.level2, vendor_compiler_config={"compiler": "ge", "mode": "reduce-overhead"}
         )
 
     @pytest.mark.parametrize(
@@ -97,11 +94,14 @@ class TestRMSNorm:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             rmsnorm_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedRMSNorm changed graph" in caplog.text
+        if pattern_func in [fn1]:
+            assert "Pattern.RemoveRMSNormNpuCast" in caplog.text
+        assert "Pattern.CustomRMSNorm changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2
+    xpu_graph_backend = xpu_graph.npu_compiler(
+        opt_level=OptLevel.level2, vendor_compiler_config={"compiler": "ge", "mode": "redeuce-overhead"}, debug=True
     )
     rmsnorm_test(xpu_graph_backend, fn0)
     rmsnorm_test(xpu_graph_backend, fn1)
