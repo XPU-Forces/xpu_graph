@@ -74,6 +74,10 @@ def check_sqrt_op(node: fx.Node) -> bool:
     return check_op(node, aten.sqrt.default)
 
 
+def check_square_op(node: fx.Node) -> bool:
+    return check_op(node, aten.square.default)
+
+
 def check_rsqrt_op(node: fx.Node) -> bool:
     return check_op(node, aten.rsqrt.default)
 
@@ -352,3 +356,15 @@ def is_one_like(node: Any) -> bool:
             aten.ones_like.default,
         )
     return False
+
+
+def is_type_cast(node: Any) -> bool:
+    if check_copy(node):
+        return len(node.kwargs) == 1 and "dtype" in node.kwargs
+    elif check_op(node, aten.to.dtype):
+        return True
+    return False
+
+
+def is_exclusively_used(used, user):
+    return all(cand is user for cand in used.users)

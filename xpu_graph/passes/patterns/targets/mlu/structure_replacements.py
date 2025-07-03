@@ -10,7 +10,7 @@ from .triton_kernel.get_mlu_devinfo import get_device_properties
 
 
 class RMSNormModule(torch.nn.Module):
-    def forward(self, inputs, weights, epsilon):
+    def forward(self, inputs, weights, epsilon, dtype):
         import torch_mlu_ops
 
         return torch_mlu_ops.fused_rms_norm(inputs, None, weights, None, None, epsilon, False)
@@ -165,7 +165,7 @@ class ComboSumModule(torch.nn.Module):
 
 def get_structure_replacements(config):
     return {
-        "FusedRMSNorm": RMSNormModule,
+        "FastRMSNorm": RMSNormModule,
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedSliceStackSum": FuseSliceCatSameInputModule,

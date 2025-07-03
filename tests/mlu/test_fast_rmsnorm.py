@@ -1,11 +1,12 @@
 import pytest
 import torch
 import torch_mlu
+
 import xpu_graph
-from xpu_graph.test_utils import is_similar
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
     assertTensorsEqual,
+    is_similar,
     need_xpu_graph_logs,
     skip_xpu_graph_cache,
 )
@@ -80,9 +81,7 @@ def rmsnorm_test(xpu_graph, func):
 
 class TestRMSNorm:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2
-        )
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -97,12 +96,11 @@ class TestRMSNorm:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             rmsnorm_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedRMSNorm changed graph" in caplog.text
+        assert "Pattern.FastRMSNorm changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2
-    )
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
     rmsnorm_test(xpu_graph_backend, fn0)
     rmsnorm_test(xpu_graph_backend, fn1)
     rmsnorm_test(xpu_graph_backend, fn2)
