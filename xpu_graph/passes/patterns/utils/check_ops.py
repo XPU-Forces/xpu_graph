@@ -250,6 +250,17 @@ def check_copy(node: fx.Node) -> bool:
     return check_op(node, aten._to_copy.default)
 
 
+def check_typecast_op(node: fx.Node) -> bool:
+    if (
+        check_copy(node)
+        and node.meta["tensor_meta"].memory_format == torch.contiguous_format
+        and "dtype" in node.kwargs
+    ):
+        return True, node.kwargs["dtype"]
+    else:
+        return False, None
+
+
 def check_clone(node: fx.Node) -> bool:
     return check_op(node, aten.clone.default)
 
@@ -315,10 +326,6 @@ def check_squeeze_op(node: fx.node) -> bool:
 
 def check_expand_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.expand.default)
-
-
-def check_npu_dtype_cast_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.npu.npu_dtype_cast.default)
 
 
 def check_rsub_scalar_op(node: fx.node) -> bool:
