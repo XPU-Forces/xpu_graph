@@ -2,7 +2,6 @@ from typing import List, Optional
 
 import torch
 import torch.fx as fx
-import torch_npu
 
 from xpu_graph.config import OptLevel
 from xpu_graph.constant_manager import is_constant
@@ -10,6 +9,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from xpu_graph.utils import logger
 
+import torch_npu
 ACL_FORMAT_NZ = 29  # NPU optimized NZ format
 
 
@@ -29,10 +29,10 @@ def npu_format_cast_to_nz(tensor: torch.Tensor) -> torch.Tensor:
 class FoldNdToNzFormat(Pattern):
     _opt_level = OptLevel.level1
 
-    SUPPORTED_OPS = {
+    SUPPORTED_OPS_ND2NZ = {
         torch.ops.npu.npu_quant_matmul.default,
         torch.ops.aten.mm.default,
-        # (@zhaowenshuo 6.26) As of now, torch NPU only supports quant matmul operators with NZ format weights, so the following operators are temporarily on hold.
+        # NOTE (@zhaowenshuo 6.26) As of now, torch NPU only supports quant matmul operators with NZ format weights, so the following operators are temporarily on hold.
         # torch.ops.npu.npu_grouped_matmul.default,
         # torch.ops.npu.npu_grouped_matmul_finalize_routing.default,
         # torch.ops.npu.npu_weight_quant_batchmatmul.default,
@@ -296,7 +296,7 @@ class FoldNdToNzFormat(Pattern):
         changed = False
         graph = gm.graph
 
-        candidates = [node for node in graph.nodes if node.op == "call_function" and node.target in self.SUPPORTED_OPS]
+        candidates = [node for node in graph.nodes if node.op == "call_function" and node.target in self.SUPPORTED_OPS_ND2NZ]
 
         operation_processors = {
             torch.ops.npu.npu_grouped_matmul.default: self._process_grouped_matmul_weights,

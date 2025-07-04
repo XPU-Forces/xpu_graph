@@ -1,8 +1,8 @@
 import pytest
-import torch
-import torch_npu
 
 import xpu_graph
+import torch
+import torch_npu
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
     assertTensorsEqual,
@@ -156,19 +156,6 @@ class TorchMmModule(torch.nn.Module):
         result = torch.mm(intermediate, self.weight2)
         return result
 
-
-class TorchMmBothConstantsModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        matrix_a = torch.randn(64, 128, dtype=data_type, device=device)
-        matrix_b = torch.randn(128, 32, dtype=data_type, device=device)
-        self.register_buffer("matrix_a", matrix_a, persistent=True)
-        self.register_buffer("matrix_b", matrix_b, persistent=True)
-
-    def forward(self):
-        return torch.mm(self.matrix_a, self.matrix_b)
-
-
 def create_test_data(func_name):
     if func_name == "npu_quant_matmul":
         x1 = torch.randint(0, 8, (16, 16), dtype=torch.int8, device=device)
@@ -260,6 +247,7 @@ def run_nd_to_nz_test(xpu_graph_backend, func_name, expected_pattern=None):
         result_direct = module(*input_args)
 
         compiled_module = torch.compile(module, backend=xpu_graph_backend, dynamic=False)
+        # breakpoint()
         result_compiled = compiled_module(*input_args)
 
         if isinstance(result_direct, (list, tuple)):
@@ -283,55 +271,16 @@ class TestFoldNdToNzFormat:
             xpu_graph.XpuGraphConfig(
                 is_training=False,
                 debug=True,
-                target=xpu_graph.Target.ascend,
+                target=xpu_graph.Target.npu,
                 dump_graph=True,
                 freeze=True,
                 opt_level=OptLevel.level1,
+                vendor_compiler_config={
+                    "mode": "reduce-overhead",
+                    "compiler": "ge" 
+                },
             )
         )
-
-    def test_npu_quant_matmul_nd_to_nz(self, caplog):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            run_nd_to_nz_test(self.xpu_graph_backend, "npu_quant_matmul")
-
-        assert "Inserted NZ format cast for weight" in caplog.text
-        assert "Converted tensor to NZ format" in caplog.text
-        assert "FoldNdToNzFormat: Inserted format casts for" in caplog.text
-
-    def test_npu_weight_quant_batchmatmul_nd_to_nz(self, caplog):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            run_nd_to_nz_test(self.xpu_graph_backend, "npu_weight_quant_batchmatmul")
-
-        assert "Inserted format cast for weight in npu_weight_quant_batchmatmul" in caplog.text
-
-    def test_npu_mla_prolog_nd_to_nz(self, caplog):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            run_nd_to_nz_test(self.xpu_graph_backend, "npu_mla_prolog")
-
-        assert "Inserted format cast for weight_dq in npu_mla_prolog" in caplog.text
-        assert "Inserted format cast for weight_uq_qr in npu_mla_prolog" in caplog.text
-        assert "Inserted format cast for weight_dkv_kr in npu_mla_prolog" in caplog.text
-
-    def test_npu_convert_weight_to_int4pack_nd_to_nz(self, caplog):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            run_nd_to_nz_test(self.xpu_graph_backend, "npu_convert_weight_to_int4pack")
-
-        assert "Inserted format cast for weight in npu_convert_weight_to_int4pack" in caplog.text
-
-    def test_npu_grouped_matmul_finalize_routing_nd_to_nz(self, caplog):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            run_nd_to_nz_test(self.xpu_graph_backend, "npu_grouped_matmul_finalize_routing")
-
-        assert "Inserted format cast for w weight in torch_npu.npu_grouped_matmul_finalize_routing" in caplog.text
-
-    def test_format_conversion_avoidance(self, caplog):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            run_nd_to_nz_test(self.xpu_graph_backend, "format_conversion_avoidance")
-
-        assert "Inserted NZ format cast for weight" in caplog.text
-        log_text = caplog.text
-        format_cast_count = log_text.count("Inserted format cast for x2 weight in npu_quant_matmul")
-        assert format_cast_count >= 1, "Format conversion should be triggered"
 
     def test_torch_mm_nd_to_nz(self, caplog):
         """Test that torch.ops.aten.mm.default supports NZ format conversion for constant weights"""
@@ -342,17 +291,55 @@ class TestFoldNdToNzFormat:
         assert "Converted tensor to NZ format" in caplog.text
         assert "FoldNdToNzFormat: Inserted format casts for" in caplog.text
 
+    def test_npu_quant_matmul_nd_to_nz(self, caplog):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            run_nd_to_nz_test(self.xpu_graph_backend, "npu_quant_matmul")
+
+        assert "Inserted NZ format cast for weight" in caplog.text
+        assert "Converted tensor to NZ format" in caplog.text
+        assert "FoldNdToNzFormat: Inserted format casts for" in caplog.text
+
+    # NOTE(@zhaowenshuo 6.26) As of now, torch NPU only supports quant matmul operators with NZ format weights, so the following operators are temporarily on hold.
+
+    # def test_npu_weight_quant_batchmatmul_nd_to_nz(self, caplog):
+    #     with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+    #         run_nd_to_nz_test(self.xpu_graph_backend, "npu_weight_quant_batchmatmul")
+
+    #     assert "Inserted format cast for weight in npu_weight_quant_batchmatmul" in caplog.text
+
+    # def test_npu_mla_prolog_nd_to_nz(self, caplog):
+    #     with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+    #         run_nd_to_nz_test(self.xpu_graph_backend, "npu_mla_prolog")
+
+    #     assert "Inserted format cast for weight_dq in npu_mla_prolog" in caplog.text
+    #     assert "Inserted format cast for weight_uq_qr in npu_mla_prolog" in caplog.text
+    #     assert "Inserted format cast for weight_dkv_kr in npu_mla_prolog" in caplog.text
+
+    # def test_npu_convert_weight_to_int4pack_nd_to_nz(self, caplog):
+    #     with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+    #         run_nd_to_nz_test(self.xpu_graph_backend, "npu_convert_weight_to_int4pack")
+
+    #     assert "Inserted format cast for weight in npu_convert_weight_to_int4pack" in caplog.text
+
+    # def test_npu_grouped_matmul_finalize_routing_nd_to_nz(self, caplog):
+    #     with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+    #         run_nd_to_nz_test(self.xpu_graph_backend, "npu_grouped_matmul_finalize_routing")
+
+    #     assert "Inserted format cast for w weight in torch_npu.npu_grouped_matmul_finalize_routing" in caplog.text
+
+    # def test_format_conversion_avoidance(self, caplog):
+    #     with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+    #         run_nd_to_nz_test(self.xpu_graph_backend, "format_conversion_avoidance")
+
+    #     assert "Inserted NZ format cast for weight" in caplog.text
+    #     log_text = caplog.text
+    #     format_cast_count = log_text.count("Inserted format cast for x2 weight in npu_quant_matmul")
+    #     assert format_cast_count >= 1, "Format conversion should be triggered"
+
 
 if __name__ == "__main__":
     test_instance = TestFoldNdToNzFormat()
     test_instance.setup_class()
 
-    run_nd_to_nz_test(test_instance.xpu_graph_backend, "npu_quant_matmul")
+    # run_nd_to_nz_test(test_instance.xpu_graph_backend, "npu_quant_matmul")
     run_nd_to_nz_test(test_instance.xpu_graph_backend, "torch_mm")
-
-    # (@zhaowenshuo 6.26) As of now, torch NPU only supports quant matmul operators with NZ format weights, so the following operators are temporarily on hold.
-    # run_nd_to_nz_test(test_instance.xpu_graph_backend, "npu_convert_weight_to_int4pack")
-    # run_nd_to_nz_test(test_instance.xpu_graph_backend, "npu_grouped_matmul_finalize_routing")
-    # run_nd_to_nz_test(test_instance.xpu_graph_backend, "format_conversion_avoidance")
-    # run_nd_to_nz_test(test_instance.xpu_graph_backend, "npu_mla_prolog")
-    # run_nd_to_nz_test(test_instance.xpu_graph_backend, "npu_weight_quant_batchmatmul")
