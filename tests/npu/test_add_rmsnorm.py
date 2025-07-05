@@ -8,7 +8,9 @@ import triton.language as tl
 from torch import fx, nn
 
 import xpu_graph
+from xpu_graph import OptLevel, Target, XpuGraph, XpuGraphConfig
 from xpu_graph.accuracy_utils import assert_close, benchmark_compare_close
+from xpu_graph.test_utils import need_xpu_graph_logs
 
 
 def call_aten_kernel(input, residual, weight):
@@ -52,7 +54,7 @@ class NPU_RMSNormWithResidual(nn.Module):
         return getitem_476
 
 
-def test_add_rmsnorm_pattern():
+def compare_add_rmsnorm_pattern(xpu_graph_backend):
     # create input data
     shape = [1, 3584]
     dtype = torch.bfloat16
@@ -66,21 +68,7 @@ def test_add_rmsnorm_pattern():
     # init our graph
     model = NPU_RMSNormWithResidual(weight).npu()
     model_forward = model.forward
-
-    # torchair is included in torch_npu
-    from xpu_graph.compiler import OptLevel, Target, XpuGraph, XpuGraphConfig
-
-    config = XpuGraphConfig(
-        is_training=False,
-        debug=False,
-        dump_graph=True,
-        freeze=True,
-        target=Target.npu,
-        opt_level=OptLevel.level2,
-        vendor_compiler_config={"mode": "reduce-overhead", "compiler": "ge"},
-    )
-    xpu_graph_compiler = XpuGraph(config)
-    compiled_model = torch.compile(model_forward, backend=xpu_graph_compiler, dynamic=False)
+    compiled_model = torch.compile(model_forward, backend=xpu_graph_backend, dynamic=False)
 
     # get result
     mm_out = compiled_model(input, residual, arg486_1, arg487_1, weight)
@@ -103,5 +91,34 @@ def test_add_rmsnorm_pattern():
         print("PASSED")
 
 
+class TestAddRMSNormPattern:
+    def setup_class(self):
+        config = XpuGraphConfig(
+            is_training=False,
+            dump_graph=True,
+            freeze=True,
+            target=Target.npu,
+            opt_level=OptLevel.level2,
+            vendor_compiler_config={"mode": "reduce-overhead", "compiler": "ge"},
+            debug=False,
+        )
+        self.xpu_graph_backend = XpuGraph(config)
+
+    def test_add_rmsnorm_pattern(self, caplog):
+        with need_xpu_graph_logs():
+            compare_add_rmsnorm_pattern(self.xpu_graph_backend)
+        assert "Pattern.FusedAddRmsnorm changed graph" in caplog.text
+
+
 if __name__ == "__main__":
-    test_add_rmsnorm_pattern()
+    config = XpuGraphConfig(
+        is_training=False,
+        dump_graph=True,
+        freeze=True,
+        target=Target.npu,
+        opt_level=OptLevel.level2,
+        vendor_compiler_config={"mode": "reduce-overhead", "compiler": "ge"},
+        debug=True,
+    )
+    xpu_graph_backend = XpuGraph(config)
+    compare_add_rmsnorm_pattern(xpu_graph_backend)
