@@ -44,7 +44,7 @@ def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act):
     res = func(input, bias, bin_op, act)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(input, bias, bin_op, act)
-    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True)
+    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, allow_inf=True, use_MSE=True, use_RAE=True)
 
 
 class TestSinkView:
@@ -88,6 +88,7 @@ class TestSinkView:
 
 if __name__ == "__main__":
     xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True))
+    sinkview_test(xpu_graph_backend, (8, 6, 4), "int", torch.div, "silu")
     sinkview_test(xpu_graph_backend, (8, 6, 4), None, None, "sigmoid")
     sinkview_test(xpu_graph_backend, (8, 6, 4), "float", torch.add, "none")
     sinkview_test(xpu_graph_backend, (8, 6, 4), (2, 6, 4), torch.sub, "none")
