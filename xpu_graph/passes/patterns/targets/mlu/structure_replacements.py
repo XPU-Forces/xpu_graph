@@ -10,9 +10,11 @@ from .triton_kernel.get_mlu_devinfo import get_device_properties
 
 
 class RMSNormModule(torch.nn.Module):
-    def forward(self, inputs, weights, epsilon, dtype):
+    def forward(self, inputs, weights, epsilon):
         import torch_mlu_ops
 
+        if weights is not None and weights.dtype != inputs.dtype:
+            weights = weights.to(inputs.dtype)
         return torch_mlu_ops.fused_rms_norm(inputs, None, weights, None, None, epsilon, False)
 
 

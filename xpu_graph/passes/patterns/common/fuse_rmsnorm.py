@@ -131,10 +131,9 @@ class FusedRMSNorm(Pattern):
             matched, rms_norm_param = _is_unaffined_rmsnorm(node)
             if matched:
                 inputs, eps = rms_norm_param
-                dtype = inputs.meta["val"].dtype
 
                 with graph_module.graph.inserting_before(node):
-                    rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, None, eps, dtype))
+                    rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, None, eps))
 
                 node.replace_all_uses_with(rms_norm_node, propagate_meta=True)
                 is_modified = True
@@ -143,9 +142,9 @@ class FusedRMSNorm(Pattern):
                 if not res:
                     continue
                 unaffined, weight = rms_norm_param
-                inputs, _, eps, dtype = unaffined.args
+                inputs, _, eps = unaffined.args
                 with graph_module.graph.inserting_before(node):
-                    rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps, dtype))
+                    rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps))
 
                 node.replace_all_uses_with(rms_norm_node, propagate_meta=True)
                 is_modified = True
@@ -164,10 +163,10 @@ class RemoveRMSNormCast(Pattern):
         for node in reversed(graph_module.graph.nodes):
             if _is_casted_rmsnorm(node):
                 rms_node = get_input_node(node, 0)
-                inputs, weight, eps, dtype = rms_node.args
+                inputs, weight, eps = rms_node.args
                 real_inputs = get_input_node(inputs, 0)
                 with graph_module.graph.inserting_before(node):
-                    new_rmsnorm = graph_module.graph.call_module("fused_rms_norm", (real_inputs, weight, eps, dtype))
+                    new_rmsnorm = graph_module.graph.call_module("fused_rms_norm", (real_inputs, weight, eps))
 
                 node.replace_all_uses_with(new_rmsnorm)
                 is_modified = True

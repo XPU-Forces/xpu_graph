@@ -41,7 +41,7 @@ class RMSNorm2(torch.nn.Module):
 
 
 fn0 = RMSNorm1(hidden_size=(10,)).npu()
-fn1 = RMSNorm2(hidden_size=(10,)).npu()
+fn1 = RMSNorm2(hidden_size=(10,)).half().npu()
 
 
 def fn2(hidden_states):
@@ -61,6 +61,8 @@ def fn3(hidden_states):
 def rmsnorm_test(xpu_graph, func):
     with torch.no_grad():
         a = torch.randn(1, 10).npu()
+        if func == fn1:
+            a = a.half()
         compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
         if func != fn3:
             norm = compiled(a)

@@ -1,15 +1,9 @@
 import pytest
 import torch
-import torch_mlu
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    is_similar,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 
 class RMSNorm1(torch.nn.Module):
@@ -47,7 +41,7 @@ class RMSNorm2(torch.nn.Module):
 
 
 fn0 = RMSNorm1(hidden_size=(10,)).mlu()
-fn1 = RMSNorm2(hidden_size=(10,)).mlu()
+fn1 = RMSNorm2(hidden_size=(10,)).half().mlu()
 
 
 def fn2(hidden_states):
@@ -67,6 +61,8 @@ def fn3(hidden_states):
 def rmsnorm_test(xpu_graph, func):
     with torch.no_grad():
         a = torch.randn(1, 10).mlu()
+        if func == fn1:
+            a = a.half()
         compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
         if func != fn3:
             norm = compiled(a)

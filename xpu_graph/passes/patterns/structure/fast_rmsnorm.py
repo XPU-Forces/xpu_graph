@@ -22,11 +22,11 @@ class FastRMSNorm(Pattern):
             graph_module.add_submodule("fast_rmsnorm", self.target_mod())
         for node in graph_module.graph.nodes:
             if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultRMSNorm):
-                inputs, weight, eps, dtype = node.args
+                inputs, weight, eps = node.args
                 if weight is None:
                     continue
                 with graph_module.graph.inserting_before(node):
-                    fast_rmsnorm = graph_module.graph.call_module("fast_rmsnorm", (inputs, weight, eps, dtype))
+                    fast_rmsnorm = graph_module.graph.call_module("fast_rmsnorm", (inputs, weight, eps))
                 node.replace_all_uses_with(fast_rmsnorm, propagate_meta=True)
                 is_modified = True
         return is_modified
