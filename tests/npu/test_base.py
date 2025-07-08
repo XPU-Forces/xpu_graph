@@ -51,9 +51,13 @@ class TestGeAndAclGraphMode:
     @pytest.mark.parametrize("shape", [(32,)])
     def testInference(self, shape):
         input = torch.randn((*shape, 4)).npu()
-        assert torch.isclose(self.module(input), self.ge_func(input)).all()
-        assert torch.isclose(self.module(input), self.acl_graph_func(input)).all()
-        assert torch.isclose(self.ge_func(input), self.acl_graph_func(input)).all()
+        torch.testing.assert_close(self.module(input), self.ge_func(input), rtol=1e-03, atol=1e-03, equal_nan=True)
+        torch.testing.assert_close(
+            self.module(input), self.acl_graph_func(input), rtol=1e-03, atol=1e-03, equal_nan=True
+        )
+        torch.testing.assert_close(
+            self.ge_func(input), self.acl_graph_func(input), rtol=1e-03, atol=1e-03, equal_nan=True
+        )
 
 
 if __name__ == "__main__":

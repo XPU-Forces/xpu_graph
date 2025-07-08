@@ -1,6 +1,6 @@
 import pytest
-from tests.mlu.test_train_utils import *
-import os
+
+from tests.mlu.test_dist_train_utils import *
 
 
 def train(rank, world_size, do_compile, return_queue, model_path):
@@ -8,9 +8,7 @@ def train(rank, world_size, do_compile, return_queue, model_path):
     model = MatMulModel(10)
     model.load_state_dict(torch.load(model_path))
     if do_compile:
-        xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=True, freeze=False, opt_level=OptLevel.level2
-        )
+        xpu_graph_backend = xpu_graph.mlu_compiler(is_training=True, freeze=False, opt_level=OptLevel.level2)
         model = torch.compile(model, backend=xpu_graph_backend, dynamic=False)
     model.mlu(rank)
     ddp_model = DDP(model, device_ids=[rank])
@@ -42,6 +40,7 @@ def train(rank, world_size, do_compile, return_queue, model_path):
 
 
 def ddp_test(ModCls, model_path="ddp_model.pth"):
+    set_dist_env()
     mp.set_start_method("spawn", force=True)
     world_size = torch.mlu.device_count()
     return_queue1 = mp.Queue()
@@ -78,7 +77,6 @@ def ddp_test(ModCls, model_path="ddp_model.pth"):
 
 
 class TestDDP:
-
     @pytest.mark.parametrize(
         "pattern_func",
         [
