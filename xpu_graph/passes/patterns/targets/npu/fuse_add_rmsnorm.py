@@ -24,15 +24,41 @@ class AddRmsnormOperation(nn.Module):
     def forward(self, input, residual, weight):
         return torch.ops.torch_npu_triton.fused_add_rmsnorm(input, residual, weight)
 
+"""
+we try to match below ops:
+def forward(self, input, residual, weight=None):
+    #1. 将输入和残差转换为float32并相加
+    #2. 转回bfloat16精度
+    #3. 应用NPU RMSNorm
+    
+    quant_matmul_v2_111 = input
+    npu_dtype_cast_164 = residual
+    arg485_1 = weight
+    npu_dtype_cast_165 = torch.ops.npu.npu_dtype_cast.default(quant_matmul_v2_111, torch.float32)
+    quant_matmul_v2_111 = None
+    npu_dtype_cast_166 = torch.ops.npu.npu_dtype_cast.default(npu_dtype_cast_164, torch.float32)
+    npu_dtype_cast_164 = None
+    add_55 = torch.ops.aten.add.Tensor(npu_dtype_cast_165, npu_dtype_cast_166)
+    npu_dtype_cast_165 = npu_dtype_cast_166 = None
+    npu_dtype_cast_167 = torch.ops.npu.npu_dtype_cast.default(add_55, torch.bfloat16)
+    add_55 = None
+    npu_rms_norm_56 = torch.ops.npu.npu_rms_norm.default(npu_dtype_cast_167, arg485_1)
+    npu_dtype_cast_167 = arg485_1 = None
+    getitem_476 = npu_rms_norm_56[0]
+
+# output is a fused add_rmsnorm triton kernel
+"""
 
 class FusedAddRmsnorm(Pattern):
     _opt_level = OptLevel.level2
 
     def _match_pattern(self, getitem_final_rmsnorm: Node) -> Optional[List[Node]]:
+        # match getitem_476
         if not check_getitem_op(getitem_final_rmsnorm):
             return None
         final_rmsnorm = getitem_final_rmsnorm.args[0]
 
+        # match npu_rms_norm op
         res_flag, op_name = check_norm_op(final_rmsnorm)
         if (not res_flag) and (not op_name == "rms_norm"):
             res_flag, op_name = check_npu_norm_op(final_rmsnorm)
@@ -41,6 +67,7 @@ class FusedAddRmsnorm(Pattern):
 
         to_node, weight_node = final_rmsnorm.args  # eps
 
+        # check npu_dtype_cast twice
         to_flag, to_ty = check_typecast_op(to_node)
         if not to_flag:
             to_flag, to_ty = check_npu_typecast_op(to_node)

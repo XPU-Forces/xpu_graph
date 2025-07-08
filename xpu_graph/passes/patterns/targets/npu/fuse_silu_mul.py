@@ -17,11 +17,20 @@ class AddSilumulOperation(nn.Module):
     def forward(self, input):
         return torch.ops.torch_npu_triton.fused_silu_mul(input)
 
+"""
+We try to match below ops:
+def forward(self, input):
+    d = input.shape[-1] // 2
+    res = torch.nn.functional.silu(input[..., :d]) * input[..., d:]
+    res1 = res * input[..., d:]
+    return res1
+"""
 
 class FusedSwiGLU(Pattern):
     _opt_level = OptLevel.level2
 
     def _match_pattern(self, final_mul: Node) -> Optional[List[Node]]:
+        # match  mul op
         if not check_mul_op(final_mul):
             return None
 
@@ -31,6 +40,7 @@ class FusedSwiGLU(Pattern):
         if not op_flag and op_name != "silu":
             return None
 
+        # match input[..., :d]
         mul_op1_slice = mul_op1.args
         if not check_slice_op(mul_op1_slice[0]):
             return None
@@ -41,6 +51,7 @@ class FusedSwiGLU(Pattern):
         mul_op1_input = mul_op1_slice[0].args[0]
         mul_op2_input = mul_op2.args[0]
 
+        # check the same input
         if mul_op1_input != mul_op2_input:
             return None
 
