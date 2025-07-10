@@ -1,6 +1,7 @@
 [build-system]
 requires = ["setuptools >= 65"]
-build-backend = "setuptools.build_meta"
+backend-path = ["./scripts"]
+build-backend = "build"
 
 [project]
 name = "byted-xpu-graph"
@@ -51,3 +52,6 @@ Issues = "https://github.com/BD-Seed-HHW/xpu_graph/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "xpu_graph.version.__version__"}
+
+[tool.setuptools.package-data]
+"xpu_graph" = ["RELEASE.md"]
