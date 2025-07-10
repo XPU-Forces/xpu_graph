@@ -1,5 +1,5 @@
 # xpu_graph
-![arch](./doc/xpu_graph_arch.png)
+![arch](./docs/xpu_graph_arch.png)
 XPU_GRAPH is a graph compiler based on torch [Fx graph](https://pytorch.org/docs/stable/fx.html) and [Aten IR](https://pytorch.org/docs/stable/torch.compiler_ir.html).
 
 Here are some features of XPU_GRAPH:
