@@ -1,4 +1,4 @@
-# Release 0.1.0
+# Release 0.2.0
 
 ## 主要依赖库版本描述
 - python 3.9 或者更高
@@ -17,7 +17,7 @@
 - 现在`Target.npu`支持对`torch.ops.npu.npu_quant_matmul`的权重进行`nd2nz`的转化，通过常量折叠完成编译期优化 #239;
 - 添加 add+rmsNorm和silu+mlu 两个triton 写的融合算子及 fx pattern #298;
 - 增加 rms_norm pattern，将常见的rms_norm小算子实现进行替换 #297;
--  现在`Target.mlu`下如果传入`vendor_compiler_mode=none`，则不会使用mlu的inductor编译器 #252;
+- 现在`Target.mlu`下如果传入`vendor_compiler_mode=none`，则不会使用mlu的inductor编译器 #252;
 
 ## 弃用特性声明
 -
