@@ -1,1 +1,2 @@
-recursive-include xpu_graph *.md
+include docs/RELEASE.md
+include scripts/build.py
