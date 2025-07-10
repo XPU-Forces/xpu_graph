@@ -11,6 +11,8 @@
 - 现在whl包更名为`byted-xpu-graph`，并在bytedpypi源上发布，注意与旧版本的包名不同 #313;
 - 现在`Target.npu`支持对`torch.ops.npu.npu_quant_matmul`的权重进行`nd2nz`的转化，通过常量折叠完成编译期优化 #239;
 - 添加 add+rmsNorm和silu+mlu 两个triton 写的融合算子及 fx pattern
+- 增加 rms_norm pattern，将常见的rms_norm小算子实现进行替换 #297;
+-
 
 ## 相关模块API的重大变动
 -
