@@ -179,7 +179,7 @@ class GitLikeDiffer:
 
 
 __XPU_GRAPH_ENVS__ = {
-    "aot_config_is_export": "XPUGRAPH_AOT_CONFIG_IS_EXPORT",
+    "aot_config_is_export": "XPUGRAPH_DEPRECATED_AOT_CONFIG_IS_EXPORT",
     "cache_dir": "XPUGRAPH_CACHE_DIR",
 }
 
