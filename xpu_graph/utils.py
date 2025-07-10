@@ -176,3 +176,23 @@ class GitLikeDiffer:
 
     def __str__(self):
         return self.diff()
+
+
+__XPU_GRAPH_ENVS__ = {
+    "aot_config_is_export": "XPUGRAPH_AOT_CONFIG_IS_EXPORT",
+    "cache_dir": "XPUGRAPH_CACHE_DIR",
+}
+
+
+def get_bool_env_var(name, default_value: bool):
+    val = os.environ.get(name, default_value)
+    if isinstance(val, str):
+        val = val.lower()
+        if val in ["true", "1", "on"]:
+            return True
+        elif val in ["false", "0", "off"]:
+            return False
+        else:
+            raise ValueError(f"Invalid value for {name}: {val}")
+    else:
+        return val

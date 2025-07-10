@@ -26,6 +26,8 @@ from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_mak
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.proxy import GraphAppendingTracer, Proxy
 
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var
+
 FX_COUNT = itertools.count()
 
 
@@ -76,7 +78,7 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     params_len = len(params_flat)
 
     # Use the config similar to aot_export_module
-    aot_config.is_export = True
+    aot_config.is_export = get_bool_env_var(__XPU_GRAPH_ENVS__["aot_config_is_export"], True)
     aot_config.pre_dispatch = stage == FxStage.pregrad
     aot_config.no_tangents = True
     if decompositions is not None:

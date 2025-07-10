@@ -32,7 +32,7 @@ from torch.utils._python_dispatch import _disable_current_modes
 
 from .config import XpuGraphConfig
 from .fx_utils import FxStage
-from .utils import logger
+from .utils import __XPU_GRAPH_ENVS__, logger
 
 
 class _ArgWrapper:
@@ -274,11 +274,11 @@ def no_cache():
 
 
 def default_cache():
-    cache_path = os.getenv("XPUGRAPH_CACHE_DIR")
+    cache_path = os.getenv(__XPU_GRAPH_ENVS__["cache_dir"])
     if cache_path is None:
         import tempfile
 
         cache_path = tempfile.mkdtemp(prefix="xpugraph_")
-        os.environ["XPUGRAPH_CACHE_DIR"] = cache_path
+        os.environ[__XPU_GRAPH_ENVS__["cache_dir"]] = cache_path
         logger.debug(f"Use {cache_path} as default local cache")
     return XpuGraphLocalCache(cache_path)
