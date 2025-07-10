@@ -88,5 +88,5 @@ jobs:
         python3 -m build .
     - name: Release
       run: |
-        python3 .github/workflows/scripts/rest_api.py --tag_name ${{ inputs.version }} --branch_or_commit ${{ inputs.branch_or_commit }} --desc ${{ inputs.desc }} --artifacts $(ls ./dist/*.whl) --private_token ${XPU_GRAPH_PRIVATE_TOKEN} --generate_notes ${{ inputs.generate_notes }} --make_latest ${{ inputs.make_latest }} --pre_release ${{ inputs.pre_release }}
+        python3 .github/workflows/scripts/rest_api.py --tag_name ${{ inputs.version }} --branch_or_commit ${{ inputs.branch_or_commit }} --desc "${{ inputs.desc }}" --artifacts $(ls ./dist/*.whl) --private_token ${XPU_GRAPH_PRIVATE_TOKEN} --generate_notes ${{ inputs.generate_notes }} --make_latest ${{ inputs.make_latest }} --pre_release ${{ inputs.pre_release }}
         bash .github/workflows/scripts/release_to_byted_luban.sh ${BYTED_CLOUD_AICOMPILER_SECRET}
