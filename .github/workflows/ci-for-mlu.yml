@@ -52,6 +52,14 @@ jobs:
       options: --privileged=true --ipc=host --pid=host --user root --network host
     steps:
     - uses: actions/checkout@v4
+    - name: Build And Install Wheel Artifact
+      shell: bash
+      # WARNING(liuyuan): This step is goddamn important for us to keep the release artifact available.
+      run: |
+        export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
+        pip install -e '.[dev]'
+        python3 -m build .
+        pip install dist/*.whl --force-reinstall --no-deps
     - name: Running mlu tests
       shell: bash
       run: |
@@ -59,8 +67,6 @@ jobs:
         export DEV1=$(( $DEV0 + 1 ))
         export MLU_VISIBLE_DEVICES=$DEV0,$DEV1
         echo "MLU_VISIBLE_DEVICES: $MLU_VISIBLE_DEVICES"
-        export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
-        pip install -e '.[dev]'
         echo "Running MLU tests..."
         python3 -m pytest --cov=xpu_graph tests/common tests/mlu
     - uses: codecov/codecov-action@v5

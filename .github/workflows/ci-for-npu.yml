@@ -57,11 +57,17 @@ jobs:
       options: --privileged=true --ipc=host --pid=host --user root --shm-size=300g -e ASCEND_VISIBLE_DEIVCES=6 -e ASCEND_RT_VISIBLE_DEVICES=6
     steps:
     - uses: actions/checkout@v4
-    - name: Running npu tests
+    - name: Build And Install Wheel Artifact
+      # WARNING(liuyuan): This step is goddamn important for us to keep the release artifact available.
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         pip install -e '.[dev]'
+        python3 -m build .
+        pip install dist/*.whl --force-reinstall --no-deps
+    - name: Running npu tests
+      shell: bash
+      run: |
         echo "Running npu tests..."
         python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
