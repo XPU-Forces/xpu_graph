@@ -48,11 +48,11 @@ def fn3(inputs, weight, bias):
 
 
 def fn4(inputs, weight, bias):
-    return fn0(inputs, weight, bias).to(inputs.dtype)
+    return fn0(inputs.to(torch.float32), weight, bias).to(inputs.dtype)
 
 
 def fn5(inputs, weight, bias):
-    return fn0(inputs, weight, bias).to(inputs.dtype)
+    return fn0(inputs.to(torch.float32), weight, bias).to(inputs.dtype)
 
 
 def layernorm_test(xpu_graph, func):
@@ -125,6 +125,8 @@ class TestLayerNorm:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.infer_backend):
             layernorm_test(self.infer_backend, pattern_func)
         assert "Pattern.FusedLayerNorm changed graph" in caplog.text
+        if pattern_func in [fn5]:
+            assert "Pattern.RemoveLayerNormCast" in caplog.text
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -134,6 +136,8 @@ class TestLayerNorm:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
             layernorm_test_with_loss_and_grad(self.train_backend, pattern_func)
         assert "Pattern.FusedLayerNorm changed graph" in caplog.text
+        if pattern_func in [fn5]:
+            assert "Pattern.RemoveLayerNormCast" in caplog.text
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from ..utils.check_ops import (
     check_square_op,
     get_input_kw_node,
     get_input_node,
+    get_shape,
     is_exclusively_used,
     is_type_cast,
 )
@@ -112,9 +113,16 @@ def _is_rmsnorm(node: fx.Node):
             return isinstance(target_mod, DefaultRMSNorm) and node.args[1] is None
 
         if _is_unaffined(arg0):
-            return True, [arg0, arg1]
+            unaffined, weight = arg0, arg1
         elif _is_unaffined(arg1):
-            return True, [arg1, arg0]
+            unaffined, weight = arg1, arg0
+        else:
+            return False, None
+
+        if get_shape(unaffined)[-1:] != get_shape(weight):
+            return False, None
+        else:
+            return True, [unaffined, weight]
 
     return False, None
 

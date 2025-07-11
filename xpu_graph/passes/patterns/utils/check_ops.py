@@ -289,14 +289,14 @@ def check_unsqueeze_op(node: fx.node) -> bool:
     return check_op(node, aten.unsqueeze.default)
 
 
-def check_norm_op(node: fx.node):
+def check_norm_module(node: fx.node):
     if not isinstance(node, fx.Node):
         return False, None
-    if not (node.op == "call_function" or node.op == "call_module"):
+    if node.op != "call_module":
         return False, None
-    if node.target == aten.native_layer_norm.default:
+    if node.target == "fused_layer_norm" or node.target == "custom_layer_norm":
         return True, "layer_norm"
-    if node.target == "rms_norm_op":
+    if node.target == "fused_rms_norm" or node.target == "custom_rms_norm":
         return True, "rms_norm"
     return False, None
 
