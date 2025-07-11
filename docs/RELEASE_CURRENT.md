@@ -19,8 +19,5 @@
 - 增加 rms_norm pattern，将常见的rms_norm小算子实现进行替换 #297;
 - 现在`Target.mlu`下如果传入`vendor_compiler_mode=none`，则不会使用mlu的inductor编译器 #252;
 
-## 弃用特性声明
--
-
 ## Bug修复与其他改动
 - 在时间戳之后增加了进程与线程ID的打印，方便调试 #270;
