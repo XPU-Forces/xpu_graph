@@ -1,2 +1,5 @@
 include docs/RELEASE.md
 include scripts/build.py
+
+# WARNING(liuyuan): DO NOT delete the following pattern.
+recursive-include xpu_graph *.md
