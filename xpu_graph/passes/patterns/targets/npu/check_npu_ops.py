@@ -28,7 +28,7 @@ def check_npu_norm_op(node: fx.node):
         return False, None
     if not (node.op == "call_function" or node.op == "call_module"):
         return False, None
-    if "npu_rms_norm" in node.name:
+    if node.target == torch.ops.npu.npu_rms_norm.default:
         return True, "rms_norm"
     else:
         return False, None

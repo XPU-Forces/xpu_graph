@@ -117,6 +117,7 @@ class XpuGraph:
 
                 if stage != FxStage.pregrad and self._config.vendor_compiler_config:
                     xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
+                    logger.debug(f"After decompose_for_inductor, graph like:\n {xpu_compiled.graph}")
                     extra_kwargs = {}
                     if stage == FxStage.inference:
                         extra_kwargs["is_inference"] = True

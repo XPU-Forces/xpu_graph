@@ -105,5 +105,5 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
     layernorm_test(xpu_graph_backend, fn0)
     layernorm_test(xpu_graph_backend, fn1)
-    # layernorm_test(xpu_graph_backend, fn2)
-    # layernorm_test(xpu_graph_backend, fn3)
+    layernorm_test(xpu_graph_backend, fn2)
+    layernorm_test(xpu_graph_backend, fn3)
