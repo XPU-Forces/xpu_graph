@@ -57,7 +57,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       run: |
-        pip3 install "setuptools>=65.5.0" "build>=1.2.2"
+        pip3 install "setuptools>=65.5.0" "build>=1.2.2" urllib3
         python3 -m build .
     - name: Release
         # NOTE(liuyuan): Maybe we should use the following instead. Maybe.
@@ -84,9 +84,14 @@ jobs:
         sed -E "s|(__version__\s+=\s+).*|\1${XPU_GRAPH_VERSION}|g" xpu_graph/version.py
     - name: Build
       run: |
-        pip3 install "setuptools>=65.5.0" "build>=1.2.2"
+        pip3 install "setuptools>=65.5.0" "build>=1.2.2" urllib3
         python3 -m build .
     - name: Release
       run: |
-        python3 .github/workflows/scripts/rest_api.py --tag_name ${{ inputs.version }} --branch_or_commit ${{ inputs.branch_or_commit }} --desc "${{ inputs.desc }}" --artifacts $(ls ./dist/*.whl) --private_token ${XPU_GRAPH_PRIVATE_TOKEN} --generate_notes ${{ inputs.generate_notes }} --make_latest ${{ inputs.make_latest }} --pre_release ${{ inputs.pre_release }}
+        DESC="${{ inputs.desc }}"
+        if [[ -z ${DESC} ]]
+        then
+          DESC=$(cat docs/RELEASE_CURRENT.md)
+        fi
+        python3 .github/workflows/scripts/rest_api.py --tag_name ${{ inputs.version }} --branch_or_commit ${{ inputs.branch_or_commit }} --desc "${DESC}" --artifacts $(ls ./dist/*.whl) --private_token ${XPU_GRAPH_PRIVATE_TOKEN} --generate_notes ${{ inputs.generate_notes }} --make_latest ${{ inputs.make_latest }} --pre_release ${{ inputs.pre_release }}
         bash .github/workflows/scripts/release_to_byted_luban.sh ${BYTED_CLOUD_AICOMPILER_SECRET}
