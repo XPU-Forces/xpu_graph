@@ -37,46 +37,23 @@ class LayerNorm2(torch.nn.Module):
         hidden_states = hidden_states.to(torch.float32)
         mean = hidden_states.mean(-1, keepdim=True)
         variance = hidden_states.var(-1, keepdim=True, correction=False)
-        hidden_states = (hidden_states - mean) * torch.rsqrt(variance + self.variance_epsilon)
+        hidden_states = (hidden_states - mean) / torch.sqrt(self.variance_epsilon + variance)
         return self.bias + hidden_states.to(input_dtype) * self.weight
 
     def extra_repr(self):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
-fn0 = LayerNorm1(hidden_size=(10,)).mlu()
-fn1 = LayerNorm2(hidden_size=(10,)).half().mlu()
-
-
-def fn2(hidden_states):
-    residual = hidden_states.clone()
-    input_ = hidden_states + residual
-    output = fn0(input_)
-    return output
-
-
-def fn3(hidden_states):
-    residual = hidden_states.clone()
-    input_ = hidden_states + residual
-    output = fn0(input_)
-    return output, input_
-
-
-def layernorm_test(xpu_graph, func):
-    with torch.no_grad():
-        a = torch.randn(1, 10).mlu()
-        if func == fn1:
-            a = a.half()
-        compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
-        if func != fn3:
-            norm = compiled(a)
-            norm1 = func(a)
-            assert is_similar(norm1.cpu().float(), norm.cpu().float())
-        else:
-            norm, res = compiled(a)
-            norm1, res1 = func(a)
-            assert is_similar(norm1.cpu().float(), norm.cpu().float())
-            assert is_similar(res1.cpu().float(), res.cpu().float())
+def layernorm_test(xpu_graph, ModCls, input_dtype, param_dtype):
+    mod = ModCls(10).mlu().to(param_dtype)
+    mod_compiled = ModCls(10).mlu().to(param_dtype)
+    mod_compiled.load_state_dict(mod.state_dict())
+    with torch.inference_mode():
+        a = torch.randn(1, 10).to(input_dtype).mlu()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=xpu_graph, dynamic=False)
+        norm = mod_compiled.forward(a)
+        norm1 = mod.forward(a)
+    assert is_similar(norm1.cpu().float(), norm.cpu().float())
 
 
 class TestLayerNorm:
@@ -84,26 +61,28 @@ class TestLayerNorm:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
-        "pattern_func",
+        "pattern_mod,input_dtype,param_dtype",
         [
-            fn0,
-            fn1,
-            fn2,
-            fn3,
+            (LayerNorm1, torch.float32, torch.float32),
+            (LayerNorm2, torch.float16, torch.float16),
+            (LayerNorm1, torch.float32, torch.float16),
+            (LayerNorm2, torch.float16, torch.float32),
+            (LayerNorm1, torch.float32, torch.bfloat16),
         ],
     )
-    def test_layernorm_patterns(self, caplog, pattern_func):
+    def test_layernorm_patterns(self, caplog, pattern_mod, input_dtype, param_dtype):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            layernorm_test(self.xpu_graph_backend, pattern_func)
+            layernorm_test(self.xpu_graph_backend, pattern_mod, input_dtype, param_dtype)
         assert "Pattern.FusedLayerNorm changed graph" in caplog.text
-        if pattern_func in [fn1]:
+        if input_dtype != torch.float32:
             assert "Pattern.RemoveLayerNormCast" in caplog.text
         assert "Pattern.CustomLayerNorm changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
-    layernorm_test(xpu_graph_backend, fn0)
-    layernorm_test(xpu_graph_backend, fn1)
-    layernorm_test(xpu_graph_backend, fn2)
-    layernorm_test(xpu_graph_backend, fn3)
+    layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.float32)
+    layernorm_test(xpu_graph_backend, LayerNorm2, torch.float16, torch.float16)
+    layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.float16)
+    layernorm_test(xpu_graph_backend, LayerNorm2, torch.float16, torch.float32)
+    layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.bfloat16)
