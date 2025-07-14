@@ -99,7 +99,7 @@ def check_mean_op(node: fx.Node) -> bool:
 
 
 def check_var_op(node: fx.Node) -> bool:
-    return check_op(node, aten.var.dim)
+    return check_op(node, aten.var.dim) or check_op(node, aten.var.correction)
 
 
 def check_pow_op(node: fx.Node) -> bool:

@@ -18,6 +18,32 @@ class RMSNormModule(torch.nn.Module):
         return torch_mlu_ops.fused_rms_norm(inputs, None, weights, None, None, epsilon, False)
 
 
+class LayerNormModule(torch.nn.Module):
+    def forward(self, inputs, weight, bias, epsilon):
+        import torch_mlu_ops
+
+        if weight is not None and weight.dtype != inputs.dtype:
+            weight = weight.to(inputs.dtype)
+        if bias is not None and bias.dtype != inputs.dtype:
+            bias = bias.to(inputs.dtype)
+        
+        # torch_mlu_ops.fused_layer_norm(input, residual, gamma, beta, bias, eps, store_output_before_norm, quant_scale, out, dynamic_quant, store_output_after_norm, quant_type)
+        return torch_mlu_ops.fused_layer_norm(
+            inputs,          # input
+            None,           # residual (不使用残差连接)
+            weight,         # gamma (weight)
+            bias,           # beta (bias)  
+            None,           # bias (额外的bias，我们不使用)
+            epsilon,        # eps
+            False,          # store_output_before_norm
+            None,           # quant_scale
+            None,           # out
+            False,          # dynamic_quant
+            False,          # store_output_after_norm
+            None            # quant_type
+        )
+
+
 class FuseSliceModule(torch.nn.Module):
     def __init__(self, slices_index):
         super().__init__()
@@ -168,6 +194,7 @@ class ComboSumModule(torch.nn.Module):
 def get_structure_replacements(config):
     return {
         "FastRMSNorm": RMSNormModule,
+        "FastLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedSliceStackSum": FuseSliceCatSameInputModule,

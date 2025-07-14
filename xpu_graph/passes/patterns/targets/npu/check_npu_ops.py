@@ -30,5 +30,18 @@ def check_npu_norm_op(node: fx.node):
         return False, None
     if "npu_rms_norm" in node.name:
         return True, "rms_norm"
+    elif "npu_layer_norm" in node.name:
+        return True, "layer_norm"
+    else:
+        return False, None
+
+
+def check_npu_layer_norm_op(node: fx.node):
+    if not isinstance(node, fx.Node):
+        return False, None
+    if not (node.op == "call_function" or node.op == "call_module"):
+        return False, None
+    if "npu_layer_norm" in node.name:
+        return True, "layer_norm"
     else:
         return False, None

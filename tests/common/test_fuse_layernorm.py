@@ -112,9 +112,9 @@ def layernorm_test_with_loss_and_grad(xpu_graph, func):
 
 class TestLayerNorm:
     def setup_class(self):
-        infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2)
+        infer_config = xpu_graph.XpuGraphConfig(is_training=False, debug=False, opt_level=OptLevel.level2)
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
-        train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2)
+        train_config = xpu_graph.XpuGraphConfig(is_training=True, debug=False, opt_level=OptLevel.level2)
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
     @pytest.mark.parametrize(
