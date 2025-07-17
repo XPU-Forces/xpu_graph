@@ -75,7 +75,8 @@ class Optimizer(ABC):
         with open(pkl_name, "wb") as f:
             pickle.dump(graph.get_dot_graph(), f)
         logger.info(
-            f'Install graphviz and use python module [pickle] to load the {pkl_name} and [pydot] to draw the file. E.g.\nimport pickle\nimport pydot\nwith open("{pkl_name}", \'rb\') as f:\n    pickle.load(f).write_svg("{filename}.svg")'
+            f"Install graphviz and use python module [pickle] to load the {pkl_name} and [pydot] to draw the file. E.g.\n"
+            f'import pickle\nimport pydot\nwith open("{pkl_name}", \'rb\') as f:\n    pickle.load(f).write_svg("{filename}.svg")'
         )
         opt_times += 1
 
