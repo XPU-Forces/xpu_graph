@@ -51,8 +51,8 @@ class Optimizer(ABC):
 
     def __dump_files(self, gm):
         import os
+        import pickle
         import shutil
-        from subprocess import DEVNULL, run
 
         global opt_times
         dirname = "xpu_graph_debugs"
@@ -61,21 +61,22 @@ class Optimizer(ABC):
             if os.path.exists(dirname):
                 shutil.rmtree(dirname)
             os.makedirs(dirname)
-            if run("dot -V", shell=True, stdout=DEVNULL, stderr=DEVNULL).returncode != 0:
-                raise RuntimeError("dot command is not found! Try apt install -y graphviz.")
-                # TODO(liuyuan): Maybe use yum according to the kernel.
-                # NOTE(liuyuan): graphviz should be installed for the following method [get_dot_graph()]
-                # run("apt install -y graphviz", shell=True, check=True)
 
         filename = os.path.join(dirname, f"optimization_{opt_times}_after_pass_{self.__class__.__name__}")
 
-        # NOTE(liuyuan): write irs into file.
-        with open(f"{filename}.ll", "w") as f:
+        # NOTE(liuyuan): "txt" as postfix for direct-display in some online documents.
+        with open(f"{filename}.txt", "w") as f:
             f.writelines(str(gm.graph))
 
-        # NOTE(liuyuan): visualize the graph and dump as svg file.
+        # NOTE(liuyuan): Visualize the graph in dot format and dump as pickle file.
+        # Since graphvize is too slow, we just dump the dot file instead of draw it.
         graph = fx.passes.graph_drawer.FxGraphDrawer(gm, self.__class__.__name__)
-        graph.get_dot_graph().write_svg(f"{filename}.svg")
+        pkl_name = f"{filename}.pydot.pkl"
+        with open(pkl_name, "wb") as f:
+            pickle.dump(graph.get_dot_graph(), f)
+        logger.info(
+            f'Install graphviz and use python module [pickle] to load the {pkl_name} and [pydot] to draw the file. E.g.\nimport pickle\nimport pydot\nwith open("{pkl_name}", \'rb\') as f:\n    pickle.load(f).write_svg("{filename}.svg")'
+        )
         opt_times += 1
 
     def _set_level(self, opt_level: OptLevel):
