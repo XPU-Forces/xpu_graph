@@ -20,10 +20,7 @@ def get_all_patterns(config: XpuGraphConfig):
         return patterns
 
     for _, module_name, _ in pkgutil.iter_modules(__path__):
-        if module_name != "fuse_broadcast_gather":
-            continue
         module = importlib.import_module(f"{__name__}.{module_name}")
-        # import pdb;pdb.set_trace()
         for name in dir(module):
             pat = getattr(module, name)
             if (
