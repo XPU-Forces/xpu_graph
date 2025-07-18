@@ -71,12 +71,10 @@ class Optimizer(ABC):
         # NOTE(liuyuan): Visualize the graph in dot format and dump as pickle file.
         # Since graphvize is too slow, we just dump the dot file instead of draw it.
         graph = fx.passes.graph_drawer.FxGraphDrawer(gm, self.__class__.__name__)
-        pkl_name = f"{filename}.pydot.pkl"
-        with open(pkl_name, "wb") as f:
-            pickle.dump(graph.get_dot_graph(), f)
+        dot_name = f"{filename}.dot"
+        graph.get_dot_graph().write_raw(dot_name)
         logger.info(
-            f"Install graphviz and use python module [pickle] to load the {pkl_name} and [pydot] to draw the file. E.g.\n"
-            f'import pickle\nimport pydot\nwith open("{pkl_name}", \'rb\') as f:\n    pickle.load(f).write_svg("{filename}.svg")'
+            f"Install graphviz and use \033[32m `dot -Tsvg {dot_name} -o {filename}.svg` \033[0m to draw the file."
         )
         opt_times += 1
 
