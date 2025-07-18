@@ -51,7 +51,6 @@ class Optimizer(ABC):
 
     def __dump_files(self, gm):
         import os
-        import pickle
         import shutil
 
         global opt_times
