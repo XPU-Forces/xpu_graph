@@ -13,12 +13,11 @@ def get_all_patterns(config: XpuGraphConfig):
         PatternGroup.GROUP1: [],
         PatternGroup.GROUP2: [],
     }
-    # return patterns
-    # if config.export_mode:
-    #     logger.warning(
-    #         "AOTI on Ascend NPU do not support DIY triton kernel, npu patterns will be ignored!"
-    #     )
-    #     return patterns
+    if config.export_mode:
+        logger.warning(
+            "AOTI on Ascend NPU do not support DIY triton kernel, npu patterns will be ignored!"
+        )
+        return patterns
 
     for _, module_name, _ in pkgutil.iter_modules(__path__):
         if module_name != "fuse_broadcast_gather":
