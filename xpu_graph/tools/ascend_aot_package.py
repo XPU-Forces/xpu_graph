@@ -150,15 +150,15 @@ class OpCodeGenerator(ABC):
                 raise TypeError(f"can not generate unsupport argtype: {type(arg).__name__}")
 
         # generate func call
-        input_arg_str = ", ".join(new_input_argnames)
+        input_arg_str = ", ".join(new_input_argnames)   
         return input_arg_str
 
 class LibraryOpGenerator(OpCodeGenerator):
     CUSTOMOP_CALLLINE_MAP={
         "broadcast_gather": "    auto {output_argname} = xpu_ops::kernels::BroadcastGather::inference({func_arg_str}); // {opname}",
-        "DisetangleAttenFusion": "    auto {output_argname} = DisetangleAttenFusionPTA({func_arg_str}); //{opname}",
+        "disetangle_attention": "    auto {output_argname} = xpu_ops::kernels::DistangleAttention::inference({func_arg_str}); //{opname}",
     }
-
+ 
     def call_op_line(self, output_argname, opname, func_arg_str):
         default_line = "    auto {output_argname} = at::{opname}({func_arg_str});"
         return LibraryOpGenerator.CUSTOMOP_CALLLINE_MAP.get(opname ,default_line).format(
@@ -208,7 +208,7 @@ class FallbackData:
 class CodeManager:
     OP_REGISTRY = {
         # "xpu_ops::broadcast_gather": {"revertlines": 2, "generator": LibraryOpGenerator()},
-        "npu::DisetangleAttenFusion": {"revertlines": 10, "generator": LibraryOpGenerator()},
+        "xpu_ops::disetangle_attention": {"revertlines": 10, "generator": LibraryOpGenerator()},
         # "aten::addmm": {"revertlines": 2, "generator": LibraryOpGenerator()},
         # "aten::gather": {"revertlines": 2, "generator": LibraryOpGenerator()},
         # "aten::gelu": {"revertlines": 2, "generator": LibraryOpGenerator()},
@@ -231,29 +231,15 @@ class CodeManager:
         self.code_list.extend(newlines)
 
     def regist_all_custom_ops(self):
-        # self.append_lines([
-        #     "namespace xpu_ops {",
-        #     "namespace kernels {",
-        #     "    struct BroadcastGather {",
-        #     "        static at::Tensor inference(const at::Tensor &input, const at::Tensor &index, int64_t dim);",
-        #     "        static std::vector<int64_t> getOutputSize(const at::Tensor &input, const at::Tensor &index ,int64_t dim);",
-        #     "    };",
-        #     "}",
-        #     "}",
-        # ]
-        # )
-        # >>>>>
         self.append_lines([
-            "std::tuple<at::Tensor, at::Tensor, at::Tensor> DisetangleAttenFusionPTA(",
-            "    const at::Tensor& query_layer,",
-            "    const at::Tensor& key_layer,",
-            "    const at::Tensor& value_layer,",
-            "    const at::Tensor& pos_key_layer,",
-            "    const at::Tensor& pos_query_layer,",
-            "    const at::Tensor& relative_pos,",
-            "    const at::Tensor& attn_mask,",
-            "    const std::string pos_attr_type,",
-            "    const double score_scale);",
+            "namespace xpu_ops::kernels {",
+            "    struct DistangleAttention {",
+            "        static std::tuple<at::Tensor, at::Tensor, at::Tensor> inference(",
+            "            const at::Tensor& query, const at::Tensor& key, const at::Tensor& value, const at::Tensor& pos_key,",
+            "            const at::Tensor& pos_query, const at::Tensor& relative_pos, const at::Tensor& attn_mask,",
+            "            const std::string pos_attr_type, const double score_scale);",
+            "    };",
+            "}  // namespace xpu_ops::kernels",
         ])
 
     def save_new_file(self, new_file_path):
