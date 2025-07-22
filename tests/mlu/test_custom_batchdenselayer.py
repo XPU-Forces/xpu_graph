@@ -147,7 +147,7 @@ class TestBMM:
             assert "Pattern.FusedBMMAct changed graph" in caplog.text
         else:
             assert "Pattern.FusedBMMAct changed graph" not in caplog.text
-        assert "Pattern.FastBatchDenseLayer changed graph" in caplog.text
+        assert "Pattern.CustomBatchDenseLayer changed graph" in caplog.text
 
 
 if __name__ == "__main__":

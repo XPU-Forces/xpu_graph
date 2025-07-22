@@ -78,8 +78,34 @@ def _get_wrapped_constant(node: fx.Node):
         return node.item()
 
 
+def _is_bmm(node: fx.Node):
+    return (
+        isinstance(node, fx.Node)
+        and node.op == "call_module"
+        and (
+            node.target == "fused_batch_dense_layer_replacement"
+            or node.target == "custom_batch_dense_layer_replacement"
+        )
+        and node.args[3] == None
+        and node.args[4] == None
+        and node.args[5] == "none"
+    )
+
+
+def _is_bmm_add(node: fx.Node):
+    return (
+        isinstance(node, fx.Node)
+        and node.op == "call_module"
+        and (
+            node.target == "fused_batch_dense_layer_replacement"
+            or node.target == "custom_batch_dense_layer_replacement"
+        )
+        and node.args[5] == "none"
+    )
+
+
 def _is_fa(node: fx.Node):
-    if node.target != "fused_bmm_replacement":
+    if not _is_bmm(node):
         return False, []
     trans_v = node.args[2]
     softmax_node = get_actual_node(node, 0)
@@ -108,8 +134,8 @@ def _is_fa(node: fx.Node):
 
         bmm_1_node = div_input_node
 
-    if bmm_1_node.target != "fused_bmm_replacement":
-        if is_bias_op or is_scale_op or bmm_1_node.target != "fused_bmm_add_replacement":
+    if not _is_bmm(bmm_1_node):
+        if is_bias_op or is_scale_op or not _is_bmm_add(bmm_1_node):
             logger.debug("Flash attention pass: Too many add operations")
             return False, []
         bias = bmm_1_node.args[3] or bmm_1_node.args[4]

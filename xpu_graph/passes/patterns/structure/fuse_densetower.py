@@ -8,26 +8,24 @@ from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.default_replacements import DenseParams
 
 
+def _is_dense_layer_node(node):
+    return (
+        isinstance(node, fx.Node)
+        and node.op == "call_module"
+        and (node.target == "fused_dense_layer_replacement" or node.target == "custom_dense_layer_replacement")
+    )
+
+
 def _is_serial_mm_2dot(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node]]:
-    if (
-        (node.target != "fused_matmul_replacement")
-        and (node.target != "fused_matmul_add_replacement")
-        and (node.target != "fused_matmul_act_replacement")
-        and (node.target != "fused_matmul_add_act_replacement")
-    ):
+    if not _is_dense_layer_node(node):
         return False, []
 
     dense_params1 = DenseParams().set_params(*node.args)
 
     dense_result0 = dense_params1.input
-    if (
-        (dense_result0.target != "fused_matmul_replacement")
-        and (dense_result0.target != "fused_matmul_add_replacement")
-        and (dense_result0.target != "fused_matmul_act_replacement")
-        and (dense_result0.target != "fused_matmul_add_act_replacement")
-    ):
+    if not _is_dense_layer_node(dense_result0):
         return False, []
 
     if len(dense_result0.users) > 1:
@@ -83,12 +81,7 @@ def _is_serial_mm_3dot(
         return False, []
 
     matmul_node = node.args[0]
-    if (
-        (matmul_node.target != "fused_matmul_replacement")
-        and (matmul_node.target != "fused_matmul_add_replacement")
-        and (matmul_node.target != "fused_matmul_act_replacement")
-        and (matmul_node.target != "fused_matmul_add_act_replacement")
-    ):
+    if not _is_dense_layer_node(matmul_node):
         return False, []
 
     if len(matmul_node.users) > 1:

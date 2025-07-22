@@ -77,7 +77,7 @@ def match_mm(graph_module):
     for node in reversed(graph_module.graph.nodes):
         is_match, mm_param = _is_matmul(node)
         if is_match:
-            new_node = replace_with_module(graph_module, node, "fused_matmul_replacement", mm_param.as_tuple())
+            new_node = replace_with_module(graph_module, node, "fused_dense_layer_replacement", mm_param.as_tuple())
             changed = True
     return changed
 
@@ -90,7 +90,7 @@ def match_mm_add1(graph_module):
         mm_node = node.args[0]
         if not isinstance(mm_node, fx.Node):
             continue
-        if mm_node.target != "fused_matmul_replacement":
+        if mm_node.target != "fused_dense_layer_replacement" or mm_node.args[3] != None or mm_node.args[4] != "none":
             continue
         if len(mm_node.users) != 1:
             continue
@@ -104,7 +104,7 @@ def match_mm_add1(graph_module):
 
         if not mm_param.set_bias(bias):
             continue
-        new_node = replace_with_module(graph_module, node, "fused_matmul_add_replacement", mm_param.as_tuple())
+        new_node = replace_with_module(graph_module, node, "fused_dense_layer_replacement", mm_param.as_tuple())
         assert new_node.args[0] == mm_param.input
         graph_module.graph.erase_node(mm_node)
         changed = True
@@ -116,7 +116,7 @@ def match_mm_add2(graph_module):
     for node in reversed(graph_module.graph.nodes):
         is_match, mm_param = _is_addmm(node)
         if is_match:
-            new_node = replace_with_module(graph_module, node, "fused_matmul_add_replacement", mm_param.as_tuple())
+            new_node = replace_with_module(graph_module, node, "fused_dense_layer_replacement", mm_param.as_tuple())
             changed = True
     return changed
 
@@ -128,7 +128,7 @@ def match_mm_act(graph_module):
         if not is_cat:
             continue
         mm_node = node.args[0]
-        if (mm_node.target != "fused_matmul_replacement") and (mm_node.target != "fused_matmul_add_replacement"):
+        if mm_node.target != "fused_dense_layer_replacement" or mm_node.args[4] != "none":
             continue
         if len(mm_node.users) != 1:
             continue
@@ -138,10 +138,7 @@ def match_mm_act(graph_module):
             continue
         if not mm_param.set_act(act_str):
             continue
-        if mm_node.target == "fused_matmul_replacement":
-            new_node = replace_with_module(graph_module, node, "fused_matmul_act_replacement", mm_param.as_tuple())
-        elif mm_node.target == "fused_matmul_add_replacement":
-            new_node = replace_with_module(graph_module, node, "fused_matmul_add_act_replacement", mm_param.as_tuple())
+        new_node = replace_with_module(graph_module, node, "fused_dense_layer_replacement", mm_param.as_tuple())
         assert new_node.args[0] == mm_param.input
         graph_module.graph.erase_node(mm_node)
         changed = True
@@ -155,8 +152,8 @@ class FusedMatMul(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         # mm
-        if not hasattr(graph_module, "fused_matmul_replacement"):
-            graph_module.add_submodule("fused_matmul_replacement", DenseLayer())
+        if not hasattr(graph_module, "fused_dense_layer_replacement"):
+            graph_module.add_submodule("fused_dense_layer_replacement", DenseLayer())
         is_modified |= match_mm(graph_module)
 
         return is_modified
@@ -169,8 +166,8 @@ class FusedMatMulAdd(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         # mm+bias
-        if not hasattr(graph_module, "fused_matmul_add_replacement"):
-            graph_module.add_submodule("fused_matmul_add_replacement", DenseLayer())
+        if not hasattr(graph_module, "fused_dense_layer_replacement"):
+            graph_module.add_submodule("fused_dense_layer_replacement", DenseLayer())
         is_modified |= match_mm_add1(graph_module)
         is_modified |= match_mm_add2(graph_module)
 
@@ -182,13 +179,10 @@ class FusedMatMulAct(Pattern):
     _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
-        # mm+act
         is_modified = False
-        if not hasattr(graph_module, "fused_matmul_act_replacement"):
-            graph_module.add_submodule("fused_matmul_act_replacement", DenseLayer())
-        # mm+bias+act
-        if not hasattr(graph_module, "fused_matmul_add_act_replacement"):
-            graph_module.add_submodule("fused_matmul_add_act_replacement", DenseLayer())
+        if not hasattr(graph_module, "fused_dense_layer_replacement"):
+            graph_module.add_submodule("fused_dense_layer_replacement", DenseLayer())
+        # find all mm + act or mm_add + act patterns
         is_modified |= match_mm_act(graph_module)
 
         return is_modified
@@ -199,7 +193,9 @@ def match_bmm(graph_module):
     for node in reversed(graph_module.graph.nodes):
         is_match, bmm_param = _is_bmm(node)
         if is_match:
-            new_node = replace_with_module(graph_module, node, "fused_bmm_replacement", bmm_param.as_tuple())
+            new_node = replace_with_module(
+                graph_module, node, "fused_batch_dense_layer_replacement", bmm_param.as_tuple()
+            )
             changed = True
     return changed
 
@@ -212,7 +208,12 @@ def match_bmm_add(graph_module):
         bmm_node = node.args[0]
         if not isinstance(bmm_node, fx.Node):
             continue
-        if bmm_node.target != "fused_bmm_replacement":
+        if (
+            bmm_node.target != "fused_batch_dense_layer_replacement"
+            or bmm_node.args[3] != None
+            or bmm_node.args[4] != None
+            or bmm_node.args[5] != "none"
+        ):
             continue
         if len(bmm_node.users) != 1:
             continue
@@ -224,7 +225,7 @@ def match_bmm_add(graph_module):
         bias = node.args[1]
         if not bmm_param.set_bias(bias):
             continue
-        new_node = replace_with_module(graph_module, node, "fused_bmm_add_replacement", bmm_param.as_tuple())
+        new_node = replace_with_module(graph_module, node, "fused_batch_dense_layer_replacement", bmm_param.as_tuple())
         assert new_node.args[0] == bmm_param.input
         graph_module.graph.erase_node(bmm_node)
         changed = True
@@ -238,7 +239,7 @@ def match_bmm_act(graph_module):
         if not is_act:
             continue
         bmm_node = node.args[0]
-        if (bmm_node.target != "fused_bmm_replacement") and (bmm_node.target != "fused_bmm_add_replacement"):
+        if bmm_node.target != "fused_batch_dense_layer_replacement" or bmm_node.args[5] != "none":
             continue
         if len(bmm_node.users) != 1:
             continue
@@ -248,10 +249,7 @@ def match_bmm_act(graph_module):
             continue
         if not bmm_param.set_act(act_str):
             continue
-        if bmm_node.target == "fused_bmm_replacement":
-            new_node = replace_with_module(graph_module, node, "fused_bmm_act_replacement", bmm_param.as_tuple())
-        elif bmm_node.target == "fused_bmm_add_replacement":
-            new_node = replace_with_module(graph_module, node, "fused_bmm_add_act_replacement", bmm_param.as_tuple())
+        new_node = replace_with_module(graph_module, node, "fused_batch_dense_layer_replacement", bmm_param.as_tuple())
         assert new_node.args[0] == bmm_param.input
         graph_module.graph.erase_node(bmm_node)
         changed = True
@@ -263,9 +261,9 @@ class FusedBMM(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        # bmm
-        if not hasattr(graph_module, "fused_bmm_replacement"):
-            graph_module.add_submodule("fused_bmm_replacement", BatchDenseLayer())
+        if not hasattr(graph_module, "fused_batch_dense_layer_replacement"):
+            graph_module.add_submodule("fused_batch_dense_layer_replacement", BatchDenseLayer())
+        # find all bmm patterns
         is_modified |= match_bmm(graph_module)
         return is_modified
 
@@ -275,9 +273,9 @@ class FusedBMMAdd(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        # bmm+add
-        if not hasattr(graph_module, "fused_bmm_add_replacement"):
-            graph_module.add_submodule("fused_bmm_add_replacement", BatchDenseLayer())
+        if not hasattr(graph_module, "fused_batch_dense_layer_replacement"):
+            graph_module.add_submodule("fused_batch_dense_layer_replacement", BatchDenseLayer())
+        # find all bmm + add patterns
         is_modified |= match_bmm_add(graph_module)
         return is_modified
 
@@ -287,11 +285,8 @@ class FusedBMMAct(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        # bmm+act
-        if not hasattr(graph_module, "fused_bmm_act_replacement"):
-            graph_module.add_submodule("fused_bmm_act_replacement", BatchDenseLayer())
-        # bmm+add+act
-        if not hasattr(graph_module, "fused_bmm_add_act_replacement"):
-            graph_module.add_submodule("fused_bmm_add_act_replacement", BatchDenseLayer())
+        if not hasattr(graph_module, "fused_batch_dense_layer_replacement"):
+            graph_module.add_submodule("fused_batch_dense_layer_replacement", BatchDenseLayer())
+        # find all bmm + act / bmm_add + act patterns
         is_modified |= match_bmm_act(graph_module)
         return is_modified

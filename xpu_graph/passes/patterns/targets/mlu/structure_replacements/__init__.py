@@ -9,6 +9,8 @@ from ..triton_kernel.fused_slice_cat import fused_slice_cat
 from ..triton_kernel.fused_slice_v2 import fused_slice_low_v2
 from ..triton_kernel.fused_sum_3d import fused_sum_3d_input
 from ..triton_kernel.get_mlu_devinfo import get_device_properties
+from .dense_layer_modules import BatchDenseLayerModule, DenseLayerModule
+from .flash_attention_modules import FlashAttentionModule, can_fuse_fa
 from .norm_modules import LayerNormModule, RMSNormModule
 
 
@@ -159,99 +161,6 @@ class ComboSumModule(torch.nn.Module):
         return outputs
 
 
-class FastDenseLayerReplacement(torch.nn.Module):
-    def __init__(self, fast_act):
-        super().__init__()
-        self.fast_act = fast_act
-
-    def forward(self, inputs, weight, weight_trans, bias, act):
-        import torch_mlu_ops
-
-        # TODO(jyj): waiting for tmo version update
-        tmp_act = act
-        if act == "sigmoid":
-            tmp_act = "none"
-
-        # input last dim must be contiguous.
-        if inputs.stride()[-1] != 1:
-            inputs = inputs.contiguous()
-
-        if bias != None:
-            if isinstance(bias, int):
-                dim = weight.shape[1] if weight_trans == False else weight.shape[0]
-                bias = torch.tensor([bias] * dim, device=inputs.device, dtype=inputs.dtype)
-            bias_shape = bias.shape
-            if (len(bias_shape) == 2) & (bias_shape[0] == 1):
-                bias = bias.view(-1)
-                bias_shape = bias.shape
-            if len(bias_shape) == 1:
-                output = torch_mlu_ops.matmul(
-                    inputs,
-                    weight,
-                    bias,
-                    None,
-                    tmp_act,
-                    1.0,
-                    0.0,
-                    self.fast_act,
-                    False,
-                    trans_b=weight_trans,
-                )
-                if act == "sigmoid":
-                    return torch.sigmoid(output)
-                return output
-
-        # bias 2d or None
-        output = torch_mlu_ops.matmul(
-            inputs,
-            weight,
-            None,
-            bias,
-            tmp_act,
-            1.0,
-            0.0 if bias is None else 1.0,
-            self.fast_act,
-            False,
-            trans_b=weight_trans,
-        )
-        if act == "sigmoid":
-            return torch.sigmoid(output)
-        return output
-
-
-class FastBatchDenseLayerReplacement(torch.nn.Module):
-    def forward(self, inputs, weight, weight_trans, residual, bias, act):
-        import torch_mlu_ops
-
-        if not inputs.is_contiguous():
-            inputs = inputs.contiguous()
-        if not weight.is_contiguous():
-            weight = weight.contiguous()
-        if residual is not None:
-            beta = 1.0
-        else:
-            beta = 0.0
-
-        dtype = inputs.dtype
-
-        output = torch_mlu_ops.batch_matmul(
-            inputs,
-            weight,
-            residual,
-            1.0,
-            beta,
-            1.0,
-            1.0,
-            False,
-            weight_trans,
-            None,
-            bias,
-            act,
-            dtype,
-        )
-        return output
-
-
 class FusedDenseTower2Replacement(torch.nn.Module):
     def forward(
         self,
@@ -400,42 +309,6 @@ def can_fuse_dense_tower3(
     return (K1 * N1 + N1 * N2 + N2 * N3 + N1 + N2 + N3) <= (512 / size_of_dtype * 1024)
 
 
-class FlashAttentionReplacement(torch.nn.Module):
-    def forward(self, q, k, v, attn_mask, scale):
-        q_len = q.shape[-2]
-        kv_len = k.shape[-2]
-        # Note: convert shape from [B,N,S,D] to [B,S,N,D]
-        q = q.transpose(-2, -3)
-        k = k.transpose(-2, -3)
-        v = v.transpose(-2, -3)
-        k = k.contiguous()
-        import torch_mlu_ops
-
-        o = torch_mlu_ops.flash_attention(
-            q,
-            k,
-            v,
-            None,
-            torch.tensor([0, q_len], dtype=torch.int32, device="mlu"),
-            torch.tensor([0, kv_len], dtype=torch.int32, device="mlu"),
-            None,
-            attn_mask,
-            q_len,
-            kv_len,
-            scale,
-            False,
-        )
-        # Note: convert shape back from [B,S,N,D] to [B,N,S,D]
-        o = o.transpose(-2, -3)
-        return o
-
-
-def can_fuse_fa(q, k, v, attn_mask, scale):
-    num_heads = q.shape[-3]
-    # Magic number
-    return num_heads <= 128
-
-
 def get_structure_replacements(config):
     return {
         "CustomRMSNorm": RMSNormModule,
@@ -445,9 +318,9 @@ def get_structure_replacements(config):
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
-        "FastDenseLayer": FastDenseLayerReplacement,
-        "FastBatchDenseLayer": FastBatchDenseLayerReplacement,
+        "CustomDenseLayer": DenseLayerModule,
+        "CustomBatchDenseLayer": BatchDenseLayerModule,
         "FusedDenseTower2": (FusedDenseTower2Replacement, can_fuse_dense_tower2),
         "FusedDenseTower3": (FusedDenseTower3Replacement, can_fuse_dense_tower3),
-        "FlashAttention": (FlashAttentionReplacement, can_fuse_fa),
+        "FlashAttention": (FlashAttentionModule, can_fuse_fa),
     }

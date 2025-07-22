@@ -181,7 +181,7 @@ class TestMatMul:
             assert "Pattern.FusedMatMulAdd changed graph" in caplog.text
         else:
             assert "Pattern.FusedMatMulAct changed graph" in caplog.text
-        assert "Pattern.FastDenseLayer changed graph" in caplog.text
+        assert "Pattern.CustomDenseLayer changed graph" in caplog.text
 
 
 if __name__ == "__main__":
