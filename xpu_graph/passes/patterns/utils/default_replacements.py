@@ -1,9 +1,9 @@
+from typing import Optional, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import fx
-from typing import Optional, Union
-
 
 from xpu_graph.utils import logger
 
