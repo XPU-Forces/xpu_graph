@@ -69,7 +69,11 @@ jobs:
       shell: bash
       run: |
         echo "Running npu tests..."
-        python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu
+        python3 -m pytest \
+        --cov=xpu_graph \
+        --cov-omit='xpu_graph/backends/mlu.py,xpu_graph/passes/patterns/targets/mlu/*' \
+        --ignore=tests/common/test_inference.py \
+        tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

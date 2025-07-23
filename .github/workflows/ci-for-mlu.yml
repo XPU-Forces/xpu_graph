@@ -68,7 +68,10 @@ jobs:
         export MLU_VISIBLE_DEVICES=$DEV0,$DEV1
         echo "MLU_VISIBLE_DEVICES: $MLU_VISIBLE_DEVICES"
         echo "Running MLU tests..."
-        python3 -m pytest --cov=xpu_graph tests/common tests/mlu
+        python3 -m pytest \
+        --cov=xpu_graph \
+        --cov-omit='xpu_graph/backends/npu.py,xpu_graph/passes/patterns/targets/npu/*' \
+        tests/common tests/mlu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
