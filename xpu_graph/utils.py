@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from typing import Callable
 
 import torch
 
@@ -11,6 +12,12 @@ import torch
 class _LoggerWrapper:
     def __init__(self, logger):
         self._logger = logger
+
+    def lzdbg(self, msg_func: Callable[(), str]):
+        if not isinstance(msg_func, Callable):
+            raise TypeError("You should pass a function without argument and return message string to lzdbg")
+        if self._logger.isEnabledFor(logging.DEBUG):
+            self._logger.debug(msg_func())
 
     def __getattr__(self, name):
         return getattr(self._logger, name)
