@@ -39,12 +39,10 @@ class NodeCluster(BaseNode):
 
     @final
     def match(self, node: Node):
-        res = False
         for self_node in self.nodes:
-            res = res or self_node.match(node)
-            if res:
-                break
-        return res
+            if self_node.match(node):
+                return True
+        return False
 
     def __or__(self, xpu_graph_node):
         self.nodes.append(xpu_graph_node)
@@ -101,14 +99,15 @@ class XpuGraphNode(BaseNode):
                     )
                     return False
 
-                res = True
                 for node_arg, self_arg in zip(node.args, self.args):
-                    res = res and self_arg.match(node_arg)
-                    if not res:
-                        break
-                return res
-            else:
-                return True
+                    if not self_arg.match(node_arg):
+                        return False
+
+            logger.lzdbg(
+                lambda: (f"{self} matched " + f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}")
+            )
+
+            return True
         else:
             logger.lzdbg(
                 lambda: (
@@ -139,14 +138,14 @@ class AnyNode(XpuGraphNode):
 class LiteralNode(XpuGraphNode):
     def __init__(self, literal, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.literal = literal
+        self.op = literal
 
     @final
     def __match__(self, node: Node):
-        if isinstance(node, type(self.literal)):
-            return node == self.literal
+        if isinstance(node, type(self.op)):
+            return node == self.op
         else:
-            return True
+            return False
 
 
 @xnary(0)
