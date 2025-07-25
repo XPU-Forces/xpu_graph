@@ -155,6 +155,9 @@ class LiteralNode(XpuGraphNode):
         else:
             return False
 
+    def __str__(self):
+        return super().__str__() + f"{{ignore_val={self.ignore_val}}}"
+
 
 @xnary(0)
 class Placeholder(XpuGraphNode):
@@ -263,8 +266,9 @@ if __name__ == "__main__":
     graph = make_fx(test)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
     print(graph)
     cnt = 0
+    literal_cap = NodeCapture()
     pattern = AtenMatMul(
-        AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode())),
+        AtenAdd(Placeholder(), LiteralNode(100, ignore_val=True, capture=literal_cap)),
         AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode())),
     )
     for node in reversed(graph.nodes):
