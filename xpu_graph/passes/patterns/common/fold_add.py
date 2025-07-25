@@ -7,7 +7,7 @@ from xpu_graph.passes.patterns.utils.check_ops import is_zero_like
 from xpu_graph.passes.patterns.utils.pattern_matcher import (
     AnyNode,
     AtenAdd,
-    ATenZeroLike,
+    AtenZeroLike,
     LiteralNode,
     NodeCapture,
 )
@@ -31,7 +31,7 @@ class FoldAdd0(Pattern):
         add_node_cap = NodeCapture()
         target_node_cap = NodeCapture()
 
-        zeros_like_pattern = ATenZeroLike(AnyNode()) | LiteralNode(0) | LiteralNode(0.0)
+        zeros_like_pattern = AtenZeroLike(AnyNode()) | LiteralNode(0) | LiteralNode(0.0)
         pattern = AtenAdd(AnyNode(capture=target_node_cap), zeros_like_pattern, capture=add_node_cap) | AtenAdd(
             zeros_like_pattern, AnyNode(capture=target_node_cap), capture=add_node_cap
         )
