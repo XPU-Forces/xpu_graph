@@ -1,6 +1,6 @@
 import inspect
 from abc import ABC, abstractmethod
-from functools import wraps
+from functools import cache, wraps
 from typing import Callable, final
 
 import torch
@@ -84,40 +84,41 @@ class XpuGraphNode(BaseNode):
 
     @final
     def match(self, node: Node):
-        if self.__match__(node):
-            if self.meta_check and not self.meta_check(node.meta):
-                logger.lzdbg(lambda: f"{self} failed in meta_check:\n{inspect.getsource(self.meta_check)}")
-                return False
-
-            if self.capture:
-                self.capture.node = node
-
-            if self.args:
-                if len(node.args) != len(self.args):
-                    logger.lzdbg(
-                        lambda: f"{self} failed to match {node.op}={node.target} because of different argument number, expected:{len(self.args)} actual: {len(node.args)}"
-                    )
-                    return False
-
-                for node_arg, self_arg in zip(node.args, self.args):
-                    if not self_arg.match(node_arg):
-                        return False
-
+        if not self.__match__(node):
             logger.lzdbg(
-                lambda: (f"{self} matched " + f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}")
-            )
-
-            return True
-        else:
-            logger.lzdbg(
-                lambda: (
-                    f"{self} failed to match " + f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}"
+                lambda: f"{self} failed to match "
+                + (f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}")
+                + (
+                    f" with different argument number, expected:{len(self.args)}, actual:{len(node.args)}"
+                    if self.args and hasattr(node, "args") and len(self.args) != len(node.args)
+                    else ""
                 )
             )
             return False
 
+        if self.meta_check and not self.meta_check(node.meta):
+            logger.lzdbg(lambda: f"{self} failed in meta_check:\n{inspect.getsource(self.meta_check)}")
+            return False
+
+        logger.lzdbg(
+            lambda: (f"{self} matched " + (f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}"))
+        )
+        if self.capture:
+            self.capture.node = node
+
+        if self.args and hasattr(node, "args"):
+            for node_arg, self_arg in zip(node.args, self.args):
+                if not self_arg.match(node_arg):
+                    return False
+
+        return True
+
     def __match__(self, node: Node):
-        return (node.op == self.op) and (node.target in self.target) if isinstance(node, Node) else False
+        return (
+            (node.op == self.op) and (node.target in self.target) and (len(node.args) == len(self.args))
+            if isinstance(node, Node)
+            else False
+        )
 
     def __or__(self, xpu_graph_node):
         assert isinstance(xpu_graph_node, XpuGraphNode)
@@ -125,25 +126,32 @@ class XpuGraphNode(BaseNode):
         cluster.nodes = [self, xpu_graph_node]
         return cluster
 
+    @cache
     def __str__(self):
-        return f"XpuGrapnNode: {self.op}={[t.__name__ for t in self.target]}"
+        return f"XpuGrapnNode: {self.op}={[str(t) for t in self.target]}"
 
 
 class AnyNode(XpuGraphNode):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.op = "Any"
+
     @final
     def __match__(self, node: Node):
         return True
 
 
 class LiteralNode(XpuGraphNode):
-    def __init__(self, literal, *args, **kwargs) -> None:
+    def __init__(self, literal, *args, ignore_val=False, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.op = literal
+        self.op = type(literal)
+        self.target.add(literal)
+        self.ignore_val = ignore_val
 
     @final
     def __match__(self, node: Node):
-        if isinstance(node, type(self.op)):
-            return node == self.op
+        if isinstance(node, self.op):
+            return self.ignore_val or node in self.target
         else:
             return False
 
@@ -183,7 +191,7 @@ class GetAttr(XpuGraphNode):
 
 
 @xnary(2)
-class ATenMatMul(CallFunction):
+class AtenMatMul(CallFunction):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target.update((aten.mm.default, aten.matmul.default))
@@ -197,14 +205,14 @@ class AtenAdd(CallFunction):
 
 
 @xnary(1)
-class ATenDTypeCast(CallFunction):
+class AtenDTypeCast(CallFunction):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target.update((aten._to_copy, aten._to_copy.default))
 
 
 @xnary(1)
-class ATenZeroLike(CallFunction):
+class AtenZeroLike(CallFunction):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target.update((aten.zeros_like.default, aten.zeros.default))
@@ -227,9 +235,9 @@ if __name__ == "__main__":
                 return False
             return True
 
-        return ATenMatMul(
-            Placeholder() | ATenDTypeCast(AnyNode()),
-            Placeholder() | ATenDTypeCast(AnyNode()),
+        return AtenMatMul(
+            Placeholder() | AtenDTypeCast(AnyNode()),
+            Placeholder() | AtenDTypeCast(AnyNode()),
             capture=mm_capture,
             meta_check=checkMatmul,
         )
@@ -242,9 +250,25 @@ if __name__ == "__main__":
     cnt = 0
 
     print(graph)
-    for node in graph.nodes:
+    for node in reversed(graph.nodes):
         if pattern().match(node):
             print(mm_capture.node.meta)
             cnt += 1
     print(cnt)
     assert cnt == 1
+
+    def test(x, y):
+        return torch.matmul(x + 2, y + 2)
+
+    graph = make_fx(test)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
+    print(graph)
+    cnt = 0
+    pattern = AtenMatMul(
+        AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode())),
+        AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode())),
+    )
+    for node in reversed(graph.nodes):
+        if pattern.match(node):
+            print(mm_capture.node.meta)
+            cnt += 1
+    print(cnt)
