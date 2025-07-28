@@ -4,7 +4,7 @@ from functools import cache, wraps
 from typing import Callable, final
 
 import torch
-from torch.fx import Node
+from torch.fx import Node as FxNode
 from torch.ops import aten
 
 from xpu_graph.utils import logger
@@ -12,7 +12,13 @@ from xpu_graph.utils import logger
 # from torch.ops import aten
 
 
-def xnary(operand_num):
+def xnary(operand_num:int):
+    """check that the number of args MUST be equal to operand_num
+       before calling __init__ of the class.
+
+    Args:
+        operand_num (int): the number of operands.
+    """
     def decorate(cls):
         func = cls.__init__
 
@@ -29,7 +35,7 @@ def xnary(operand_num):
 
 class BaseNode(ABC):
     @abstractmethod
-    def match(self, node: Node) -> bool:
+    def match(self, node: FxNode) -> bool:
         pass
 
 
@@ -38,7 +44,15 @@ class NodeCluster(BaseNode):
         self.nodes = []
 
     @final
-    def match(self, node: Node):
+    def match(self, node: FxNode):
+        """Whether the node matches ANY one in cluster or not.
+
+        Args:
+            node (FxNode): fx.Graph Node
+
+        Returns:
+            bool
+        """
         for self_node in self.nodes:
             if self_node.match(node):
                 return True
@@ -58,7 +72,7 @@ class NodeCapture:
         return self.__node
 
     @node.setter
-    def node(self, node: Node):
+    def node(self, node: FxNode):
         self.__node = node
 
     def clear(self):
@@ -72,6 +86,18 @@ class XpuGraphNode(BaseNode):
         capture: NodeCapture = None,
         meta_check: Callable[[dict], bool] = None,
     ) -> None:
+        """A BaseNode that provide matching function.
+
+        Args:
+            ...: The operands of the node.
+            capture (NodeCapture, optional): If capture is provided, then the fx.Graph node that matched will be recorded.
+                                             Defaults to None.
+            meta_check (Callable[[dict], bool], optional): If meta_check is provided, then the fx.Graph node's meta infomation will be checked while matching.
+                                                           Defaults to None.
+
+        Raises:
+            TypeError: The operands must be XpuGraphNode or NodeCluster. 
+        """
         self.args = args
         for arg in self.args:
             if not isinstance(arg, XpuGraphNode) and not isinstance(arg, NodeCluster):
@@ -83,11 +109,19 @@ class XpuGraphNode(BaseNode):
         self.meta_check = meta_check if isinstance(meta_check, Callable) else None
 
     @final
-    def match(self, node: Node):
+    def match(self, node: FxNode):
+        """Whether fx.Graph Node is matched or not.
+
+        Args:
+            node (FxNode): fx.Graph Node to match.
+
+        Returns:
+            bool
+        """
         if not self.__match__(node):
             logger.lzdbg(
                 lambda: f"{self} failed to match "
-                + (f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}")
+                + (f"{node.op}={node.target}" if isinstance(node, FxNode) else f"{node}")
                 + (
                     f" with different argument number, expected:{len(self.args)}, actual:{len(node.args)}"
                     if self.args and hasattr(node, "args") and len(self.args) != len(node.args)
@@ -101,29 +135,39 @@ class XpuGraphNode(BaseNode):
             return False
 
         logger.lzdbg(
-            lambda: (f"{self} matched " + (f"{node.op}={node.target}" if isinstance(node, Node) else f"{node}"))
+            lambda: (f"{self} matched " + (f"{node.op}={node.target}" if isinstance(node, FxNode) else f"{node}"))
         )
-        if self.capture:
-            self.capture.node = node
 
         if self.args and hasattr(node, "args"):
             for node_arg, self_arg in zip(node.args, self.args):
                 if not self_arg.match(node_arg):
                     return False
 
+        # NOTE(liuyuan): SHOULD capture the fx.Graph node iff all operands are matched.
+        if self.capture:
+            self.capture.node = node
+
         return True
 
-    def __match__(self, node: Node):
+    def __match__(self, node: FxNode):
         return (
             (node.op == self.op) and (node.target in self.target) and (len(node.args) == len(self.args))
-            if isinstance(node, Node)
+            if isinstance(node, FxNode)
             else False
         )
 
-    def __or__(self, xpu_graph_node):
-        assert isinstance(xpu_graph_node, XpuGraphNode)
+    def __or__(self, other):
+        """Return a NodeCluster including self and other
+
+        Args:
+            other (XpuGraphNode): The other XpuGraphNode
+
+        Returns:
+            cluster (NodeCluster): a NodeCluster including self and other
+        """
+        assert isinstance(other, XpuGraphNode)
         cluster = NodeCluster()
-        cluster.nodes = [self, xpu_graph_node]
+        cluster.nodes = [self, other]
         return cluster
 
     @cache
@@ -137,19 +181,26 @@ class AnyNode(XpuGraphNode):
         self.op = "Any"
 
     @final
-    def __match__(self, node: Node):
+    def __match__(self, node: FxNode):
         return True
 
 
+@xnary(1)
 class LiteralNode(XpuGraphNode):
-    def __init__(self, literal, *args, ignore_val=False, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, literal, ignore_val=False, **kwargs) -> None:
+        """A XpuGraphNode that indicating a literal val.
+
+        Args:
+            literal (ScalarType): a scalar value. Could be literal.
+            ignore_val (bool, optional): whether to ignore the match of val or not. Defaults to False.
+        """
+        super().__init__(**kwargs)
         self.op = type(literal)
         self.target.add(literal)
         self.ignore_val = ignore_val
 
     @final
-    def __match__(self, node: Node):
+    def __match__(self, node: FxNode):
         if isinstance(node, self.op):
             return self.ignore_val or node in self.target
         else:
@@ -267,12 +318,18 @@ if __name__ == "__main__":
     print(graph)
     cnt = 0
     literal_cap = NodeCapture()
+    add_cap = NodeCapture()
+    mm_capture.clear()
     pattern = AtenMatMul(
         AtenAdd(Placeholder(), LiteralNode(100, ignore_val=True, capture=literal_cap)),
-        AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode())),
+        AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode()), capture=add_cap),
+        capture=mm_capture
     )
     for node in reversed(graph.nodes):
         if pattern.match(node):
             print(mm_capture.node.meta)
+            print(literal_cap.node)
             cnt += 1
+    assert literal_cap.node 
+    assert add_cap.node is None and mm_capture.node is None
     print(cnt)
