@@ -1,5 +1,5 @@
 import inspect
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from functools import cache, wraps
 from typing import Callable, final
 
@@ -8,9 +8,6 @@ from torch.fx import Node as FxNode
 from torch.ops import aten
 
 from xpu_graph.utils import logger
-
-# from torch.ops import aten
-
 
 def xnary(operand_num:int):
     """check that the number of args MUST be equal to operand_num
@@ -38,7 +35,6 @@ class BaseNode(ABC):
     def match(self, node: FxNode) -> bool:
         pass
 
-
 class NodeCluster(BaseNode):
     def __init__(self):
         self.nodes = []
@@ -61,7 +57,6 @@ class NodeCluster(BaseNode):
     def __or__(self, xpu_graph_node):
         self.nodes.append(xpu_graph_node)
         return self
-
 
 class NodeCapture:
     def __init__(self):
@@ -101,12 +96,40 @@ class XpuGraphNode(BaseNode):
         self.args = args
         for arg in self.args:
             if not isinstance(arg, XpuGraphNode) and not isinstance(arg, NodeCluster):
+                breakpoint()
                 raise TypeError("XpuGraphNode only support [XpuGraphNode, NodeCluster] as input")
 
         self.op = None
         self.target = set()
+
+        # NOTE(liuyuan): Would be deprecated one day. Setting meta information in __init__ will not supported.
+        if not hasattr(self, 'capture'):
+            self.capture = capture if isinstance(capture, NodeCapture) else None
+
+        if not hasattr(self, 'meta_check'):
+            self.meta_check = meta_check if isinstance(meta_check, Callable) else None
+
+    @final
+    def __call__(self, *args, **kwargs):
+        self.__init__(*args, **kwargs)
+        return self
+
+    def __set_meta__(self, capture=None, meta_check=None):
         self.capture = capture if isinstance(capture, NodeCapture) else None
-        self.meta_check = meta_check if isinstance(meta_check, Callable) else None
+        self.meta_check = (
+            meta_check if isinstance(meta_check, Callable) else None
+        )
+
+    @final
+    def __class_getitem__(cls, key):
+        node = super().__new__(cls)
+        if isinstance(key, tuple):
+            node.__set_meta__(*key)
+        elif isinstance(key, dict):
+            node.__set_meta__(**key)
+        else:
+            node.__set_meta__(key)
+        return node
 
     @final
     def match(self, node: FxNode):
@@ -197,7 +220,8 @@ class LiteralNode(XpuGraphNode):
         super().__init__(**kwargs)
         self.op = type(literal)
         self.target.add(literal)
-        self.ignore_val = ignore_val
+        if not hasattr(self, 'ignore_val'):
+            self.ignore_val = ignore_val
 
     @final
     def __match__(self, node: FxNode):
@@ -205,6 +229,10 @@ class LiteralNode(XpuGraphNode):
             return self.ignore_val or node in self.target
         else:
             return False
+
+    def __set_meta__(self, ignore_val: bool = False, **kwargs):
+        self.ignore_val = ignore_val
+        super().__set_meta__(**kwargs)
 
     def __str__(self):
         return super().__str__() + f"{{ignore_val={self.ignore_val}}}"
@@ -283,12 +311,12 @@ if __name__ == "__main__":
 
     mm_capture = NodeCapture()
 
-    def pattern():
-        def checkMatmul(meta):
-            if meta["tensor_meta"].dtype == torch.float32:
-                return False
-            return True
+    def checkMatmul(meta):
+        if meta["tensor_meta"].dtype == torch.float32:
+            return False
+        return True
 
+    def pattern():
         return AtenMatMul(
             Placeholder() | AtenDTypeCast(AnyNode()),
             Placeholder() | AtenDTypeCast(AnyNode()),
@@ -321,9 +349,14 @@ if __name__ == "__main__":
     add_cap = NodeCapture()
     mm_capture.clear()
     pattern = AtenMatMul(
-        AtenAdd(Placeholder(), LiteralNode(100, ignore_val=True, capture=literal_cap)),
-        AtenAdd(Placeholder(), AtenAdd(AnyNode(), AnyNode()), capture=add_cap),
-        capture=mm_capture
+        AtenAdd(
+            Placeholder(),
+            LiteralNode[dict(ignore_val=True, capture=literal_cap)](100),
+        ),
+        AtenAdd(
+            Placeholder(), AtenAdd[add_cap, checkMatmul](AnyNode(), AnyNode())
+        ),
+        capture=mm_capture,
     )
     for node in reversed(graph.nodes):
         if pattern.match(node):
