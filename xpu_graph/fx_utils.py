@@ -21,9 +21,13 @@ from torch._functorch.aot_autograd import AOTConfig, create_functional_call
 from torch._guards import detect_fake_mode
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export.unflatten import _assign_attr, _AttrKind
-from torch.fx import map_arg
-from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
+from torch.fx.experimental.proxy_tensor import (
+    is_sym_node,
+    make_fx,
+    wrapper_and_args_for_make_fx,
+)
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
+from torch.fx.node import map_aggregate, map_arg
 from torch.fx.proxy import GraphAppendingTracer, Proxy
 
 from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var
@@ -207,9 +211,13 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
     # If any saved tensor hooks are active, we **don't** want to trace them.
     # Instead, we'll let them run at runtime, around the custom autograd.Function
     # that we generate in torch.compile.
-    with torch.autograd.set_multithreading_enabled(
-        False
-    ), preserve_rng_state(), fake_mode, python_dispatcher_mode, PhiloxStateTracker():
+    with (
+        torch.autograd.set_multithreading_enabled(False),
+        preserve_rng_state(),
+        fake_mode,
+        python_dispatcher_mode,
+        PhiloxStateTracker(),
+    ):
         with enable_python_dispatcher():
             with patch("torch.cuda.set_rng_state", lambda *args: None):
                 if hasattr(aot_config, "static_input_indices"):
@@ -347,3 +355,32 @@ def has_storage(node: fx.Node) -> bool:
         return False
 
     return True
+
+
+def extract_meta_for_graph(gm: fx.GraphModule, fake_inputs: tuple[torch.Tensor]):
+    """
+    Extract meta for each node in the graph.
+    """
+    from torch.fx.passes.shape_prop import _extract_tensor_metadata
+
+    fake_mode = detect_fake_mode()
+    for n in gm.graph.nodes:
+        if is_sym_node(n):
+            continue
+        result = n.meta["val"]
+
+        found_tensor = False
+
+        def extract_tensor_meta(obj):
+            if isinstance(obj, torch.Tensor):
+                nonlocal found_tensor
+                found_tensor = True
+                return _extract_tensor_metadata(obj)
+            else:
+                return obj
+
+        meta = map_aggregate(result, extract_tensor_meta)
+        if found_tensor:
+            n.meta["tensor_meta"] = meta
+
+        n.meta["type"] = type(result)

@@ -7,7 +7,12 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import SerializeWrapper, XpuGraphCache, default_cache
 from .config import OptLevel, Target, XpuGraphConfig
-from .fx_utils import FxStage, decompose_for_inductor, dispatch_graph
+from .fx_utils import (
+    FxStage,
+    decompose_for_inductor,
+    dispatch_graph,
+    extract_meta_for_graph,
+)
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
@@ -115,7 +120,11 @@ class XpuGraph:
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
 
-                if stage != FxStage.pregrad and self._config.vendor_compiler_config:
+                if stage == FxStage.pregrad:
+                    logger.debug(f"Extracting tensor_meta for each nodes")
+                    # Note: aot_autograd requires tensor_meta on each node
+                    extract_meta_for_graph(gm, fake_inputs)
+                elif self._config.vendor_compiler_config:
                     xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
                     logger.debug(f"After decompose_for_inductor, graph like:\n {xpu_compiled.graph}")
                     extra_kwargs = {}
