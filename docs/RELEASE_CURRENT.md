@@ -1,12 +1,11 @@
-# Release 0.2.0
+# Release 0.3.0
 
 ## 主要依赖库版本描述
 - python 3.9 或者更高
 - pytorch 2.5.1 或者更高
 - [torch-mlu] 与pytorch版本对应
 - [torch-npu] 与pytorch版本对应
-- [triton] 3.2.0
-- [triton-npu] 与triton保持一致
+- [triton-x] 3.2.0
 
 ## 重大变动
 -
