@@ -3,13 +3,11 @@ import torch.fx as fx
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.check_ops import is_zero_like
 from xpu_graph.passes.patterns.utils.pattern_matcher import (
-    AnyNode,
-    AtenAdd,
-    AtenZeroLike,
-    LiteralNode,
-    NodeCapture,
+    CaptureBuilder,
+    CaptureCtx,
+    add_like,
+    zero_like,
 )
 
 
@@ -28,25 +26,22 @@ class FoldAdd0(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
 
-        add_node_cap = NodeCapture()
-        target_node_cap = NodeCapture()
+        src_node = CaptureBuilder.placeholder("src")
 
-        zeros_like_pattern = AtenZeroLike(AnyNode()) | LiteralNode(0) | LiteralNode(0.0)
-        pattern = AtenAdd(AnyNode(capture=target_node_cap), zeros_like_pattern, capture=add_node_cap) | AtenAdd(
-            zeros_like_pattern, AnyNode(capture=target_node_cap), capture=add_node_cap
-        )
+        add0_pat = add_like(src_node, zero_like()) | add_like(src_node, 0) | add_like(src_node, 0.0)
 
         changed = False
         for node in reversed(gm.graph.nodes):
-            if pattern.match(node):
+            ctx = CaptureCtx()
+            if add0_pat(ctx, node):
                 changed = True
-                with gm.graph.inserting_before(add_node_cap.node):
+                with gm.graph.inserting_before(node):
                     from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
                         get_binary_fold_result,
                     )
 
-                    fold_res = get_binary_fold_result(gm, target_node_cap.node, add_node_cap.node.meta)
-                add_node_cap.node.replace_all_uses_with(fold_res)
-                gm.graph.erase_node(add_node_cap.node)
+                    fold_res = get_binary_fold_result(gm, ctx.captured["src"], node.meta)
+                node.replace_all_uses_with(fold_res)
+                gm.graph.erase_node(node)
 
         return changed

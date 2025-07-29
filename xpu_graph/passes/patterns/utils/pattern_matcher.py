@@ -1,21 +1,25 @@
-import inspect
-from abc import ABC, ABCMeta, abstractmethod
-from functools import cache, wraps
-from typing import Callable, final
+import operator
+from abc import ABC, abstractmethod
+from functools import wraps
+from typing import Callable, Optional, final
 
 import torch
 from torch.fx import Node as FxNode
-from torch.ops import aten
+
+aten = torch.ops.aten
+from torch.utils._pytree import tree_iter, tree_map
 
 from xpu_graph.utils import logger
 
-def xnary(operand_num:int):
+
+def xnary(operand_num: int):
     """check that the number of args MUST be equal to operand_num
        before calling __init__ of the class.
 
     Args:
         operand_num (int): the number of operands.
     """
+
     def decorate(cls):
         func = cls.__init__
 
@@ -30,274 +34,248 @@ def xnary(operand_num:int):
     return decorate
 
 
-class BaseNode(ABC):
-    @abstractmethod
-    def match(self, node: FxNode) -> bool:
-        pass
-
-class NodeCluster(BaseNode):
+class CaptureCtx:
     def __init__(self):
-        self.nodes = []
+        self.status = True
+        self.captured = {}
 
-    @final
-    def match(self, node: FxNode):
-        """Whether the node matches ANY one in cluster or not.
+    def __repr__(self):
+        return str(self.captured) if self.status else "!panic"
 
-        Args:
-            node (FxNode): fx.Graph Node
+    def match_key(self, key, val) -> bool:
+        if not self.status:
+            return False
+        assert key is not None
+        if key in self.captured:
+            if not self.captured[key] == val:
+                self.panic()
+        else:
+            self.captured[key] = val
+        return self.status
 
-        Returns:
-            bool
-        """
-        for self_node in self.nodes:
-            if self_node.match(node):
-                return True
+    def match_val(self, target, val) -> bool:
+        if not self.status:
+            return False
+        if not isinstance(target, (torch.SymInt, torch.SymFloat, torch.SymBool)):
+            if not target == val:
+                self.panic()
+        else:
+            key = target.node.expr
+            if key in self.captured:
+                if not self.captured[key] == val:
+                    self.panic()
+            else:
+                self.captured[key] = val
+        return self.status
+
+    def update(self, flag):
+        if not self.status:
+            return False
+        if not flag:
+            self.panic()
+        return self.status
+
+    def panic(self, msg=""):
+        self.status = False
         return False
 
-    def __or__(self, xpu_graph_node):
-        self.nodes.append(xpu_graph_node)
-        return self
+    def backup_state(self):
+        return (self.status, set(self.captured.keys()))
 
-class NodeCapture:
-    def __init__(self):
-        self.__node = None
-
-    @property
-    def node(self):
-        return self.__node
-
-    @node.setter
-    def node(self, node: FxNode):
-        self.__node = node
-
-    def clear(self):
-        self.__node = None
+    def restore_state(self, state):
+        self.status, captured_keys = state
+        self.captured = {k: self.captured[k] for k in captured_keys}
 
 
-class XpuGraphNode(BaseNode):
+class BaseCapture(ABC):
+    @abstractmethod
+    def match(self, ctx: CaptureCtx, node_or_val: object) -> bool:
+        raise NotImplementedError()
+
+    def __or__(self, capture):
+        return UnionCapture(self, capture)
+
+    def __and__(self, capture):
+        return UnionCapture(self, capture)
+
+    def with_check(self, predicate):
+        return PredicateCapture(self, predicate)
+
+    def __call__(self, ctx, node_or_val):
+        # print(f"matching: {self}")
+        # print(f"target: {node.format_node() if isinstance(node, FxNode) else node}")
+        result = self.match(ctx, node_or_val)
+        # print(f"result: {ctx}")
+        # print()
+        return result
+
+
+class UnionCapture(BaseCapture):
+    def __init__(self, *candidates):
+        self.candidates = []
+        for candidate in candidates:
+            if isinstance(candidate, UnionCapture):
+                self.candidates.extend(candidate.candidates)
+            else:
+                self.candidates.append(candidate)
+
+    @final
+    def match(self, ctx: CaptureCtx, node: object) -> bool:
+        state = ctx.backup_state()
+        for candidate in self.candidates:
+            if candidate(ctx, node):
+                return True
+            else:
+                ctx.restore_state(state)
+        return ctx.panic()
+
+    def __repr__(self):
+        return " | ".join([f"{cand}" for cand in self.candidates])
+
+
+class PredicateCapture(BaseCapture):
     def __init__(
         self,
-        *args,
-        capture: NodeCapture = None,
-        meta_check: Callable[[dict], bool] = None,
+        capture: BaseCapture,
+        meta_check: Callable[[dict], bool],
     ) -> None:
-        """A BaseNode that provide matching function.
+        self.capture = capture
+        self.meta_check = meta_check
 
-        Args:
-            ...: The operands of the node.
-            capture (NodeCapture, optional): If capture is provided, then the fx.Graph node that matched will be recorded.
-                                             Defaults to None.
-            meta_check (Callable[[dict], bool], optional): If meta_check is provided, then the fx.Graph node's meta infomation will be checked while matching.
-                                                           Defaults to None.
+    @final
+    def match(self, ctx: CaptureCtx, node_or_val: object) -> bool:
+        if self.capture(ctx, node_or_val):
+            return ctx.update(self.meta_check(ctx.captured))
+        return False
 
-        Raises:
-            TypeError: The operands must be XpuGraphNode or NodeCluster. 
-        """
+    def __repr__(self):
+        return f"{self.capture}?[...]"
+
+
+class AnyCapture(BaseCapture):
+    def __init__(self, predicate: Optional[Callable[..., bool]] = None):
+        self.predicate = predicate
+
+    @final
+    def match(self, ctx: CaptureCtx, node_or_val: object) -> bool:
+        if self.predicate is None:
+            return ctx.update(True)
+        return ctx.update(self.predicate(node_or_val))
+
+    def __repr__(self):
+        return "_" if self.predicate is None else f"_?[{self.predicate}]"
+
+
+class PlaceholderCapture(BaseCapture):
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+
+    @final
+    def match(self, ctx: CaptureCtx, node_or_val: object) -> bool:
+        return ctx.match_key(self.symbol, node_or_val)
+
+    def __repr__(self):
+        return "?" + self.symbol
+
+
+class NodeCapture(BaseCapture):
+    def __init__(self, op, target, args, kwargs):
+        self.op = op
+        self.target = target
         self.args = args
-        for arg in self.args:
-            if not isinstance(arg, XpuGraphNode) and not isinstance(arg, NodeCluster):
-                breakpoint()
-                raise TypeError("XpuGraphNode only support [XpuGraphNode, NodeCluster] as input")
-
-        self.op = None
-        self.target = set()
-
-        # NOTE(liuyuan): Would be deprecated one day. Setting meta information in __init__ will not supported.
-        if not hasattr(self, 'capture'):
-            self.capture = capture if isinstance(capture, NodeCapture) else None
-
-        if not hasattr(self, 'meta_check'):
-            self.meta_check = meta_check if isinstance(meta_check, Callable) else None
+        self.kwargs = kwargs
 
     @final
-    def __call__(self, *args, **kwargs):
-        self.__init__(*args, **kwargs)
-        return self
+    def match(self, ctx: CaptureCtx, node_or_val: object) -> bool:
+        if not isinstance(node_or_val, FxNode):
+            ctx.panic()
+            return ctx
 
-    def __set_meta__(self, capture=None, meta_check=None):
-        self.capture = capture if isinstance(capture, NodeCapture) else None
-        self.meta_check = (
-            meta_check if isinstance(meta_check, Callable) else None
-        )
+        node = node_or_val
 
-    @final
-    def __class_getitem__(cls, key):
-        node = super().__new__(cls)
-        if isinstance(key, tuple):
-            node.__set_meta__(*key)
-        elif isinstance(key, dict):
-            node.__set_meta__(**key)
-        else:
-            node.__set_meta__(key)
-        return node
-
-    @final
-    def match(self, node: FxNode):
-        """Whether fx.Graph Node is matched or not.
-
-        Args:
-            node (FxNode): fx.Graph Node to match.
-
-        Returns:
-            bool
-        """
-        if not self.__match__(node):
-            logger.lzdbg(
-                lambda: f"{self} failed to match "
-                + (f"{node.op}={node.target}" if isinstance(node, FxNode) else f"{node}")
-                + (
-                    f" with different argument number, expected:{len(self.args)}, actual:{len(node.args)}"
-                    if self.args and hasattr(node, "args") and len(self.args) != len(node.args)
-                    else ""
-                )
-            )
-            return False
-
-        if self.meta_check and not self.meta_check(node.meta):
-            logger.lzdbg(lambda: f"{self} failed in meta_check:\n{inspect.getsource(self.meta_check)}")
-            return False
-
-        logger.lzdbg(
-            lambda: (f"{self} matched " + (f"{node.op}={node.target}" if isinstance(node, FxNode) else f"{node}"))
-        )
-
-        if self.args and hasattr(node, "args"):
-            for node_arg, self_arg in zip(node.args, self.args):
-                if not self_arg.match(node_arg):
+        ctx.match_val(self.op, node.op)
+        ctx.match_val(self.target, node.target)
+        for sub_capture, sub_node in zip(tree_iter((self.args, self.kwargs)), tree_iter((node.args, node.kwargs))):
+            if isinstance(sub_capture, BaseCapture):
+                if not sub_capture(ctx, sub_node):
                     return False
+            else:
+                ctx.match_val(sub_capture, sub_node)
 
-        # NOTE(liuyuan): SHOULD capture the fx.Graph node iff all operands are matched.
-        if self.capture:
-            self.capture.node = node
+        return ctx.status
 
-        return True
-
-    def __match__(self, node: FxNode):
-        return (
-            (node.op == self.op) and (node.target in self.target) and (len(node.args) == len(self.args))
-            if isinstance(node, FxNode)
-            else False
-        )
-
-    def __or__(self, other):
-        """Return a NodeCluster including self and other
-
-        Args:
-            other (XpuGraphNode): The other XpuGraphNode
-
-        Returns:
-            cluster (NodeCluster): a NodeCluster including self and other
-        """
-        assert isinstance(other, XpuGraphNode)
-        cluster = NodeCluster()
-        cluster.nodes = [self, other]
-        return cluster
-
-    @cache
-    def __str__(self):
-        return f"XpuGrapnNode: {self.op}={[str(t) for t in self.target]}"
+    def __repr__(self):
+        return f"{self.op}[target={self.target}](args={self.args}, kwargs={self.kwargs})"
 
 
-class AnyNode(XpuGraphNode):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.op = "Any"
+class CaptureBuilder:
+    @staticmethod
+    def placeholder(symbol: str) -> BaseCapture:
+        return PlaceholderCapture(symbol)
 
-    @final
-    def __match__(self, node: FxNode):
-        return True
+    @staticmethod
+    def any() -> BaseCapture:
+        return AnyCapture()
 
+    @staticmethod
+    def any_if(predicate: Callable[..., bool]) -> BaseCapture:
+        return AnyCapture(predicate)
 
-@xnary(1)
-class LiteralNode(XpuGraphNode):
-    def __init__(self, literal, ignore_val=False, **kwargs) -> None:
-        """A XpuGraphNode that indicating a literal val.
+    @staticmethod
+    def call_function(target, *args, **kwargs) -> BaseCapture:
+        return NodeCapture("call_function", target, args, kwargs)
 
-        Args:
-            literal (ScalarType): a scalar value. Could be literal.
-            ignore_val (bool, optional): whether to ignore the match of val or not. Defaults to False.
-        """
-        super().__init__(**kwargs)
-        self.op = type(literal)
-        self.target.add(literal)
-        if not hasattr(self, 'ignore_val'):
-            self.ignore_val = ignore_val
+    @staticmethod
+    def call_method(target, *args, **kwargs) -> BaseCapture:
+        return NodeCapture("call_method", target, args, kwargs)
 
-    @final
-    def __match__(self, node: FxNode):
-        if isinstance(node, self.op):
-            return self.ignore_val or node in self.target
-        else:
-            return False
+    @staticmethod
+    def call_module(target, *args, **kwargs) -> BaseCapture:
+        return NodeCapture("call_module", target, args, kwargs)
 
-    def __set_meta__(self, ignore_val: bool = False, **kwargs):
-        self.ignore_val = ignore_val
-        super().__set_meta__(**kwargs)
-
-    def __str__(self):
-        return super().__str__() + f"{{ignore_val={self.ignore_val}}}"
+    @staticmethod
+    def get_attr(target) -> BaseCapture:
+        return NodeCapture("get_attr", target, (), {})
 
 
-@xnary(0)
-class Placeholder(XpuGraphNode):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.op = "placeholder"
-
-    def __match__(self, node):
-        return node.op == self.op
-
-
-class CallFunction(XpuGraphNode):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.op = "call_function"
+def matmul_like(m_capture, n_capture):
+    if m_capture is None:
+        m_capture = CaptureBuilder.any()
+    if n_capture is None:
+        n_capture = CaptureBuilder.any()
+    return CaptureBuilder.call_function(aten.mm.default, m_capture, n_capture) | CaptureBuilder.call_function(
+        aten.matmul.default, m_capture, n_capture
+    )
 
 
-class CallMethod(XpuGraphNode):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.op = "call_method"
+def add_like(left_capture, right_capture):
+    if left_capture is None:
+        left_capture = CaptureBuilder.any()
+    if right_capture is None:
+        right_capture = CaptureBuilder.any()
+    return CaptureBuilder.call_function(aten.add.Scalar, left_capture, right_capture) | CaptureBuilder.call_function(
+        aten.add.Tensor, left_capture, right_capture
+    )
 
 
-class CallModule(XpuGraphNode):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.op = "call_module"
+def dtype_cast_like(capture):
+    if capture is None:
+        capture = CaptureBuilder.any()
+    return CaptureBuilder.call_function(aten._to_copy, capture) | CaptureBuilder.call_function(
+        aten._to_copy.default, capture
+    )
 
 
-class GetAttr(XpuGraphNode):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.op = "get_attr"
+def zero_like():
+    return CaptureBuilder.call_function(aten.zeros_like.default, CaptureBuilder.any()) | CaptureBuilder.call_function(
+        aten.zeros.default
+    )
 
 
-@xnary(2)
-class AtenMatMul(CallFunction):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.target.update((aten.mm.default, aten.matmul.default))
-
-
-@xnary(2)
-class AtenAdd(CallFunction):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.target.update((aten.add.Scalar, aten.add.Tensor))
-
-
-@xnary(1)
-class AtenDTypeCast(CallFunction):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.target.update((aten._to_copy, aten._to_copy.default))
-
-
-@xnary(1)
-class AtenZeroLike(CallFunction):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.target.update((aten.zeros_like.default, aten.zeros.default))
+def one_like():
+    return CaptureBuilder.call_function(aten.ones_like.default, CaptureBuilder.any()) | CaptureBuilder.call_function(
+        aten.ones.default
+    )
 
 
 if __name__ == "__main__":
@@ -309,32 +287,31 @@ if __name__ == "__main__":
 
     setup_logger(logging.DEBUG)
 
-    mm_capture = NodeCapture()
-
-    def checkMatmul(meta):
-        if meta["tensor_meta"].dtype == torch.float32:
+    def check_dtype(node):
+        if not isinstance(node, FxNode) or node.meta["tensor_meta"].dtype == torch.float32:
             return False
         return True
 
     def pattern():
-        return AtenMatMul(
-            Placeholder() | AtenDTypeCast(AnyNode()),
-            Placeholder() | AtenDTypeCast(AnyNode()),
-            capture=mm_capture,
-            meta_check=checkMatmul,
+        m_input = CaptureBuilder.placeholder("input").with_check(
+            lambda captured: "input" in captured and check_dtype(captured["input"])
         )
+        m_weight = CaptureBuilder.any_if(check_dtype)
+        return matmul_like(m_input | dtype_cast_like(m_input), m_weight | dtype_cast_like(m_weight))
 
-    def diu(x, y):
+    def foo(x, y):
         return torch.matmul(torch.matmul(x, y).to(torch.int32), torch.matmul(x, y).to(torch.int32))
 
-    graph = make_fx(diu)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
+    graph = make_fx(foo)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
 
     cnt = 0
 
     print(graph)
+    pat = pattern()
     for node in reversed(graph.nodes):
-        if pattern().match(node):
-            print(mm_capture.node.meta)
+        ctx = CaptureCtx()
+        if pat(ctx, node):
+            print(ctx)
             cnt += 1
     print(cnt)
     assert cnt == 1
@@ -345,24 +322,20 @@ if __name__ == "__main__":
     graph = make_fx(test)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
     print(graph)
     cnt = 0
-    literal_cap = NodeCapture()
-    add_cap = NodeCapture()
-    mm_capture.clear()
-    pattern = AtenMatMul(
-        AtenAdd(
-            Placeholder(),
-            LiteralNode[dict(ignore_val=True, capture=literal_cap)](100),
+    pattern = matmul_like(
+        add_like(
+            CaptureBuilder.any(),
+            CaptureBuilder.placeholder("bias1"),
         ),
-        AtenAdd(
-            Placeholder(), AtenAdd[add_cap, checkMatmul](AnyNode(), AnyNode())
+        add_like(
+            CaptureBuilder.any(),
+            CaptureBuilder.placeholder("bias2"),
         ),
-        capture=mm_capture,
     )
     for node in reversed(graph.nodes):
-        if pattern.match(node):
-            print(mm_capture.node.meta)
-            print(literal_cap.node)
+        ctx = CaptureCtx()
+        if pattern(ctx, node):
+            print(ctx)
             cnt += 1
-    assert literal_cap.node 
-    assert add_cap.node is None and mm_capture.node is None
+    assert cnt == 1
     print(cnt)
