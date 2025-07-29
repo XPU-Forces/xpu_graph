@@ -13,7 +13,7 @@ def check_op(node: fx.Node, target) -> bool:
 
 
 def check_npu_dtype_cast_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.npu.npu_dtype_cast.default)
+    return check_op(node, torch.ops.npu.npu_dtype_cast.default) or check_op(node, torch.ops.npu._npu_dtype_cast.default)
 
 
 def check_npu_typecast_op(node: fx.Node) -> bool:
