@@ -1,20 +1,15 @@
 import pytest
 import torch
 from torchvision.models import resnet50
-from xpu_graph import (
-    XpuGraph,
-    Target,
-    XpuGraphConfig
-)
+
+from xpu_graph import Target, XpuGraph, XpuGraphConfig
 
 
 class TestMemPoolReuse:
     def setup_method(self):
         self.model = resnet50(progress=True).npu()
         # NOTE(liuyuan): heuristically that we found that we will have 0 memory growth under such buckets.
-        self.input_list = [
-            torch.randn(2**i, 3, 128, 128).npu() for i in range(8, 1, -1)
-        ]
+        self.input_list = [torch.randn(2**i, 3, 128, 128).npu() for i in range(8, 1, -1)]
         # self.input_list = [
         #     torch.randn(2**i, 3, 128, 128).npu() for i in range(5, 1, -1)
         # ]
