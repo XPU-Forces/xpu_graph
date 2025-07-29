@@ -278,6 +278,87 @@ def one_like():
     )
 
 
+class LiteralCaptureWrapper:
+    def __init__(self, fake_elem, mathcer):
+        self.fake_elem = fake_elem
+        self.matcher = mathcer
+
+    @staticmethod
+    def from_literal(literal, symbol):
+        return LiteralCaptureWrapper(literal, CaptureBuilder.placeholder(symbol))
+
+
+class TreeCaptureTensor(torch.Tensor):
+    def __new__(cls, fake_elem, matcher):
+        return torch.Tensor._make_wrapper_subclass(
+            cls,
+            fake_elem.size(),
+            strides=fake_elem.stride(),
+            storage_offset=fake_elem.storage_offset(),
+            dtype=fake_elem.dtype,
+            layout=fake_elem.layout,
+            requires_grad=fake_elem.requires_grad,
+            device=fake_elem.device,
+        )
+
+    def __init__(self, fake_elem, matcher=None):
+        self.fake_elem = fake_elem
+        self.matcher = matcher
+
+    @classmethod
+    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+        def unwrap(t):
+            if isinstance(t, cls):
+                return t.fake_elem
+            elif isinstance(t, LiteralCaptureWrapper):
+                return t.fake_elem
+            else:
+                return t
+
+        def get_matcher_fn(t):
+            if isinstance(t, cls):
+                return t.matcher
+            elif isinstance(t, torch.Tensor):
+                return CaptureBuilder.any()
+            elif isinstance(t, LiteralCaptureWrapper):
+                return t.matcher
+            else:
+                return t
+
+        kwargs = kwargs or {}
+
+        r_matcher = CaptureBuilder.call_function(func, tree_map(get_matcher_fn, args), tree_map(get_matcher_fn, kwargs))
+        r = func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+
+        def gen_getitem_matcher(src, fake_elem, i):
+            if isinstance(fake_elem, torch.Tensor):
+                return cls(fake_elem, CaptureBuilder.call_function(operator.getitem, (src, i)))
+            else:
+                return fake_elem
+
+        # is generally a safe bet in the current codegen
+        if isinstance(r, list):
+            return [gen_getitem_matcher(r_matcher, t, i) for i, t in enumerate(r)]
+        elif isinstance(r, tuple):
+            return tuple(gen_getitem_matcher(r_matcher, t, i) for i, t in enumerate(r))
+        elif isinstance(r, torch.Tensor):
+            return cls(r, r_matcher)
+        else:
+            return r
+
+    def __repr__(self):
+        return str(self.matcher)
+
+    @staticmethod
+    def from_tensor(tensor, name):
+        return __class__(tensor, CaptureBuilder.placeholder(name))
+
+    def match_node(self, node):
+        ctx = CaptureCtx()
+        self.matcher(ctx, node)
+        return ctx
+
+
 if __name__ == "__main__":
     import logging
 
