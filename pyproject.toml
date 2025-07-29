@@ -44,7 +44,6 @@ dev = [
     "setuptools >= 65",
     "build >= 1.2.2",
     "expecttest",
-    "torchvision",
 ]
 
 
