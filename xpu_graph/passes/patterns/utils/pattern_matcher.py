@@ -237,6 +237,22 @@ class CaptureBuilder:
     def get_attr(target) -> BaseCapture:
         return NodeCapture("get_attr", target, (), {})
 
+    @staticmethod
+    def from_literal(fake_val, name):
+        matcher = CaptureBuilder.placeholder(name)
+        if isinstance(fake_val, float):
+            return LiteralCaptureWrapper[torch.SymFloat](fake_val, matcher)
+        elif isinstance(fake_val, int):
+            return LiteralCaptureWrapper[torch.SymInt](fake_val, matcher)
+        elif isinstance(fake_val, bool):
+            return LiteralCaptureWrapper[torch.SymBool](fake_val, matcher)
+        else:
+            raise ValueError(f"Unsupported literal type: {type(fake_val)}")
+
+    @staticmethod
+    def from_tensor(tensor, name):
+        return TreeCaptureTensor(tensor, CaptureBuilder.placeholder(name))
+
 
 def matmul_like(m_capture, n_capture):
     if m_capture is None:
@@ -279,13 +295,22 @@ def one_like():
 
 
 class LiteralCaptureWrapper:
-    def __init__(self, fake_elem, mathcer):
+    def __init__(self, fake_elem, matcher):
         self.fake_elem = fake_elem
-        self.matcher = mathcer
+        self.matcher = matcher
 
-    @staticmethod
-    def from_literal(literal, symbol):
-        return LiteralCaptureWrapper(literal, CaptureBuilder.placeholder(symbol))
+    @classmethod
+    def __class_getitem__(cls, fake_cls):
+        class GenericCapture(fake_cls, LiteralCaptureWrapper):
+            def __new__(cls, fake_elem, matcher):
+                obj = fake_cls.__new__(cls)
+                fake_cls.__init__(obj, fake_elem)
+                return obj
+
+            def __init__(self, fake_elem, matcher):
+                LiteralCaptureWrapper.__init__(self, fake_elem, matcher)
+
+        return GenericCapture
 
 
 class TreeCaptureTensor(torch.Tensor):
@@ -349,10 +374,6 @@ class TreeCaptureTensor(torch.Tensor):
     def __repr__(self):
         return str(self.matcher)
 
-    @staticmethod
-    def from_tensor(tensor, name):
-        return __class__(tensor, CaptureBuilder.placeholder(name))
-
     def match_node(self, node):
         ctx = CaptureCtx()
         self.matcher(ctx, node)
@@ -360,63 +381,86 @@ class TreeCaptureTensor(torch.Tensor):
 
 
 if __name__ == "__main__":
-    import logging
+    # import logging
 
-    from torch.fx.experimental.proxy_tensor import make_fx
+    # from torch.fx.experimental.proxy_tensor import make_fx
 
-    from xpu_graph.utils import setup_logger
+    # from xpu_graph.utils import setup_logger
 
-    setup_logger(logging.DEBUG)
+    # setup_logger(logging.DEBUG)
 
-    def check_dtype(node):
-        if not isinstance(node, FxNode) or node.meta["tensor_meta"].dtype == torch.float32:
-            return False
-        return True
+    # def check_dtype(node):
+    #     if not isinstance(node, FxNode) or node.meta["tensor_meta"].dtype == torch.float32:
+    #         return False
+    #     return True
 
-    def pattern():
-        m_input = CaptureBuilder.placeholder("input").with_check(
-            lambda captured: "input" in captured and check_dtype(captured["input"])
-        )
-        m_weight = CaptureBuilder.any_if(check_dtype)
-        return matmul_like(m_input | dtype_cast_like(m_input), m_weight | dtype_cast_like(m_weight))
+    # def pattern():
+    #     m_input = CaptureBuilder.placeholder("input").with_check(
+    #         lambda captured: "input" in captured and check_dtype(captured["input"])
+    #     )
+    #     m_weight = CaptureBuilder.any_if(check_dtype)
+    #     return matmul_like(m_input | dtype_cast_like(m_input), m_weight | dtype_cast_like(m_weight))
 
-    def foo(x, y):
-        return torch.matmul(torch.matmul(x, y).to(torch.int32), torch.matmul(x, y).to(torch.int32))
+    # def foo(x, y):
+    #     return torch.matmul(torch.matmul(x, y).to(torch.int32), torch.matmul(x, y).to(torch.int32))
 
-    graph = make_fx(foo)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
+    # graph = make_fx(foo)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
 
-    cnt = 0
+    # cnt = 0
 
-    print(graph)
-    pat = pattern()
-    for node in reversed(graph.nodes):
-        ctx = CaptureCtx()
-        if pat(ctx, node):
-            print(ctx)
-            cnt += 1
-    print(cnt)
-    assert cnt == 1
+    # print(graph)
+    # pat = pattern()
+    # for node in reversed(graph.nodes):
+    #     ctx = CaptureCtx()
+    #     if pat(ctx, node):
+    #         print(ctx)
+    #         cnt += 1
+    # print(cnt)
+    # assert cnt == 1
 
-    def test(x, y):
-        return torch.matmul(x + 2, y + 2)
+    # def test(x, y):
+    #     return torch.matmul(x + 2, y + 2)
 
-    graph = make_fx(test)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
-    print(graph)
-    cnt = 0
-    pattern = matmul_like(
-        add_like(
-            CaptureBuilder.any(),
-            CaptureBuilder.placeholder("bias1"),
-        ),
-        add_like(
-            CaptureBuilder.any(),
-            CaptureBuilder.placeholder("bias2"),
-        ),
-    )
-    for node in reversed(graph.nodes):
-        ctx = CaptureCtx()
-        if pattern(ctx, node):
-            print(ctx)
-            cnt += 1
-    assert cnt == 1
-    print(cnt)
+    # graph = make_fx(test)(torch.empty(1, 1024), torch.empty(1024, 1)).graph
+    # print(graph)
+    # cnt = 0
+    # pattern = matmul_like(
+    #     add_like(
+    #         CaptureBuilder.any(),
+    #         CaptureBuilder.placeholder("bias1"),
+    #     ),
+    #     add_like(
+    #         CaptureBuilder.any(),
+    #         CaptureBuilder.placeholder("bias2"),
+    #     ),
+    # )
+    # for node in reversed(graph.nodes):
+    #     ctx = CaptureCtx()
+    #     if pattern(ctx, node):
+    #         print(ctx)
+    #         cnt += 1
+    # assert cnt == 1
+    # print(cnt)
+    from torch._subclasses.fake_tensor import FakeTensorMode
+
+    fake_mode = FakeTensorMode()
+
+    with fake_mode:
+        a = torch.empty(2, 2, device="mlu")
+        gamma = torch.empty(2, device="mlu", requires_grad=True)
+        beta = torch.empty(2, device="mlu", requires_grad=True)
+
+    m_a = CaptureBuilder.from_tensor(a, "a")
+    m_gamma = CaptureBuilder.from_tensor(gamma, "gamma")
+    m_beta = CaptureBuilder.from_tensor(beta, "beta")
+    m_eps = CaptureBuilder.from_literal(1e-6, "eps")
+
+    def layer_norm(x, gamma, beta, eps):
+        mean = torch.mean(x, dim=-1, keepdim=True)
+        var = torch.var(x, dim=-1, keepdim=True, unbiased=True)
+        y = (x - mean) / torch.sqrt(var + eps)
+        norm = y * gamma + beta
+        return norm
+
+    m_ln = layer_norm(m_a, m_gamma, m_beta, m_eps)
+    print(m_ln.matcher)
