@@ -66,7 +66,7 @@ class CaptureResult:
             if not self.status:
                 return
             if isinstance(sub_capture, FxCapture):
-                if not sub_capture(self, sub_node):
+                if not self.match_capture(sub_capture, sub_node):
                     return
             else:
                 self.match_val(sub_capture, sub_node)
@@ -75,24 +75,24 @@ class CaptureResult:
         state = self.backup_state()
         fail_msgs = []
         for candidate in candidates:
-            if candidate(self, node):
+            if self.match_capture(candidate, node):
                 return
             else:
                 fail_msgs.append(self.panic_msg)
                 self.restore_state(state)
         self.panic("All candidates failed:\n    " + "\n && ".join(msg.replace("\n", "\n    ") for msg in fail_msgs))
 
-    def match_capture(self, capture, node_or_val: object):
+    def match_capture(self, capture, node_or_val: object) -> bool:
         if self.root_capture is None:
             self.root_capture = capture
         if not self.status:
-            return
+            return False
         if capture in self.captured_nodes:
             self.match_val(self.captured_nodes[capture], node_or_val)
         elif capture.op == "union":
             self.match_union(capture.args, node_or_val)
         elif capture.op == "predicate":
-            if capture.args[0](self, node_or_val):
+            if self.match_capture(capture.args[0], node_or_val):
                 if not capture.target(self.symbols):
                     self.panic(
                         f"Meta check for partial captured results failed for already captured:\n"
@@ -170,9 +170,10 @@ class FxCapture:
     def with_check(self, predicate):
         return __class__.predicate(self, predicate)
 
-    def __call__(self, ctx, node_or_val):
+    def try_capture(self, node_or_val):
+        ctx = CaptureResult()
         result = ctx.match_capture(self, node_or_val)
-        return result
+        return ctx
 
     def single_line_repr(self, node_id_map, result_list):
         if self.op == "symbol":
@@ -407,10 +408,8 @@ class TreeCaptureTensor(torch.Tensor):
     def __str__(self):
         return str(self.matcher) + " | hint=" + str(self.fake_elem)
 
-    def match_fxnode(self, node):
-        ctx = CaptureResult()
-        self.matcher(ctx, node)
-        return ctx
+    def try_capture(self, node):
+        return self.matcher.try_capture(node)
 
 
 if __name__ == "__main__":
@@ -446,8 +445,8 @@ if __name__ == "__main__":
     pat = pattern()
     print(pat)
     for node in reversed(graph.nodes):
-        ctx = CaptureResult()
-        if pat(ctx, node):
+        ctx = pat.try_capture(node)
+        if ctx.status:
             print(ctx)
             cnt += 1
     print(cnt)
@@ -470,8 +469,8 @@ if __name__ == "__main__":
         ),
     )
     for node in reversed(graph.nodes):
-        ctx = CaptureResult()
-        if pattern(ctx, node):
+        ctx = pattern.try_capture(node)
+        if ctx.status:
             print(ctx)
             cnt += 1
     assert cnt == 1
