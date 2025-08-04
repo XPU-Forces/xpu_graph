@@ -275,22 +275,6 @@ class FxCapture:
     def get_attr(target):
         return __class__("get_attr", target, (), {})
 
-    @staticmethod
-    def from_literal(fake_val, name):
-        matcher = __class__.symbol(name)
-        if isinstance(fake_val, float):
-            return LiteralCaptureWrapper[torch.SymFloat](fake_val, matcher)
-        elif isinstance(fake_val, int):
-            return LiteralCaptureWrapper[torch.SymInt](fake_val, matcher)
-        elif isinstance(fake_val, bool):
-            return LiteralCaptureWrapper[torch.SymBool](fake_val, matcher)
-        else:
-            raise ValueError(f"Unsupported literal type: {type(fake_val)}")
-
-    @staticmethod
-    def from_tensor(tensor, name):
-        return TreeCaptureTensor(tensor, __class__.symbol(name))
-
 
 def matmul_like(m_capture, n_capture):
     if m_capture is None:
@@ -328,23 +312,23 @@ def one_like():
     return FxCapture.call_function(aten.ones_like.default, FxCapture.any()) | FxCapture.call_function(aten.ones.default)
 
 
-class LiteralCaptureWrapper:
+class TreeCaptureLiteral:
     def __init__(self, fake_elem, matcher):
         self.fake_elem = fake_elem
         self.matcher = matcher
 
     @classmethod
     def __class_getitem__(cls, fake_cls):
-        class GenericCapture(fake_cls, LiteralCaptureWrapper):
+        class LiteralWrapper(fake_cls, TreeCaptureLiteral):
             def __new__(cls, fake_elem, matcher):
                 obj = fake_cls.__new__(cls)
                 fake_cls.__init__(obj, fake_elem)
                 return obj
 
             def __init__(self, fake_elem, matcher):
-                LiteralCaptureWrapper.__init__(self, fake_elem, matcher)
+                TreeCaptureLiteral.__init__(self, fake_elem, matcher)
 
-        return GenericCapture
+        return LiteralWrapper
 
 
 class TreeCaptureTensor(torch.Tensor):
@@ -369,7 +353,7 @@ class TreeCaptureTensor(torch.Tensor):
         def unwrap(t):
             if isinstance(t, cls):
                 return t.fake_elem
-            elif isinstance(t, LiteralCaptureWrapper):
+            elif isinstance(t, TreeCaptureLiteral):
                 return t.fake_elem
             else:
                 return t
@@ -379,7 +363,7 @@ class TreeCaptureTensor(torch.Tensor):
                 return t.matcher
             elif isinstance(t, torch.Tensor):
                 return FxCapture.any()
-            elif isinstance(t, LiteralCaptureWrapper):
+            elif isinstance(t, TreeCaptureLiteral):
                 return t.matcher
             else:
                 return t
@@ -410,6 +394,24 @@ class TreeCaptureTensor(torch.Tensor):
 
     def try_capture(self, node):
         return self.matcher.try_capture(node)
+
+
+class TreeCaptureWrapper:
+    @staticmethod
+    def from_literal(fake_val, name):
+        matcher = FxCapture.symbol(name)
+        if isinstance(fake_val, float):
+            return TreeCaptureLiteral[torch.SymFloat](fake_val, matcher)
+        elif isinstance(fake_val, int):
+            return TreeCaptureLiteral[torch.SymInt](fake_val, matcher)
+        elif isinstance(fake_val, bool):
+            return TreeCaptureLiteral[torch.SymBool](fake_val, matcher)
+        else:
+            raise ValueError(f"Unsupported literal type: {type(fake_val)}")
+
+    @staticmethod
+    def from_tensor(tensor, name):
+        return TreeCaptureTensor(tensor, FxCapture.symbol(name))
 
 
 if __name__ == "__main__":
@@ -484,10 +486,10 @@ if __name__ == "__main__":
         gamma = torch.empty(2, device="mlu", requires_grad=True)
         beta = torch.empty(2, device="mlu", requires_grad=True)
 
-    m_a = FxCapture.from_tensor(a, "a")
-    m_gamma = FxCapture.from_tensor(gamma, "gamma")
-    m_beta = FxCapture.from_tensor(beta, "beta")
-    m_eps = FxCapture.from_literal(1e-6, "eps")
+    m_a = TreeCaptureWrapper.from_tensor(a, "a")
+    m_gamma = TreeCaptureWrapper.from_tensor(gamma, "gamma")
+    m_beta = TreeCaptureWrapper.from_tensor(beta, "beta")
+    m_eps = TreeCaptureWrapper.from_literal(1e-6, "eps")
 
     def layer_norm(x, gamma, beta, eps):
         mean = torch.mean(x, dim=-1, keepdim=True)
