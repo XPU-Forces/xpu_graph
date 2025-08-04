@@ -109,10 +109,7 @@ def _is_unbiased_layernorm(node: fx.Node):
         else:
             return False, None
 
-        if get_shape(unaffined)[-1:] != get_shape(weight):
-            return False, None
-        else:
-            return True, [unaffined, weight]
+        return True, [unaffined, weight]
 
     return False, None
 
@@ -128,17 +125,26 @@ def _is_layernorm(node: fx.Node):
             target_mod = getattr(node.graph.owning_module, node.target)
             return isinstance(target_mod, DefaultLayerNorm) and node.args[2] is None
 
+        def _is_casted_unbiased(node):
+            if not is_type_cast(node):
+                return False
+            inner = get_input_node(node, 0)
+            return _is_unbiased(inner)
+
         if _is_unbiased(arg0):
             unbiased, bias = arg0, arg1
         elif _is_unbiased(arg1):
             unbiased, bias = arg1, arg0
+        elif _is_casted_unbiased(arg0):
+            unbiased = get_input_node(arg0, 0)
+            bias = arg1
+        elif _is_casted_unbiased(arg1):
+            unbiased = get_input_node(arg1, 0)
+            bias = arg0
         else:
             return False, None
 
-        if get_shape(unbiased)[-1:] != get_shape(bias):
-            return False, None
-        else:
-            return True, [unbiased, bias]
+        return True, [unbiased, bias]
 
     return False, None
 
@@ -185,6 +191,8 @@ class FusedLayerNorm(Pattern):
                     continue
                 unaffined, weight = params
                 inputs, _, _, eps = unaffined.args
+                if get_shape(inputs)[-1:] != get_shape(weight):
+                    continue
 
                 with graph_module.graph.inserting_before(node):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, None, eps))
@@ -202,6 +210,8 @@ class FusedLayerNorm(Pattern):
                     continue
                 unbiased, bias = params
                 inputs, weight, _, eps = unbiased.args
+                if get_shape(inputs)[-1:] != get_shape(bias):
+                    continue
 
                 with graph_module.graph.inserting_before(node):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, bias, eps))
