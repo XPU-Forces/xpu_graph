@@ -1,15 +1,9 @@
 import operator
-from abc import ABC, abstractmethod
-from functools import wraps
-from typing import Callable, Optional, final
+from typing import Callable
 
 import torch
 from torch.fx import Node as FxNode
-
-aten = torch.ops.aten
 from torch.utils._pytree import tree_iter, tree_map, tree_map_only
-
-from xpu_graph.utils import logger
 
 
 class CaptureResult:
@@ -82,6 +76,16 @@ class CaptureResult:
                 self.restore_state(state)
         self.panic("All candidates failed:\n    " + "\n && ".join(msg.replace("\n", "\n    ") for msg in fail_msgs))
 
+    def match_product(self, candidates, nodes: object):
+        if not isinstance(nodes, (tuple, list)):
+            self.panic(f"Nodes {nodes} is not a tuple or list")
+            return
+        if len(candidates) != len(nodes):
+            self.panic(f"Nodes {nodes} and candidates {candidates} have different length")
+            return
+        for candidate, node in zip(candidates, nodes):
+            self.match_capture(candidate, node)
+
     def match_capture(self, capture, node_or_val: object) -> bool:
         if self.root_capture is None:
             self.root_capture = capture
@@ -91,6 +95,8 @@ class CaptureResult:
             self.match_val(self.captured_nodes[capture], node_or_val)
         elif capture.op == "union":
             self.match_union(capture.args, node_or_val)
+        elif capture.op == "product":
+            self.match_product(capture.args, node_or_val)
         elif capture.op == "predicate":
             if self.match_capture(capture.args[0], node_or_val):
                 if not capture.target(self.symbols):
@@ -167,6 +173,9 @@ class FxCapture:
     def __or__(self, capture):
         return __class__.union(self, capture)
 
+    def __getitem__(self, id):
+        return __class__.call_function(operator.getitem, (self, id))
+
     def with_check(self, predicate):
         return __class__.predicate(self, predicate)
 
@@ -174,6 +183,17 @@ class FxCapture:
         ctx = CaptureResult()
         result = ctx.match_capture(self, node_or_val)
         return ctx
+
+    def replace(self, tracked_literal_to_wrapper):
+        def inner_replace(t):
+            if t in tracked_literal_to_wrapper:
+                t = tracked_literal_to_wrapper[t]
+            elif isinstance(t, FxCapture):
+                t = t.replace(tracked_literal_to_wrapper)
+            return t
+
+        args, kwargs = tree_map(inner_replace, (self.args, self.kwargs))
+        return __class__(self.op, self.target, args, kwargs)
 
     def single_line_repr(self, node_id_map, result_list):
         if self.op == "symbol":
@@ -186,6 +206,8 @@ class FxCapture:
 
         elif self.op == "union":
             expr = " || ".join(f"%{node_id_map[cand]}" for cand in self.args)
+        elif self.op == "product":
+            expr = "(" + ", ".join(f"%{node_id_map[cand]}" for cand in self.args) + ")"
         elif self.op == "predicate":
             expr = f"meta_check(...)"
         elif self.op in ["call_function", "call_method", "call_module", "get_attr"]:
@@ -240,6 +262,10 @@ class FxCapture:
         return __class__("union", None, args=tuple(candidates), kwargs={})
 
     @staticmethod
+    def product(*captures):
+        return __class__("product", None, args=tuple(captures), kwargs={})
+
+    @staticmethod
     def predicate(capture, meta_check):
         return __class__("predicate", meta_check, args=(capture,), kwargs={})
 
@@ -274,6 +300,9 @@ class FxCapture:
     @staticmethod
     def get_attr(target):
         return __class__("get_attr", target, (), {})
+
+
+aten = torch.ops.aten
 
 
 def matmul_like(m_capture, n_capture):
@@ -319,12 +348,8 @@ class TreeCaptureLiteral:
 
     @classmethod
     def __class_getitem__(cls, fake_cls):
+        # Note: TreeCaptureLiteral need to fake itself as a SymFloat/SymInt/SymBool to support builtin ops
         class LiteralWrapper(fake_cls, TreeCaptureLiteral):
-            def __new__(cls, fake_elem, matcher):
-                obj = fake_cls.__new__(cls)
-                fake_cls.__init__(obj, fake_elem)
-                return obj
-
             def __init__(self, fake_elem, matcher):
                 TreeCaptureLiteral.__init__(self, fake_elem, matcher)
 
@@ -353,8 +378,6 @@ class TreeCaptureTensor(torch.Tensor):
         def unwrap(t):
             if isinstance(t, cls):
                 return t.fake_elem
-            elif isinstance(t, TreeCaptureLiteral):
-                return t.fake_elem
             else:
                 return t
 
@@ -363,8 +386,6 @@ class TreeCaptureTensor(torch.Tensor):
                 return t.matcher
             elif isinstance(t, torch.Tensor):
                 return FxCapture.any()
-            elif isinstance(t, TreeCaptureLiteral):
-                return t.matcher
             else:
                 return t
 
@@ -375,7 +396,7 @@ class TreeCaptureTensor(torch.Tensor):
 
         def gen_getitem_matcher(src, fake_elem, i):
             if isinstance(fake_elem, torch.Tensor):
-                return cls(fake_elem, FxCapture.call_function(operator.getitem, (src, i)))
+                return cls(fake_elem, src[i])
             else:
                 return fake_elem
 
@@ -388,6 +409,34 @@ class TreeCaptureTensor(torch.Tensor):
             return cls(r, r_matcher)
         else:
             return r
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        tracked_literals = {}
+
+        def unwrap_tracked_literals(t):
+            if isinstance(t, TreeCaptureLiteral):
+                if t.fake_elem in tracked_literals and tracked_literals[t.fake_elem] != t.matcher:
+                    raise ValueError(
+                        "Cannot distinguish between wrapped TreeMatchingLiterals, maybe you can try differnet example values"
+                    )
+                tracked_literals[t.fake_elem] = t.matcher
+                return t.fake_elem
+            elif not isinstance(t, torch.Tensor):
+                tracked_literals[t] = t
+                return t
+            else:
+                return t
+
+        args, kwargs = tree_map(unwrap_tracked_literals, (args, kwargs))
+        ret = super().__torch_function__(func, types, args, kwargs)
+
+        def replace_tracked_literal(t):
+            if isinstance(t, TreeCaptureTensor):
+                t.matcher = t.matcher.replace(tracked_literals)
+            return t
+
+        return tree_map(replace_tracked_literal, ret)
 
     def __str__(self):
         return str(self.matcher) + " | hint=" + str(self.fake_elem)
@@ -500,3 +549,12 @@ if __name__ == "__main__":
 
     m_ln = layer_norm(m_a, m_gamma, m_beta, m_eps)
     print(m_ln)
+
+    m_shape = TreeCaptureWrapper.from_literal(2, "shape")
+
+    def layer_norm2(x, gamma, beta, eps):
+        norm = torch.nn.functional.layer_norm(x, [m_shape], gamma, beta, eps)
+        return norm
+
+    m_ln2 = layer_norm2(m_a, m_gamma, m_beta, m_eps)
+    print(m_ln2)
