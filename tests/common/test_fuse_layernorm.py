@@ -103,6 +103,7 @@ class TestLayerNorm:
         "pattern_func,input_dtype,weight_dtype,bias_dtype",
         [
             (naive_layernorm, torch.float32, torch.float32, torch.float32),
+            (naive_layernorm, torch.float16, torch.float32, torch.float32),
             (naive_layernorm_noweight, torch.float32, torch.float32, torch.float32),
             (naive_layernorm_noweight_nobias, torch.float32, torch.float32, None),
             (naive_layernorm_nobias, torch.float32, torch.float32, None),

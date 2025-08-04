@@ -1,5 +1,8 @@
 from typing import Optional, Tuple, Union
 
+import torch
+
+aten = torch.ops.aten
 from torch import fx
 
 from xpu_graph.config import OptLevel
@@ -185,7 +188,12 @@ class FusedLayerNorm(Pattern):
 
                 with graph_module.graph.inserting_before(node):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, None, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        layer_norm_node = graph_module.graph.call_function(
+                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (layer_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(layer_norm_node, propagate_meta=True)
                 changed = True
             elif check_add_op(node):
@@ -197,7 +205,12 @@ class FusedLayerNorm(Pattern):
 
                 with graph_module.graph.inserting_before(node):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, bias, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        layer_norm_node = graph_module.graph.call_function(
+                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (layer_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(layer_norm_node, propagate_meta=True)
                 changed = True
 

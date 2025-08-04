@@ -1,4 +1,6 @@
 import torch
+
+aten = torch.ops.aten
 from torch import fx
 
 from xpu_graph.config import OptLevel
@@ -142,7 +144,12 @@ class FusedRMSNorm(Pattern):
 
                 with graph_module.graph.inserting_before(node):
                     rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, None, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        rms_norm_node = graph_module.graph.call_function(
+                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (rms_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(rms_norm_node, propagate_meta=True)
                 is_modified = True
             elif check_mul_op(node):
@@ -153,7 +160,12 @@ class FusedRMSNorm(Pattern):
                 inputs, _, eps = unaffined.args
                 with graph_module.graph.inserting_before(node):
                     rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        rms_norm_node = graph_module.graph.call_function(
+                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (rms_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(rms_norm_node, propagate_meta=True)
                 is_modified = True
 
