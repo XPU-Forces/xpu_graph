@@ -1,17 +1,16 @@
+import logging
+import time
+
 import torch
 from torch.testing._internal.common_utils import TestCase
-from .utils import logger
+
 from .cache import XpuGraphCache
 from .compiler import XpuGraph
-import logging
-from contextlib import contextmanager
-import time
+from .utils import logger
 
 
 def is_similar(result, expected, rtol=0.01, atol=0.01):
-    return result.shape == expected.shape and torch.allclose(
-        result, expected, rtol, atol
-    )
+    return result.shape == expected.shape and torch.allclose(result, expected, rtol, atol)
 
 
 def maybe_similar(result, expected, rtol=0.01, atol=0.01):
@@ -26,9 +25,7 @@ def aggregate_similar(result, expected, rtol=0.01, atol=0.01):
             return False
         if len(result) != len(expected):
             return False
-        return all(
-            [aggregate_similar(r, e, rtol, atol) for r, e in zip(result, expected)]
-        )
+        return all([aggregate_similar(r, e, rtol, atol) for r, e in zip(result, expected)])
     else:
         return is_similar(result, expected, rtol, atol)
 
@@ -50,9 +47,7 @@ def assertTensorsEqual(
         b = b.float()
     epsilon = 1.0 / 16384
     tc.assertEqual(a.size(), b.size(), message)
-    assert isinstance(a, torch.Tensor) and isinstance(
-        b, torch.Tensor
-    ), "a and b are need be torch tensor."
+    assert isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor), "a and b are need be torch tensor."
     if a.numel() > 0:
         # check that NaNs are in the same locations
         nan_mask = a != a
@@ -110,15 +105,23 @@ class need_xpu_graph_logs:
     def __init__(self):
         self.original_propagate = logger.propagate
         self.original_level = logger.level
+        self.handlers = logger.handlers
+        self.root_level = logging.getLogger().level
 
     def __enter__(self):
+        for hdl in self.handlers:
+            logger.removeHandler(hdl)
         logger.propagate = True
         logger.setLevel(logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        for hdl in self.handlers:
+            logger.addHandler(hdl)
         logger.propagate = self.original_propagate
         logger.setLevel(self.original_level)
+        logging.getLogger().setLevel(self.root_level)
 
 
 class skip_xpu_graph_cache:
@@ -128,15 +131,18 @@ class skip_xpu_graph_cache:
 
     def __enter__(self):
         # Use base cache to skip save/load
+        torch._dynamo.reset_code_caches()
         self.backend._cache = XpuGraphCache()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.backend._cache = self.cache
 
+
 def timeit(func, *args, **kwargs):
     def wrap(*args, **kwargs):
         start = time.time()
         result = func(*args, **kwargs)
         return result, time.time() - start
+
     return wrap
