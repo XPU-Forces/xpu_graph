@@ -248,7 +248,7 @@ class RemoveLayerNormCast(Pattern):
                                 (new_layernorm,),
                                 {"dtype": result_node.meta["val"].dtype},
                             )
-                        result_node.replace_all_uses_with(new_layernorm, replace_meta=True)
+                        result_node.replace_all_uses_with(new_layernorm, propagate_meta=True)
                         is_modified = True
 
         return is_modified
