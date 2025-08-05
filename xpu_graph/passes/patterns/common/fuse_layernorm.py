@@ -182,7 +182,7 @@ class FusedLayerNorm(Pattern):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, None, eps))
                     if inputs.meta["val"].dtype != node.meta["val"].dtype:
                         layer_norm_node = graph_module.graph.call_function(
-                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
                             (layer_norm_node,),
                             {"dtype": node.meta["val"].dtype},
                         )
@@ -201,7 +201,7 @@ class FusedLayerNorm(Pattern):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, bias, eps))
                     if inputs.meta["val"].dtype != node.meta["val"].dtype:
                         layer_norm_node = graph_module.graph.call_function(
-                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
                             (layer_norm_node,),
                             {"dtype": node.meta["val"].dtype},
                         )
@@ -244,7 +244,7 @@ class RemoveLayerNormCast(Pattern):
 
                         if inputs.meta["val"].dtype != result_node.meta["val"].dtype:
                             new_layernorm = graph_module.graph.call_function(
-                                aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                                aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
                                 (new_layernorm,),
                                 {"dtype": result_node.meta["val"].dtype},
                             )

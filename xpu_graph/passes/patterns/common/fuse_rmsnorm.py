@@ -130,7 +130,7 @@ class FusedRMSNorm(Pattern):
                     rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, None, eps))
                     if inputs.meta["val"].dtype != node.meta["val"].dtype:
                         rms_norm_node = graph_module.graph.call_function(
-                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
                             (rms_norm_node,),
                             {"dtype": node.meta["val"].dtype},
                         )
@@ -146,7 +146,7 @@ class FusedRMSNorm(Pattern):
                     rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps))
                     if inputs.meta["val"].dtype != node.meta["val"].dtype:
                         rms_norm_node = graph_module.graph.call_function(
-                            aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
                             (rms_norm_node,),
                             {"dtype": node.meta["val"].dtype},
                         )
@@ -183,7 +183,7 @@ class RemoveRMSNormCast(Pattern):
                         new_rmsnorm = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps))
                         if inputs.meta["val"].dtype != result_node.meta["val"].dtype:
                             new_rmsnorm = graph_module.graph.call_function(
-                                (aten.to.default if self._current_stage is FxStage.pregrad else aten._to_copy.default),
+                                (aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default),
                                 (new_rmsnorm,),
                                 {"dtype": result_node.meta["val"].dtype},
                             )
