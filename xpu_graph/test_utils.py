@@ -105,23 +105,14 @@ class need_xpu_graph_logs:
     def __init__(self):
         self.original_propagate = logger.propagate
         self.original_level = logger.level
-        self.handlers = logger.handlers
-        self.root_level = logging.getLogger().level
 
     def __enter__(self):
-        for hdl in self.handlers:
-            logger.removeHandler(hdl)
         logger.propagate = True
         logger.setLevel(logging.DEBUG)
-        logging.getLogger().setLevel(logging.DEBUG)
-        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        for hdl in self.handlers:
-            logger.addHandler(hdl)
         logger.propagate = self.original_propagate
         logger.setLevel(self.original_level)
-        logging.getLogger().setLevel(self.root_level)
 
 
 class skip_xpu_graph_cache:

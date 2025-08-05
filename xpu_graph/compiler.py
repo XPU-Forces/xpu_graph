@@ -30,7 +30,7 @@ def optimize_graph(gm, sample_inputs, config=None):
     config._reset_config_with_env()
 
     # Setup logging based on config
-    setup_logger(logging.DEBUG if config.debug else logging.INFO)
+    setup_logger(config.debug)
 
     logger.info(f"{config}")
 
@@ -61,7 +61,7 @@ class XpuGraph:
         config._reset_config_with_env()
         self._config = config
         # Setup logging based on config
-        setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
+        setup_logger(self._config.debug)
 
         logger.info(f"{config}")
 
