@@ -9,7 +9,20 @@ import torch
 
 
 class _LoggerWrapper:
-    def __init__(self, logger):
+    def __init__(self, root_name):
+        logger = logging.getLogger(root_name)
+
+        if len(logger.handlers) == 0:
+            # Skip if handlers already exist
+            fmt = logging.Formatter(
+                fmt="%(asctime)s.%(msecs)03d %(process)d-%(thread)d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+            handler = logging.StreamHandler(stream=sys.stdout)
+            handler.setFormatter(fmt)
+            logger.addHandler(handler)
+            logger.propagate = False
+
         self._logger = logger
 
     def __getattr__(self, name):
@@ -22,22 +35,11 @@ class _LoggerWrapper:
             setattr(self._logger, name, value)
 
 
-logger = _LoggerWrapper(logging.getLogger("xpu_graph"))
+logger = _LoggerWrapper("xpu_graph")
 
 
-def setup_logger(loglevel):
-    if len(logger.handlers) == 0:
-        # Skip if handlers already exist
-        fmt = logging.Formatter(
-            fmt="%(asctime)s.%(msecs)03d %(process)d-%(thread)d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler = logging.StreamHandler(stream=sys.stdout)
-        handler.setFormatter(fmt)
-        logger.addHandler(handler)
-        logger.propagate = False
-
-    logger.setLevel(loglevel)
+def setup_logger(is_debug):
+    logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
 
 
 _debug_entries = ["xpu_graph." + name for name in os.getenv("XPUGRAPH_LOGS", "").split(",")]
