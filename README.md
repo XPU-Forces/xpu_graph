@@ -10,7 +10,7 @@ XPU_GRAPH is a graph compiler based on torch [Fx graph](https://pytorch.org/docs
 
 ## Compilation-pipeline
 
-<img src="./docs/compilation_pipeling.png" alt="pipeline" style="display: block; margin: 0 auto; width: 60%;">
+<img src="./docs/compilation_pipeline.png" alt="pipeline" style="display: block; margin: 0 auto; width: 60%;">
 
 
 ## Environment requirements
