@@ -5,8 +5,9 @@ from torchair.scope._scope import *
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 
-__SCOPE_ENTER__ = torch.ops.air.scope_enter
-__SCOPE_EXIT__ = torch.ops.air.scope_exit
+# WARNING(liuyuan): The `.default` overload is very important to help use make the node has side effect so it won't be eleminated. See #345
+__SCOPE_ENTER__ = torch.ops.air.scope_enter.default
+__SCOPE_EXIT__ = torch.ops.air.scope_exit.default
 __ARGS__ = ["_super_kernel_scope", "_super_kernel_options"], ["super_kernel_scoped_by_xpu_graph", ""]
 
 
@@ -30,12 +31,8 @@ class ScopedSuperKernel(Pattern):
 
         # NOTE(liuyuan): We just scope the entire graph for now.
         with graph.inserting_before(next(iter(graph.nodes))):
-            scope_node = graph.call_function(__SCOPE_ENTER__, args=__ARGS__)
-            # NOTE(liuyuan): to bypass the graph.eliminate_dead_code
-            scope_node.is_impure = lambda: True
+            graph.call_function(__SCOPE_ENTER__, args=__ARGS__)
         with graph.inserting_before(next(iter(reversed(graph.nodes)))):
-            scope_node = graph.call_function(__SCOPE_EXIT__)
-            # NOTE(liuyuan): to bypass the graph.eliminate_dead_code
-            scope_node.is_impure = lambda: True
+            graph.call_function(__SCOPE_EXIT__)
 
         return True
