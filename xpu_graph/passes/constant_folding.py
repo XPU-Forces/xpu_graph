@@ -22,7 +22,10 @@ class ConstantFolding(Optimizer):
         self.folding_params = folding_params
 
     def _all_input_constant(self, node: fx.Node):
-        return all(is_constant(arg, self.folding_params) for arg in node.args)
+        if node.args:
+            return all(is_constant(arg, self.folding_params) for arg in node.args)
+        else:
+            return False
 
     def process(self, gm: torch.fx.GraphModule):
         changed = False

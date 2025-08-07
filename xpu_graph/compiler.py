@@ -65,7 +65,7 @@ class XpuGraph:
 
         logger.info(f"{config}")
 
-        if self._config.target == Target.npu and self._config.vendor_compiler_config["compiler"] == "ge":
+        if self._config.target == Target.npu and self._config.vendor_compiler_config.get("compiler", None) == "ge":
             self._config.enable_cache = False
             logger.warning("Target NPU ge-compiler does not support cache.")
 
