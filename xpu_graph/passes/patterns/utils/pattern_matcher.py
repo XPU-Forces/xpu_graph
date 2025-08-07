@@ -1,8 +1,9 @@
+import itertools
 import operator
 from typing import Callable
 
 import torch
-from torch.fx import Node as FxNode
+import torch.fx as fx
 from torch.utils._pytree import tree_iter, tree_map, tree_map_only
 
 
@@ -34,7 +35,7 @@ class CaptureResult:
             return
         if key in self.symbols:
             if not self.symbols[key] == val:
-                self.panic(f"Key {key.symbol} already captured with value {self.symbols[key]}, but we got {val} now")
+                self.panic(f"Key {key} already captured with value {self.symbols[key]}, but we got {val} now")
         else:
             self.symbols[key] = val
 
@@ -44,10 +45,10 @@ class CaptureResult:
         if not target == val:
             self.panic(f"Value {val} not match expected {target}")
 
-    def match_fxnode(self, node_capture, node):
+    def match_node(self, node_capture, node):
         if not self.status:
             return
-        if not isinstance(node, FxNode):
+        if not isinstance(node, fx.Node):
             self.panic(f"Node {node} is not a Fx Node")
             return
         if node_capture.op != node.op:
@@ -60,7 +61,7 @@ class CaptureResult:
             if not self.status:
                 return
             if isinstance(sub_capture, FxCapture):
-                if not self.match_capture(sub_capture, sub_node):
+                if not self.try_capture_node_or_val(sub_capture, sub_node):
                     return
             else:
                 self.match_val(sub_capture, sub_node)
@@ -69,7 +70,7 @@ class CaptureResult:
         state = self.backup_state()
         fail_msgs = []
         for candidate in candidates:
-            if self.match_capture(candidate, node):
+            if self.try_capture_node_or_val(candidate, node):
                 return
             else:
                 fail_msgs.append(self.panic_msg)
@@ -84,26 +85,26 @@ class CaptureResult:
             self.panic(f"Nodes {nodes} and candidates {candidates} have different length")
             return
         for candidate, node in zip(candidates, nodes):
-            self.match_capture(candidate, node)
+            self.try_capture_node_or_val(candidate, node)
 
-    def match_capture(self, capture, node_or_val: object) -> bool:
+    def try_capture_node_or_val(self, capture, node_or_val: object) -> bool:
         if self.root_capture is None:
             self.root_capture = capture
         if not self.status:
             return False
-        if capture in self.captured_nodes:
-            self.match_val(self.captured_nodes[capture], node_or_val)
+        if capture.id in self.captured_nodes:
+            self.match_val(self.captured_nodes[capture.id], node_or_val)
         elif capture.op == "union":
             self.match_union(capture.args, node_or_val)
         elif capture.op == "product":
             self.match_product(capture.args, node_or_val)
         elif capture.op == "predicate":
-            if self.match_capture(capture.args[0], node_or_val):
+            if self.try_capture_node_or_val(capture.args[0], node_or_val):
                 if not capture.target(self.symbols):
                     self.panic(
                         f"Meta check for partial captured results failed for already captured:\n"
                         + "\n  ".join(
-                            f"{k}: {v.format_node() if isinstance(v, FxNode) else v}" for k, v in self.symbols.items()
+                            f"{k}: {v.format_node() if isinstance(v, fx.Node) else v}" for k, v in self.symbols.items()
                         )
                     )
         elif capture.op == "symbol":
@@ -115,22 +116,22 @@ class CaptureResult:
                     result = False
                 if not result:
                     self.panic(
-                        f"Predicate failed for {node_or_val.format_node() if isinstance(node_or_val, FxNode) else node_or_val}"
+                        f"Predicate failed for {node_or_val.format_node() if isinstance(node_or_val, fx.Node) else node_or_val}"
                     )
         elif capture.op in ["call_function", "call_module", "call_method", "get_attr"]:
-            self.match_fxnode(capture, node_or_val)
+            self.match_node(capture, node_or_val)
         else:
             raise NotImplementedError(f"Unsupported capture type: {type(capture)}")
 
         if self.status:
-            self.captured_nodes[capture] = node_or_val
+            self.captured_nodes[capture.id] = node_or_val
         return self.status
 
     def __getitem__(self, id):
         if isinstance(id, str):
             return self.symbols[id]
         elif isinstance(id, FxCapture):
-            return self.captured_nodes[id]
+            return self.captured_nodes[id.id]
 
     def __str__(self):
         if self.root_capture is None:
@@ -139,15 +140,15 @@ class CaptureResult:
             s = "Capture success: "
             s += "\n  symbols:"
             for k, v in self.symbols.items():
-                s += f"    {k}: {v}"
-            s += f"  captured:"
+                s += f"\n    {k}: {v}"
+            s += f"\n  captured:"
 
-            def captured_result_repr(node, node_id_map, repr_list):
-                single_line_repr = node.single_line_repr(node_id_map, repr_list)
-                if node in ctx.captured_nodes:
-                    captuerd_node = ctx[node]
+            def captured_result_repr(cap, cap_id_map, repr_list):
+                single_line_repr = cap.single_line_repr(cap_id_map, repr_list)
+                if cap.id in self.captured_nodes:
+                    captuerd_node = self.captured_nodes[cap.id]
                     captuerd_node_repr = (
-                        captuerd_node.format_node() if isinstance(captuerd_node, FxNode) else captuerd_node
+                        captuerd_node.format_node() if isinstance(captuerd_node, fx.Node) else captuerd_node
                     )
                     str = f"    {single_line_repr}\n      {captuerd_node_repr}"
                 else:
@@ -158,31 +159,61 @@ class CaptureResult:
             for line in repr_list:
                 if line is not None:
                     s += "\n" + line
+            s += "\n"
             return s
         else:
-            return f"Capture failed: {ctx.panic_msg}"
+            return f"Capture failed: {self.panic_msg}"
 
 
 class FxCapture:
+    cap_id = itertools.count()
+
     def __init__(self, op, target, args, kwargs):
         self.op = op
         self.target = target
         self.args = args
         self.kwargs = kwargs
+        self.id = next(__class__.cap_id)
 
     def __or__(self, capture):
         return __class__.union(self, capture)
 
     def __getitem__(self, id):
-        return __class__.call_function(operator.getitem, (self, id))
+        return __class__.call_function(operator.getitem, self, id)
 
     def with_check(self, predicate):
         return __class__.predicate(self, predicate)
 
-    def try_capture(self, node_or_val):
-        ctx = CaptureResult()
-        result = ctx.match_capture(self, node_or_val)
+    def try_capture(self, node_or_val, ctx=None):
+        if ctx is None:
+            ctx = CaptureResult()
+        result = ctx.try_capture_node_or_val(self, node_or_val)
         return ctx
+
+    def iterate_all_captured(self, nodes, ctx=None):
+        if ctx is None:
+            ctx = CaptureResult()
+        if self.op == "product":
+            captures = list(self.args)
+        else:
+            captures = [self]
+        ctx.root_capture = self
+
+        def inner_iterate_all_captured(captures, nodes, ctx, captured_nodes):
+            if len(captures) == 0:
+                yield ctx, captured_nodes
+            else:
+                for node in nodes:
+                    states = ctx.backup_state()
+                    ctx = captures[0].try_capture(node, ctx)
+                    if ctx.status:
+                        captured_nodes.append(node)
+                        yield from inner_iterate_all_captured(captures[1:], nodes, ctx, captured_nodes)
+                        captured_nodes.pop()
+
+                    ctx.restore_state(states)
+
+        yield from inner_iterate_all_captured(captures, nodes, ctx, [])
 
     def replace(self, tracked_literal_to_wrapper):
         def inner_replace(t):
@@ -192,8 +223,8 @@ class FxCapture:
                 t = t.replace(tracked_literal_to_wrapper)
             return t
 
-        args, kwargs = tree_map(inner_replace, (self.args, self.kwargs))
-        return __class__(self.op, self.target, args, kwargs)
+        self.args, self.kwargs = tree_map(inner_replace, (self.args, self.kwargs))
+        return self
 
     def single_line_repr(self, node_id_map, result_list):
         if self.op == "symbol":
@@ -205,25 +236,25 @@ class FxCapture:
                 expr += f" |= [...]"
 
         elif self.op == "union":
-            expr = " || ".join(f"%{node_id_map[cand]}" for cand in self.args)
+            expr = " || ".join(f"%{node_id_map[cand.id]}" for cand in self.args)
         elif self.op == "product":
-            expr = "(" + ", ".join(f"%{node_id_map[cand]}" for cand in self.args) + ")"
+            expr = "(" + ", ".join(f"%{node_id_map[cand.id]}" for cand in self.args) + ")"
         elif self.op == "predicate":
             expr = f"meta_check(...)"
         elif self.op in ["call_function", "call_method", "call_module", "get_attr"]:
 
-            class Numbering:
-                def __init__(self, id):
-                    self.id = id
+            class Indexing:
+                def __init__(self, idx):
+                    self.idx = idx
 
                 def __str__(self):
-                    return f"%{self.id}"
+                    return f"%{self.idx}"
 
                 def __repr__(self):
                     return str(self)
 
             def map_capture_to_id(obj):
-                return Numbering(node_id_map[obj])
+                return Indexing(node_id_map[obj.id])
 
             expr = f"{self.op}[target={self.target}](args={tree_map_only(FxCapture, map_capture_to_id, self.args)}, kwargs={tree_map_only(FxCapture, map_capture_to_id, self.kwargs)})"
         else:
@@ -235,13 +266,13 @@ class FxCapture:
             node_id_map = {}
         if result_list is None:
             result_list = []
-        if self in node_id_map:
+        if self.id in node_id_map:
             return result_list
         for sub_node in tree_iter((self.args, self.kwargs)):
             if isinstance(sub_node, __class__):
                 result_list = sub_node.to_list(map_fn, node_id_map, result_list)
         result = map_fn(self, node_id_map, result_list)
-        node_id_map[self] = len(result_list)
+        node_id_map[self.id] = len(result_list)
         result_list.append(result)
         return result_list
 
@@ -355,6 +386,12 @@ class TreeCaptureLiteral:
 
         return LiteralWrapper
 
+    def __str__(self):
+        return str(self.matcher) + " | hint=" + str(self.fake_elem)
+
+    def __repr__(self):
+        return str(self)
+
 
 class TreeCaptureTensor(torch.Tensor):
     def __new__(cls, fake_elem, matcher):
@@ -441,6 +478,9 @@ class TreeCaptureTensor(torch.Tensor):
     def __str__(self):
         return str(self.matcher) + " | hint=" + str(self.fake_elem)
 
+    def __repr__(self):
+        return str(self)
+
     def try_capture(self, node):
         return self.matcher.try_capture(node)
 
@@ -474,7 +514,7 @@ if __name__ == "__main__":
 
     def check_dtype(node):
         # print(node.format_node() if isinstance(node, FxNode) else node)
-        if not isinstance(node, FxNode) or node.meta["tensor_meta"].dtype == torch.float32:
+        if not isinstance(node, fx.Node) or node.meta["tensor_meta"].dtype == torch.float32:
             return False
         return True
 
