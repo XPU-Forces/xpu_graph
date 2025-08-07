@@ -36,7 +36,7 @@ class TestBuildCaptureWithMetacheck:
         assert capture_str.count("call_function[target=aten.mm.default]") == 1
         assert capture_str.count("call_function[target=aten._to_copy.default]") == 2
         assert capture_str.count("?input") == 1
-        assert capture_str.count(":= _") == 1
+        assert capture_str.count(":= _ |=") == 1
         assert capture_str.count("||") == 5
         assert capture_str.count("meta_check") == 1
         assert capture_str.count("|=") == 1
@@ -234,8 +234,8 @@ class TestTreeCaptureProduct:
         self.gm = make_fx(test_func)(x(), x(), x())
 
         aten = torch.ops.aten
-        add_pat1 = FxCapture.call_function(aten.add.Tensor, (FxCapture.symbol("x"), FxCapture.symbol("y")))
-        add_pat2 = FxCapture.call_function(aten.add.Tensor, (FxCapture.symbol("y"), FxCapture.symbol("z")))
+        add_pat1 = FxCapture.call_function(aten.add.Tensor, FxCapture.symbol("x"), FxCapture.symbol("y"))
+        add_pat2 = FxCapture.call_function(aten.add.Tensor, FxCapture.symbol("y"), FxCapture.symbol("z"))
         self.pattern = FxCapture.product(add_pat1, add_pat2)
 
     def test_capture_product(self):

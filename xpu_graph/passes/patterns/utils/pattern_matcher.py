@@ -4,7 +4,8 @@ from typing import Callable
 
 import torch
 import torch.fx as fx
-from torch.utils._pytree import tree_iter, tree_map, tree_map_only
+from torch.fx.node import map_aggregate
+from torch.utils._pytree import tree_flatten, tree_iter, tree_map, tree_map_only
 
 
 class CaptureResult:
@@ -53,11 +54,20 @@ class CaptureResult:
             return
         if node_capture.op != node.op:
             self.panic(f"Node op {node.op} not match expected {node_capture.op}")
+            return
         if node_capture.target != node.target:
             self.panic(f"Node target {node.target} not match expected {node_capture.target}")
-        for sub_capture, sub_node in zip(
-            tree_iter((node_capture.args, node_capture.kwargs)), tree_iter((node.args, node.kwargs))
-        ):
+            return
+
+        sub_captures, tree_spec = tree_flatten((node_capture.args, node_capture.kwargs))
+        try:
+            sub_nodes = tree_spec.flatten_up_to((node.args, node.kwargs))
+        except ValueError as e:
+            self.panic(
+                f"Node argument {node.args} and {node.kwargs} not match expected:\n{node_capture}\nInner error: {e}"
+            )
+            return
+        for sub_capture, sub_node in zip(sub_captures, sub_nodes):
             if not self.status:
                 return
             if isinstance(sub_capture, FxCapture):
@@ -168,11 +178,12 @@ class CaptureResult:
 class FxCapture:
     cap_id = itertools.count()
 
-    def __init__(self, op, target, args, kwargs):
+    def __init__(self, op, target, args=None, kwargs=None):
         self.op = op
         self.target = target
-        self.args = args
-        self.kwargs = kwargs
+        # Keep consistent with node construction
+        self.args = map_aggregate(args, lambda x: x) if args is not None else __class__.any()
+        self.kwargs = map_aggregate(kwargs, lambda x: x) if kwargs is not None else __class__.any()
         self.id = next(__class__.cap_id)
 
     def __or__(self, capture):
@@ -359,17 +370,17 @@ def add_like(left_capture, right_capture):
 def dtype_cast_like(capture):
     if capture is None:
         capture = FxCapture.any()
-    return FxCapture.call_function(aten._to_copy, capture) | FxCapture.call_function(aten._to_copy.default, capture)
-
-
-def zero_like():
-    return FxCapture.call_function(aten.zeros_like.default, FxCapture.any()) | FxCapture.call_function(
-        aten.zeros.default
+    return FxCapture("call_function", aten._to_copy, args=(capture,)) | FxCapture(
+        "call_function", aten._to_copy.default, args=(capture,)
     )
 
 
+def zero_like():
+    return FxCapture("call_function", aten.zeros_like.default) | FxCapture("call_function", aten.zeros.default)
+
+
 def one_like():
-    return FxCapture.call_function(aten.ones_like.default, FxCapture.any()) | FxCapture.call_function(aten.ones.default)
+    return FxCapture("call_function", aten.ones_like.default) | FxCapture("call_function", aten.ones.default)
 
 
 class TreeCaptureLiteral:
