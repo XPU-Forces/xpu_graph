@@ -118,8 +118,7 @@ class TestTreeCaptureWrapper:
             norm = y * gamma + beta
             return norm
 
-        self.pattern_wrapper = layer_norm(m_a, m_gamma, m_beta, m_eps)
-        self.graph = make_fx(layer_norm)(a, gamma, beta, 1e-3)
+        self.pattern = layer_norm(m_a, m_gamma, m_beta, m_eps)
 
     def test_capture_structure(self):
         m_a = FxCapture.symbol("a")
@@ -135,7 +134,31 @@ class TestTreeCaptureWrapper:
         m_div = FxCapture.call_function(aten.div.Tensor, m_sub, m_sqrt)
         m_mul = FxCapture.call_function(aten.mul.Tensor, m_div, m_gamma)
         m_ln = FxCapture.call_function(aten.add.Tensor, m_mul, m_beta)
-        assert str(m_ln) == str(self.pattern_wrapper.matcher)
+        assert str(m_ln) == str(self.pattern.matcher)
+
+    def test_capture_literal(self):
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        with fake_mode:
+            a = torch.empty(4, 16)
+            gamma = torch.empty(16, requires_grad=True)
+            beta = torch.empty(16, requires_grad=True)
+            eps = 1e-3
+
+        def layer_norm_residual(x, gamma, beta, eps):
+            mean = torch.mean(x, dim=-1, keepdim=True)
+            var = torch.var(x, dim=-1, keepdim=True, unbiased=True)
+            y = (x - mean) / torch.sqrt(var + eps)
+            norm = y * gamma + beta
+            return x + norm
+
+        gm = make_fx(layer_norm_residual)(a, gamma, beta, eps)
+
+        for node in gm.graph.nodes:
+            ctx = self.pattern.try_capture(node)
+            if ctx.status:
+                assert ctx["eps"] == eps
 
 
 class TestTreeCaptureWrapperWithDispatch:
@@ -171,6 +194,28 @@ class TestTreeCaptureWrapperWithDispatch:
         m_ln = FxCapture.call_function(aten.native_layer_norm.default, m_a, [m_shape], m_gamma, m_beta, m_eps)
         m_out = FxCapture.call_function(operator.getitem, m_ln, 0)
         assert str(self.pattern.matcher) == str(m_out)
+
+    def test_capture_literal(self):
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        with fake_mode:
+            a = torch.empty(4, 16)
+            gamma = torch.empty(16, requires_grad=True)
+            beta = torch.empty(16, requires_grad=True)
+            eps = 1e-3
+
+        def layer_norm_residual(x, gamma, beta, eps):
+            norm = torch.nn.functional.layer_norm(x, gamma.shape, gamma, beta, eps)
+            return x + norm
+
+        gm = make_fx(layer_norm_residual)(a, gamma, beta, eps)
+
+        for node in gm.graph.nodes:
+            ctx = self.pattern.try_capture(node)
+            if ctx.status:
+                assert ctx["shape"] == 16
+                assert ctx["eps"] == eps
 
 
 class TestTreeCaptureProduct:
