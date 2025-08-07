@@ -23,6 +23,9 @@ class ConstantFolding(Optimizer):
 
     def _all_input_constant(self, node: fx.Node):
         if node.args:
+            # WARNING(liuyuan):
+            # >>> all.__doc__
+            # 'Return True if bool(x) is True for all values x in the iterable.\n\nIf the iterable is empty, return True.'
             return all(is_constant(arg, self.folding_params) for arg in node.args)
         else:
             return False
