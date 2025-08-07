@@ -13,8 +13,9 @@ def get_all_patterns(config: XpuGraphConfig):
         PatternGroup.GROUP2: [],
     }
 
-    using_ge_backend = (
+    using_ge_backend_with_super_kernel = (
         config.vendor_compiler_config.get("compiler", None) == "ge"
+        and config.vendor_compiler_config.get("enable_super_kernel", False)
         and config.vendor_compiler_config.get("mode", None) == None
     )
 
@@ -31,7 +32,7 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat._opt_level <= config.opt_level
             ):
                 # NOTE(liuyuan): The nodes for super kernel may have side-effects on non-GE backend.
-                if pat.__name__ == "ScopedSuperKernel" and not using_ge_backend:
+                if pat.__name__ == "ScopedSuperKernel" and not using_ge_backend_with_super_kernel:
                     continue
                 else:
                     patterns[pat._pattern_group].append(pat())

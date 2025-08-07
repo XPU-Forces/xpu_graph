@@ -35,7 +35,10 @@ class TestSuperKernelScope:
                     is_training=False,
                     debug=True,
                     opt_level=OptLevel.level1,
-                    vendor_compiler_config={"compiler": "ge"},
+                    vendor_compiler_config={
+                        "compiler": "ge",
+                        "enable_super_kernel": True,
+                    },
                     target=Target.npu,
                 )
             )
