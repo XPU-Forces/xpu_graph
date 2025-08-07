@@ -13,6 +13,11 @@ def get_all_patterns(config: XpuGraphConfig):
         PatternGroup.GROUP2: [],
     }
 
+    using_ge_backend = (
+        config.vendor_compiler_config.get("compiler", None) == "ge"
+        and config.vendor_compiler_config.get("mode", None) == None
+    )
+
     for _, module_name, _ in pkgutil.iter_modules(__path__):
         module = importlib.import_module(f"{__name__}.{module_name}")
 
@@ -25,5 +30,9 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat not in (Pattern, AutoMatchPattern)
                 and pat._opt_level <= config.opt_level
             ):
-                patterns[pat._pattern_group].append(pat())
+                # NOTE(liuyuan): The nodes for super kernel may have side-effects on non-GE backend.
+                if pat.__name__ == "ScopedSuperKernel" and not using_ge_backend:
+                    continue
+                else:
+                    patterns[pat._pattern_group].append(pat())
     return patterns
