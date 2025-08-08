@@ -75,9 +75,11 @@ class PluginPattern(Pattern):
         for gm in (self._eager_pattern,):
             graph = gm.graph
             candidates = graph.find_nodes(op="placeholder")
-            pattern_mapping = functools.partial(mapping, candidates=candidates)
+            literal_mapping = functools.partial(mapping, candidates=candidates)
             for node in graph.nodes:
-                node.args = pytree.tree_map(pattern_mapping, node.args)
+                node.args = pytree.tree_map(literal_mapping, node.args)
+                for k, v in node.kwargs.items():
+                    node.kwargs[k] = literal_mapping(v)
             graph.lint()
             gm.recompile()
 
