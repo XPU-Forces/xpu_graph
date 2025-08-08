@@ -269,7 +269,7 @@ class TestPluginPattern:
         with enable_plugin_patterns():
 
             def replace(x, y):
-                return (x * y,)
+                return x * y
 
             @register_this_as_plugin_pattern((torch.empty(10, 10), 3), replace, Target.none)
             def pattern(x, y):
@@ -283,15 +283,15 @@ class TestPluginPattern:
             compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
             input_tensor = torch.rand(1024, 1024)
-            assert is_similar(compiled(input_tensor), replace(input_tensor, 100)[0])
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100))
 
     def test_literal_rewrite_complex(self, caplog):
         with enable_plugin_patterns():
 
             def replace(x, y):
-                return (x * y,)
+                return x * y
 
-            # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the slice op with literal rewrite !!!!
+            # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the wrong literal rewrite !!!!
             @register_this_as_plugin_pattern((torch.empty(1, 1024), 1024), replace, Target.none)
             def pattern(x, y):
                 return (x.view(-1, 1024)[0][0] * (x - y),)
@@ -306,7 +306,7 @@ class TestPluginPattern:
             input_tensor = torch.rand(1024, 2048)
 
             # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the slice op with literal rewrite !!!!
-            assert is_similar(compiled(input_tensor), replace(input_tensor, 100)[0]) is False
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100)) is False
 
         with enable_plugin_patterns():
             # NOTE(liuyuan): This is a good case compared to the one before.
@@ -322,4 +322,4 @@ class TestPluginPattern:
 
             input_tensor = torch.rand(1024, 2048)
 
-            assert is_similar(compiled(input_tensor), replace(input_tensor, 100)[0]) is True
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100)) is True

@@ -36,11 +36,7 @@ class PluginPattern(Pattern):
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
 
         self._eager_pattern, _ = dispatch_graph(symbolic_trace(eager_func), example_inputs, stage=self._current_stage)
-        self._replacement, _ = dispatch_graph(
-            symbolic_trace(replacement),
-            example_inputs,
-            stage=self._current_stage,
-        )
+        self._replacement = symbolic_trace(replacement)
 
         self._filter_list = list(filter_list) if filter_list is not None else []
         self._refine_graph_for_literal(example_inputs)
@@ -76,7 +72,7 @@ class PluginPattern(Pattern):
             else:
                 return arg
 
-        for gm in (self._eager_pattern, self._replacement):
+        for gm in (self._eager_pattern,):
             graph = gm.graph
             candidates = graph.find_nodes(op="placeholder")
             pattern_mapping = functools.partial(mapping, candidates=candidates)
