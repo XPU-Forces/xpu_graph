@@ -1,9 +1,11 @@
+import functools
 import inspect
 from contextlib import contextmanager
 from typing import AnyStr, Callable, List, Union
 
 from torch import fx
 from torch.fx import subgraph_rewriter, symbolic_trace
+from torch.utils import _pytree as pytree
 
 from xpu_graph.config import Target
 from xpu_graph.fx_utils import FxStage, dispatch_graph
@@ -32,11 +34,56 @@ class PluginPattern(Pattern):
     ):
         super().__init__()
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
+
         self._eager_pattern, _ = dispatch_graph(symbolic_trace(eager_func), example_inputs, stage=self._current_stage)
-        logger.debug("Pattern %s-%s : %s", eager_func.__module__, eager_func.__name__, self._eager_pattern.graph)
-        self._replacement = replacement
+        self._replacement, _ = dispatch_graph(
+            symbolic_trace(replacement),
+            example_inputs,
+            stage=self._current_stage,
+        )
+
         self._filter_list = list(filter_list) if filter_list is not None else []
+        self._refine_graph_for_literal(example_inputs)
         self.name = name
+
+        logger.debug(
+            "Pattern %s-%s : %s\n with Replacement %s",
+            eager_func.__module__,
+            eager_func.__name__,
+            self._eager_pattern.graph,
+            self._replacement.graph,
+        )
+
+    def _refine_graph_for_literal(self, example_inputs):
+        # NOTE(liuyuan): The literal types defined by fx.Graph, which could be promoted.
+        __LITERAL_TYPES__ = (float, int, bool)
+
+        input_literals = {}
+        for idx, input in enumerate(example_inputs):
+            if isinstance(input, __LITERAL_TYPES__):
+                if input in input_literals:
+                    raise ValueError(
+                        "You should make sure that all the literal example inputs are unique. You should also make sure that the literal example inputs MUST be different from thoes non-input literals in pattern and replacement!"
+                    )
+                input_literals[input] = idx
+
+        if not input_literals:
+            return
+
+        def mapping(arg, *, candidates):
+            if isinstance(arg, __LITERAL_TYPES__) and arg in input_literals:
+                return candidates[input_literals[arg]]
+            else:
+                return arg
+
+        for gm in (self._eager_pattern, self._replacement):
+            graph = gm.graph
+            candidates = graph.find_nodes(op="placeholder")
+            pattern_mapping = functools.partial(mapping, candidates=candidates)
+            for node in graph.nodes:
+                node.args = pytree.tree_map(pattern_mapping, node.args)
+            graph.lint()
+            gm.recompile()
 
     @property
     def filter_list(self):

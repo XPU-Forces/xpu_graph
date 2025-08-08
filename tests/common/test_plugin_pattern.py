@@ -264,3 +264,23 @@ class TestPluginPattern:
             input_tensor = torch.rand(1024, 1024 * 1024)
             assert is_similar(compiled(input_tensor)[0], replace(input_tensor))
             assert is_similar(compiled_2(input_tensor)[0], replace(input_tensor)) == False
+
+    def test_literal_rewrite(self, caplog):
+        with enable_plugin_patterns():
+
+            def replace(x, y):
+                return (x * y,)
+
+            @register_this_as_plugin_pattern((torch.empty(10, 10), 3), replace, Target.none)
+            def pattern(x, y):
+                return (x + y,)
+
+            def test_func(x):
+                return x + 100
+
+            config = XpuGraphConfig(is_training=False, debug=True)
+            xpu_graph = XpuGraph(config)
+            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+
+            input_tensor = torch.rand(1024, 1024)
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100)[0])
