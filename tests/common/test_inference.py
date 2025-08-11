@@ -12,8 +12,8 @@ data_type = torch.float32
 
 
 def compare_inference(ModCls, backend, bsz=8, input_dim=16):
-    golden = ModCls(input_dim).to(device=device, dtype=data_type)
-    compiled = ModCls(input_dim).to(device=device, dtype=data_type)
+    golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
+    compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
     compiled.load_state_dict(golden.state_dict())
     input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
@@ -21,7 +21,7 @@ def compare_inference(ModCls, backend, bsz=8, input_dim=16):
 
     loss_fn = nn.MSELoss()
 
-    with torch.no_grad():
+    with torch.inference_mode():
         loss_golden = loss_fn(golden(input), target)
         loss_compiled = loss_fn(compiled(input), target)
 

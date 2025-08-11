@@ -165,9 +165,11 @@ class XpuGraph:
                         "The compiled graph has mutated inputs, and thus cannot be monitored by autograd monitor. This may be resulted from an inplace operation in your model. Modify it with an out-place version and try again."
                     )
                 else:
+                    import os
+
                     from xpu_graph.monitors import AutogradMonitor
 
-                    monitor = AutogradMonitor(dynamo_gm)
+                    monitor = AutogradMonitor(dynamo_gm, mark=os.environ.get("RANK", "0"))
                     logger.info("Wrapping compiled funciton with %s", monitor)
                     xpu_gm = monitor.guard(xpu_gm)
         else:

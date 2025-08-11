@@ -44,10 +44,22 @@ class ConstantInplaceModel(nn.Module):
         indices = x.sum(dim=-1).nonzero().squeeze(-1)
         y = x[indices].sum(-1)
         max_len = indices.max() + 1
-        zeros = torch.zeros(max_len, dtype=y.dtype)
+        zeros = torch.zeros(max_len, dtype=y.dtype, device=y.device)
         zeros = zeros.scatter_(0, indices, y)
         result = torch.cat([zeros, torch.zeros(x.shape[0] - max_len, dtype=zeros.dtype)], dim=0)
         return result
 
 
-all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel]
+class DropoutModel(nn.Module):
+    def __init__(self, input_dim):
+        super(DropoutModel, self).__init__()
+        self.fc = nn.Linear(input_dim, 16)
+        self.dropout = nn.Dropout(0.5)
+
+    def forward(self, x):
+        x = self.fc(x)
+        x = self.dropout(x)
+        return x
+
+
+all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, DropoutModel]

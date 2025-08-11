@@ -9,7 +9,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
-device = "cpu"
+device = "mlu"
 data_type = torch.float32
 
 
@@ -28,33 +28,33 @@ def compare_training(ModCls, backend, nsteps=10, bsz=8, input_dim=16):
 
     loss_fn = nn.MSELoss()
 
-    for i in range(nsteps):
-        optimizer_golden.zero_grad()
-        rng_state = torch.random.get_rng_state()
-        loss_golden = loss_fn(golden(input), target)
-        loss_golden.backward()
-        optimizer_golden.step()
+    with torch.device("mlu"):
+        for i in range(nsteps):
+            with torch.random.fork_rng(device_type="mlu"):
+                optimizer_golden.zero_grad()
+                loss_golden = loss_fn(golden(input), target)
+                loss_golden.backward()
+                optimizer_golden.step()
 
-        optimizer_compiled.zero_grad()
-        torch.random.set_rng_state(rng_state)
-        loss_compiled = loss_fn(compiled(input), target)
-        loss_compiled.backward()
-        optimizer_compiled.step()
+            optimizer_compiled.zero_grad()
+            loss_compiled = loss_fn(compiled(input), target)
+            loss_compiled.backward()
+            optimizer_compiled.step()
 
-        assert is_similar(loss_golden, loss_compiled)
+            assert is_similar(loss_golden, loss_compiled)
 
-        print(f"Step: {i} golden: {loss_golden}, compiled: {loss_compiled}")
+            print(f"Step: {i} golden: {loss_golden}, compiled: {loss_compiled}")
 
 
 class TestTraining:
     def setup_class(self):
-        train_config = xpu_graph.XpuGraphConfig(
+        self.train_backend = xpu_graph.mlu_compiler(
             is_training=True,
             opt_level=OptLevel.level1,
             freeze=False,
             debuggers=["autograd"],
+            cache=xpu_graph.cache.no_cache(),
         )
-        self.train_backend = xpu_graph.XpuGraph(train_config)
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -83,13 +83,13 @@ class FaultyPattern(Pattern):
 
 class TestTrainingXFail:
     def setup_class(self):
-        train_config = xpu_graph.XpuGraphConfig(
+        self.train_backend = xpu_graph.mlu_compiler(
             is_training=True,
             opt_level=OptLevel.level1,
             freeze=False,
             debuggers=["autograd"],
+            cache=xpu_graph.cache.no_cache(),
         )
-        self.train_backend = xpu_graph.XpuGraph(train_config, cache=xpu_graph.cache.no_cache())
         self.faulty_pattern = FaultyPattern()
         self.train_backend.get_pattern_manager().register_pattern(self.faulty_pattern)
 
@@ -110,14 +110,13 @@ class TestTrainingXFail:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.XpuGraphConfig(
+    xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=True,
         opt_level=OptLevel.level1,
         freeze=False,
         debug=True,
         debuggers=["autograd"],
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_training(ModCls, xpu_graph_backend)
 

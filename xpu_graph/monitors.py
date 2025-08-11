@@ -20,11 +20,11 @@ def _invoke_forward(func, inputs):
 
 
 def _invoke_backward(func, inputs, outputs, grad_outputs):
-    inputs_ad_idx = [i for i, t in enumerate(inputs) if t.requires_grad]
-    inputs_ad = [t for t in inputs if t.requires_grad]
-    outputs_ad = [t for t in outputs if t.requires_grad]
+    inputs_ad_idx = [i for i, t in enumerate(inputs) if isinstance(t, torch.Tensor) and t.requires_grad]
+    inputs_ad = [t for t in inputs if isinstance(t, torch.Tensor) and t.requires_grad]
+    outputs_ad = [t for t in outputs if isinstance(t, torch.Tensor) and t.requires_grad]
 
-    outputs_ad_idx = [i for i, t in enumerate(outputs) if t.requires_grad]
+    outputs_ad_idx = [i for i, t in enumerate(outputs) if isinstance(t, torch.Tensor) and t.requires_grad]
     grad_outputs_ad = [grad_outputs[idx] for idx in outputs_ad_idx]
     grad_inputs_ad = torch.autograd.grad(outputs_ad, inputs_ad, grad_outputs_ad, allow_unused=True)
 
@@ -53,12 +53,18 @@ class AutogradMonitor:
             @staticmethod
             def forward(ctx, *inputs):
                 logger.debug("Monitored forward")
-                detached_inputs = [t.detach().requires_grad_(t.requires_grad) for t in inputs]
+                detached_inputs = [
+                    t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t for t in inputs
+                ]
                 # Currently, we assume no mutations on inputs
-                golden_outputs = _invoke_forward(MonitoredCompiled.golden_func, detached_inputs)
+
+                # restore the random state after golden forward
+                with torch.random.fork_rng(device_type=torch._utils._get_available_device_type()):
+                    golden_outputs = _invoke_forward(MonitoredCompiled.golden_func, detached_inputs)
+
                 actual_outputs = _invoke_forward(MonitoredCompiled.target_func, detached_inputs)
                 try:
-                    torch.testing.assert_close(actual_outputs, golden_outputs)
+                    torch.testing.assert_close(actual_outputs, golden_outputs)  # , atol=0, rtol=0)
                 except AssertionError as e:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
@@ -92,9 +98,15 @@ class AutogradMonitor:
 
                 # Note: wrap the results with a tuple, thus the backward function is guaranteed to be triggered
                 if self.propagate_real:
-                    return tuple(t.detach().requires_grad_(t.requires_grad) for t in actual_outputs)
+                    return tuple(
+                        t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t
+                        for t in actual_outputs
+                    )
                 else:
-                    return tuple(t.detach().requires_grad_(t.requires_grad) for t in golden_outputs)
+                    return tuple(
+                        t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t
+                        for t in golden_outputs
+                    )
 
             @staticmethod
             def backward(ctx, *grad_outputs):
@@ -111,7 +123,7 @@ class AutogradMonitor:
                     MonitoredCompiled.target_func, inputs, actual_outputs, grad_outputs
                 )
                 try:
-                    torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs)
+                    torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs)  # , atol=0, rtol=0)
                 except AssertionError as e:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
