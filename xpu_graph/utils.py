@@ -9,7 +9,20 @@ import torch
 
 
 class _LoggerWrapper:
-    def __init__(self, logger):
+    def __init__(self, root_name):
+        logger = logging.getLogger(root_name)
+
+        if len(logger.handlers) == 0:
+            # Skip if handlers already exist
+            fmt = logging.Formatter(
+                fmt="%(asctime)s.%(msecs)03d %(process)d-%(thread)d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+            handler = logging.StreamHandler(stream=sys.stdout)
+            handler.setFormatter(fmt)
+            logger.addHandler(handler)
+            logger.propagate = False
+
         self._logger = logger
 
     def __getattr__(self, name):
@@ -22,22 +35,11 @@ class _LoggerWrapper:
             setattr(self._logger, name, value)
 
 
-logger = _LoggerWrapper(logging.getLogger("xpu_graph"))
+logger = _LoggerWrapper("xpu_graph")
 
 
-def setup_logger(loglevel):
-    if len(logger.handlers) == 0:
-        # Skip if handlers already exist
-        fmt = logging.Formatter(
-            fmt="%(asctime)s.%(msecs)03d %(process)d-%(thread)d %(filename)s:%(lineno)d [XPU_GRAPH][%(levelname)s]: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler = logging.StreamHandler(stream=sys.stdout)
-        handler.setFormatter(fmt)
-        logger.addHandler(handler)
-        logger.propagate = False
-
-    logger.setLevel(loglevel)
+def setup_logger(is_debug):
+    logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
 
 
 _debug_entries = ["xpu_graph." + name for name in os.getenv("XPUGRAPH_LOGS", "").split(",")]
@@ -176,3 +178,23 @@ class GitLikeDiffer:
 
     def __str__(self):
         return self.diff()
+
+
+__XPU_GRAPH_ENVS__ = {
+    "aot_config_is_export": "XPUGRAPH_DEPRECATED_AOT_CONFIG_IS_EXPORT",
+    "cache_dir": "XPUGRAPH_CACHE_DIR",
+}
+
+
+def get_bool_env_var(name, default_value: bool):
+    val = os.environ.get(name, default_value)
+    if isinstance(val, str):
+        val = val.lower()
+        if val in ["true", "1", "on"]:
+            return True
+        elif val in ["false", "0", "off"]:
+            return False
+        else:
+            raise ValueError(f"Invalid value for {name}: {val}")
+    else:
+        return val

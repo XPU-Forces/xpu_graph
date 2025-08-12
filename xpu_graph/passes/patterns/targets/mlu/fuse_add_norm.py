@@ -9,7 +9,12 @@ from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 
-from ...utils.check_ops import check_add_op, check_getitem_op, check_norm_op, get_shape
+from ...utils.check_ops import (
+    check_add_op,
+    check_getitem_op,
+    check_norm_module,
+    get_shape,
+)
 
 
 class FusedNormReplacement(nn.Module):
@@ -79,7 +84,7 @@ class FusedNormReplacement(nn.Module):
 
 def _is_add_norm(node: fx.Node, match_str: str):
     layernorm_node = node
-    is_norm, norm_type = check_norm_op(layernorm_node)
+    is_norm, norm_type = check_norm_module(layernorm_node)
     if not is_norm:
         return False, ()
 
@@ -91,11 +96,11 @@ def _is_add_norm(node: fx.Node, match_str: str):
         return False, ()
 
     if match_str == "layer_norm":
-        weight = layernorm_node.args[2]
+        weight = layernorm_node.args[1]
         if weight is None:
             return False, ()
-        bias = layernorm_node.args[3]
-        eps = layernorm_node.args[4]
+        bias = layernorm_node.args[2]
+        eps = layernorm_node.args[3]
     else:
         weight = layernorm_node.args[1]
         if weight is None:

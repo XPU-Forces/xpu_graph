@@ -74,6 +74,10 @@ def check_sqrt_op(node: fx.Node) -> bool:
     return check_op(node, aten.sqrt.default)
 
 
+def check_square_op(node: fx.Node) -> bool:
+    return check_op(node, aten.square.default)
+
+
 def check_rsqrt_op(node: fx.Node) -> bool:
     return check_op(node, aten.rsqrt.default)
 
@@ -250,6 +254,17 @@ def check_copy(node: fx.Node) -> bool:
     return check_op(node, aten._to_copy.default)
 
 
+def check_typecast_op(node: fx.Node) -> bool:
+    if (
+        check_copy(node)
+        and node.meta["tensor_meta"].memory_format == torch.contiguous_format
+        and "dtype" in node.kwargs
+    ):
+        return True, node.kwargs["dtype"]
+    else:
+        return False, None
+
+
 def check_clone(node: fx.Node) -> bool:
     return check_op(node, aten.clone.default)
 
@@ -274,14 +289,14 @@ def check_unsqueeze_op(node: fx.node) -> bool:
     return check_op(node, aten.unsqueeze.default)
 
 
-def check_norm_op(node: fx.node):
+def check_norm_module(node: fx.node):
     if not isinstance(node, fx.Node):
         return False, None
-    if not (node.op == "call_function" or node.op == "call_module"):
+    if node.op != "call_module":
         return False, None
-    if node.target == aten.native_layer_norm.default:
+    if node.target == "fused_layer_norm" or node.target == "custom_layer_norm":
         return True, "layer_norm"
-    if node.target == "rms_norm_op":
+    if node.target == "fused_rms_norm" or node.target == "custom_rms_norm":
         return True, "rms_norm"
     return False, None
 
@@ -317,10 +332,6 @@ def check_expand_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.expand.default)
 
 
-def check_npu_dtype_cast_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.npu.npu_dtype_cast.default)
-
-
 def check_rsub_scalar_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.rsub.Scalar)
 
@@ -345,3 +356,15 @@ def is_one_like(node: Any) -> bool:
             aten.ones_like.default,
         )
     return False
+
+
+def is_type_cast(node: Any) -> bool:
+    if check_copy(node):
+        return len(node.kwargs) == 1 and "dtype" in node.kwargs
+    elif check_op(node, aten.to.dtype):
+        return True
+    return False
+
+
+def is_exclusively_used(used, user):
+    return all(cand is user for cand in used.users)

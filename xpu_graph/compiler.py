@@ -30,7 +30,7 @@ def optimize_graph(gm, sample_inputs, config=None):
     config._reset_config_with_env()
 
     # Setup logging based on config
-    setup_logger(logging.DEBUG if config.debug else logging.INFO)
+    setup_logger(config.debug)
 
     logger.info(f"{config}")
 
@@ -61,7 +61,7 @@ class XpuGraph:
         config._reset_config_with_env()
         self._config = config
         # Setup logging based on config
-        setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
+        setup_logger(self._config.debug)
 
         logger.info(f"{config}")
 
@@ -117,6 +117,7 @@ class XpuGraph:
 
                 if stage != FxStage.pregrad and self._config.vendor_compiler_config:
                     xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
+                    logger.debug(f"After decompose_for_inductor, graph like:\n {xpu_compiled.graph}")
                     extra_kwargs = {}
                     if stage == FxStage.inference:
                         extra_kwargs["is_inference"] = True

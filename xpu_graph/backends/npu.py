@@ -21,6 +21,9 @@ def ge_compiler(module: torch.nn.Module, example_inputs, config_dict, **kwargs) 
         for ele in example_inputs:
             if isinstance(ele, SymInt):
                 raise TypeError("ACL Graph does not support dynamic shape!!")
+
+        if config_dict.get("use_custom_pool", None):
+            config.aclgraph_config.use_custom_pool = config_dict["use_custom_pool"]
     else:
         """
         TODO(zhangjihang): We have to use this, cause some case we have to use GE
