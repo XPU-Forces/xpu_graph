@@ -55,6 +55,7 @@ class TestTraining:
             opt_level=OptLevel.level1,
             freeze=False,
             debuggers=["autograd"],
+            vendor_compiler_config=None,  # FIXME: inductor has some bug with index_put
             cache=xpu_graph.cache.no_cache(),
         )
 
