@@ -51,10 +51,7 @@ def compare_training(ModCls, backend, nsteps=10, bsz=8, input_dim=16):
 class TestTraining:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
-            is_training=True,
-            opt_level=OptLevel.level1,
-            freeze=False,
-            debuggers=["autograd"],
+            is_training=True, opt_level=OptLevel.level1, freeze=False, enable_interceptor=True
         )
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
@@ -83,10 +80,7 @@ class FaultyPattern(Pattern):
 class TestTrainingXFail:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
-            is_training=True,
-            opt_level=OptLevel.level1,
-            freeze=False,
-            debuggers=["autograd"],
+            is_training=True, opt_level=OptLevel.level1, freeze=False, enable_interceptor=True
         )
         self.train_backend = xpu_graph.XpuGraph(train_config, cache=xpu_graph.cache.no_cache())
         self.faulty_pattern = FaultyPattern()
@@ -110,11 +104,7 @@ class TestTrainingXFail:
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=True,
-        opt_level=OptLevel.level1,
-        freeze=False,
-        debug=True,
-        debuggers=["autograd"],
+        is_training=True, opt_level=OptLevel.level1, freeze=False, debug=True, enable_interceptor=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:

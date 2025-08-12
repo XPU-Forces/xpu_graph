@@ -13,6 +13,13 @@ from xpu_graph.utils import logger
 CASE_CNT = itertools.count()
 
 
+def intercept(target_fn, *, golden_fn, is_training, mark=0):
+    if is_training:
+        return AutogradInterceptor(golden_fn, mark).guard(target_fn)
+    else:
+        return FunctionInterceptor(golden_fn, mark).guard(target_fn)
+
+
 def _invoke_inference(func, inputs):
     outputs = func(*inputs)
     return outputs
@@ -40,7 +47,7 @@ def _invoke_backward(func, inputs, outputs, grad_outputs):
     return tuple(grad_inputs)
 
 
-class FunctionMonitor:
+class FunctionInterceptor:
     def __init__(self, golden_fn: Callable, mark=0):
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
@@ -100,7 +107,7 @@ class FunctionMonitor:
         return monitored_inference
 
 
-class AutogradMonitor:
+class AutogradInterceptor:
     def __init__(self, golden_fn: Callable, mark=0):
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
@@ -229,7 +236,7 @@ class AutogradMonitor:
 from torch.utils._python_dispatch import TorchDispatchMode
 
 
-class OpMonitor(TorchDispatchMode):
+class OpInterceptor(TorchDispatchMode):
     def __init__(self, golden_funcs, mark=None, dispatch_key=None):
         super().__init__(dispatch_key)
         self.golden_funcs = golden_funcs

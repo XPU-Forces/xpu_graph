@@ -64,18 +64,14 @@ class XpuGraphConfig:
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
     vendor_compiler_config: Optional[Dict[str, Any]] = None
 
-    # When in debug mode, users can configure debuggers for rutime debugging
-    debuggers: Optional[List[str]] = None
+    # Users can enable interceptor to monitor the results of compiled graph
+    enable_interceptor: bool = False
 
     def _reset_config_with_env(self):
         import os
 
         if os.getenv(__XPU_GRAPH_ENVS__.debug) is not None:
             self.debug = get_bool_env_var(__XPU_GRAPH_ENVS__.debug, False)
-
-        if self.debug and os.getenv(__XPU_GRAPH_ENVS__.debuggers) is not None:
-            self.debuggers = os.getenv(__XPU_GRAPH_ENVS__.debuggers).split(",")
-            logger.info("DEBUGGERS: %s", self.debuggers)
 
         opt_level_env = os.getenv(__XPU_GRAPH_ENVS__.opt_level, str(self.opt_level.value))
         if opt_level_env == "0":
@@ -104,6 +100,9 @@ class XpuGraphConfig:
                     warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
                 else:
                     self.vendor_compiler_config = {"mode": vendor_compiler_mode}
+
+        if os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor) is not None:
+            self.enable_interceptor = get_bool_env_var(__XPU_GRAPH_ENVS__.enable_interceptor, False)
 
 
 def get_cache_dir():

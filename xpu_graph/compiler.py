@@ -159,12 +159,6 @@ class XpuGraph:
                 bw_compiler=_staged_compiler(FxStage.backward),
             )(pregrad_gm, fake_inputs)
 
-            if self._config.debuggers and "autograd" in self._config.debuggers:
-                from xpu_graph.monitors import AutogradMonitor
-
-                monitor = AutogradMonitor(dynamo_gm, mark=os.environ.get("RANK", "0"))
-                logger.info("Wrapping compiled funciton with %s", monitor)
-                xpu_gm = monitor.guard(xpu_gm)
         else:
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
@@ -173,12 +167,14 @@ class XpuGraph:
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
-            if self._config.debuggers and "inference" in self._config.debuggers:
-                from xpu_graph.monitors import FunctionMonitor
 
-                monitor = FunctionMonitor(dynamo_gm, mark=os.environ.get("RANK", "0"))
-                logger.info("Wrapping compiled funciton with %s", monitor)
-                xpu_gm = monitor.guard(xpu_gm)
+        if self._config.enable_interceptor:
+            from xpu_graph.interceptor import intercept
+
+            logger.info("Wrapping compiled funciton with interceptor")
+            xpu_gm = intercept(
+                xpu_gm, golden_fn=dynamo_gm, is_training=self._config.is_training, mark=os.environ.get("RANK", "0")
+            )
         return xpu_gm
 
     def get_pattern_manager(self):

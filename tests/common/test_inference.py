@@ -39,10 +39,7 @@ def compare_inference(ModCls, backend, bsz=8, input_dim=16):
 class TestInference:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False,
-            opt_level=OptLevel.level2,
-            freeze=False,
-            debuggers=["inference"],
+            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
         )
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
 
@@ -60,12 +57,9 @@ class TestInference:
 class TestFreezeInference:
     def setup_class(self):
         freeze_config = xpu_graph.XpuGraphConfig(
-            is_training=False,
-            opt_level=OptLevel.level2,
-            freeze=True,
-            debuggers=["inference"],
+            is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor=True
         )
-        # Warning: DO NOT use create both freeze and non-freeze in the same test case,
+        # Warning: DO NOT create both freeze and non-freeze in the same test case,
         self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
 
     @pytest.mark.parametrize(
@@ -92,10 +86,7 @@ class FaultyPattern(Pattern):
 class TestInferenceXFail:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False,
-            opt_level=OptLevel.level2,
-            freeze=False,
-            debuggers=["inference"],
+            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
         )
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
         self.faulty_pattern = FaultyPattern()
@@ -114,22 +105,14 @@ class TestInferenceXFail:
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=False,
-        opt_level=OptLevel.level2,
-        freeze=True,
-        debug=True,
-        debuggers=["inference"],
+        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True, enable_interceptor=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)
 
     config = xpu_graph.XpuGraphConfig(
-        is_training=False,
-        opt_level=OptLevel.level2,
-        freeze=False,
-        debug=True,
-        debuggers=["inference"],
+        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True, enable_interceptor=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
