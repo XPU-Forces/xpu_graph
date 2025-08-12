@@ -42,13 +42,26 @@ def compare_training(ModCls, backend, nsteps=10, bsz=8, input_dim=16):
         loss_compiled.backward()
         optimizer_compiled.step()
 
+        print(f"Step: {i} golden: {loss_golden}, compiled: {loss_compiled}")
+
         assert is_similar(compiled_input, golden_input)
         assert is_similar(loss_golden, loss_compiled)
 
-        print(f"Step: {i} golden: {loss_golden}, compiled: {loss_compiled}")
-
 
 class TestTraining:
+    def setup_class(self):
+        train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level1, freeze=False)
+        self.train_backend = xpu_graph.XpuGraph(train_config)
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        all_models,
+    )
+    def test_training(self, ReproCls):
+        compare_training(ReproCls, self.train_backend)
+
+
+class TestTrainingWithInterceptor:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
             is_training=True, opt_level=OptLevel.level1, freeze=False, enable_interceptor=True
@@ -59,7 +72,7 @@ class TestTraining:
         "ReproCls",
         all_models,
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
+    def test_training(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             compare_training(ReproCls, self.train_backend)
         assert "Monitored forward" in caplog.text
@@ -91,7 +104,7 @@ class TestTrainingXFail:
         [InplaceModel],
     )
     @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
-    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls, stage):
+    def test_xfail_patterns(self, caplog, ReproCls, stage):
         with need_xpu_graph_logs():
             self.faulty_pattern._support_stages = [stage]
             with pytest.raises(AssertionError):

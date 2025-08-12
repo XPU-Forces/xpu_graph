@@ -31,9 +31,8 @@ def _invoke_forward(func, inputs):
     return outputs
 
 
-def _invoke_backward(func, inputs, outputs, grad_outputs):
-    inputs_ad_idx = [i for i, t in enumerate(inputs) if isinstance(t, torch.Tensor) and t.requires_grad]
-    inputs_ad = [t for t in inputs if isinstance(t, torch.Tensor) and t.requires_grad]
+def _invoke_backward(func, inputs, outputs, grad_outputs, inputs_ad_idx):
+    inputs_ad = [inputs[i] for i in inputs_ad_idx]
     outputs_ad = [t for t in outputs if isinstance(t, torch.Tensor) and t.requires_grad]
 
     outputs_ad_idx = [i for i, t in enumerate(outputs) if isinstance(t, torch.Tensor) and t.requires_grad]
@@ -59,6 +58,7 @@ class FunctionInterceptor:
         def monitored_inference(*inputs):
             logger.debug("Monitored inference")
             actual_inputs = inputs
+            backup_inputs = copy.deepcopy(actual_inputs)
 
             # restore the random state after golden forward
             golden_inputs = copy.deepcopy(actual_inputs)
@@ -85,6 +85,7 @@ class FunctionInterceptor:
                         gm_f.write(mod_str)
 
                 dump_glob = {
+                    "inputs": backup_inputs,
                     "golden_inputs": golden_inputs,
                     "actual_inputs": actual_inputs,
                     "golden_outputs": golden_outputs,
@@ -125,9 +126,12 @@ class AutogradInterceptor:
             def forward(ctx, *inputs):
                 logger.debug("Monitored forward")
                 actual_inputs = [
-                    t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t for t in inputs
+                    t.detach().requires_grad_(True) if isinstance(t, torch.Tensor) and t.requires_grad else t
+                    for t in inputs
                 ]
 
+                backup_inputs = copy.deepcopy(actual_inputs)
+                inputs_ad_idx = [i for i, t in enumerate(inputs) if isinstance(t, torch.Tensor) and t.requires_grad]
                 # restore the random state after golden forward
                 golden_inputs = copy.deepcopy(actual_inputs)
                 with torch.random.fork_rng(device_type=torch._utils._get_available_device_type()):
@@ -153,6 +157,7 @@ class AutogradInterceptor:
                             gm_f.write(mod_str)
 
                     dump_glob = {
+                        "inputs": backup_inputs,
                         "golden_inputs": golden_inputs,
                         "actual_inputs": actual_inputs,
                         "golden_outputs": golden_outputs,
@@ -168,11 +173,12 @@ class AutogradInterceptor:
                     "actual_inputs": actual_inputs,
                     "golden_outputs": golden_outputs,
                     "actual_outputs": actual_outputs,
+                    "inputs_ad_idx": inputs_ad_idx,
                 }
 
                 # Note: wrap the results with a tuple, thus the backward function is guaranteed to be triggered
                 return tuple(
-                    t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t
+                    t.detach().requires_grad_(True) if isinstance(t, torch.Tensor) and t.requires_grad else t
                     for t in actual_outputs
                 )
 
@@ -184,12 +190,13 @@ class AutogradInterceptor:
                 actual_inputs = ctx.saved_states["actual_inputs"]
                 golden_outputs = ctx.saved_states["golden_outputs"]
                 actual_outputs = ctx.saved_states["actual_outputs"]
+                inputs_ad_idx = ctx.saved_states["inputs_ad_idx"]
 
                 golden_grad_inputs = _invoke_backward(
-                    MonitoredCompiled.golden_func, golden_inputs, golden_outputs, grad_outputs
+                    MonitoredCompiled.golden_func, golden_inputs, golden_outputs, grad_outputs, inputs_ad_idx
                 )
                 actual_grad_inputs = _invoke_backward(
-                    MonitoredCompiled.target_func, actual_inputs, actual_outputs, grad_outputs
+                    MonitoredCompiled.target_func, actual_inputs, actual_outputs, grad_outputs, inputs_ad_idx
                 )
                 try:
                     torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs)  # , atol=0, rtol=0)
@@ -222,7 +229,8 @@ class AutogradInterceptor:
 
         # Similar to what torch._functorch.autograd does, wrap the forward function again
         def monitored_forward(*inputs):
-            return MonitoredCompiled.apply(*inputs)
+            outputs = MonitoredCompiled.apply(*inputs)
+            return outputs
 
         if hasattr(compiled_fn, "zero_grad"):
             monitored_forward.zero_grad = compiled_fn.zero_grad

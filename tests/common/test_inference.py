@@ -38,6 +38,35 @@ def compare_inference(ModCls, backend, bsz=8, input_dim=16):
 
 class TestInference:
     def setup_class(self):
+        infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=False)
+        self.infer_backend = xpu_graph.XpuGraph(infer_config)
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        all_models,
+    )
+    def test_inference(self, ReproCls):
+        with skip_xpu_graph_cache(self.infer_backend):
+            compare_inference(ReproCls, self.infer_backend)
+
+
+class TestFreezeInference:
+    def setup_class(self):
+        freeze_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=True)
+        # Warning: DO NOT create both freeze and non-freeze in the same test case,
+        self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        all_models,
+    )
+    def test_freeze_inference(self, ReproCls):
+        with skip_xpu_graph_cache(self.freeze_backend):
+            compare_inference(ReproCls, self.freeze_backend)
+
+
+class TestInferenceWithInterceptor:
+    def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
             is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
         )
@@ -54,7 +83,7 @@ class TestInference:
             assert "diverges" not in caplog.text
 
 
-class TestFreezeInference:
+class TestFreezeInferenceWithInterceptor:
     def setup_class(self):
         freeze_config = xpu_graph.XpuGraphConfig(
             is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor=True
@@ -96,7 +125,7 @@ class TestInferenceXFail:
         "ReproCls",
         [InplaceModel],
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
+    def test_xfail_patterns(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             with pytest.raises(AssertionError):
                 compare_inference(ReproCls, self.infer_backend)

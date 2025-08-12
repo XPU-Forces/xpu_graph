@@ -30,7 +30,7 @@ class InplaceModel(nn.Module):
         x = self.fc(x)
         y = x.clone()
         x.add_(1)
-        z = x + y
+        z = x * y
         return z.sum(dim=-1)
 
 
