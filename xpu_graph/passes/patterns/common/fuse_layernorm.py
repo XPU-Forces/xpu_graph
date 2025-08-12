@@ -1,5 +1,8 @@
 from typing import Optional, Tuple, Union
 
+import torch
+
+aten = torch.ops.aten
 from torch import fx
 
 from xpu_graph.config import OptLevel
@@ -106,10 +109,7 @@ def _is_unbiased_layernorm(node: fx.Node):
         else:
             return False, None
 
-        if get_shape(unaffined)[-1:] != get_shape(weight):
-            return False, None
-        else:
-            return True, [unaffined, weight]
+        return True, [unaffined, weight]
 
     return False, None
 
@@ -125,35 +125,28 @@ def _is_layernorm(node: fx.Node):
             target_mod = getattr(node.graph.owning_module, node.target)
             return isinstance(target_mod, DefaultLayerNorm) and node.args[2] is None
 
+        def _is_casted_unbiased(node):
+            if not is_type_cast(node):
+                return False
+            inner = get_input_node(node, 0)
+            return _is_unbiased(inner)
+
         if _is_unbiased(arg0):
             unbiased, bias = arg0, arg1
         elif _is_unbiased(arg1):
             unbiased, bias = arg1, arg0
+        elif _is_casted_unbiased(arg0):
+            unbiased = get_input_node(arg0, 0)
+            bias = arg1
+        elif _is_casted_unbiased(arg1):
+            unbiased = get_input_node(arg1, 0)
+            bias = arg0
         else:
             return False, None
 
-        if get_shape(unbiased)[-1:] != get_shape(bias):
-            return False, None
-        else:
-            return True, [unbiased, bias]
+        return True, [unbiased, bias]
 
     return False, None
-
-
-def _is_casted_layernorm(node: fx.Node):
-    if not is_type_cast(node):
-        return False
-    inner = get_input_node(node, 0)
-    if not is_exclusively_used(inner, node):
-        return False
-    if inner.op == "call_module" and isinstance(getattr(inner.graph.owning_module, inner.target), DefaultLayerNorm):
-        inputs = inner.args[0]
-        if not is_type_cast(inputs):
-            return False
-        real_inputs = get_input_node(inputs, 0)
-        return real_inputs.meta["val"].dtype == node.meta["val"].dtype
-
-    return False
 
 
 class FusedLayerNorm(Pattern):
@@ -182,10 +175,17 @@ class FusedLayerNorm(Pattern):
                     continue
                 unaffined, weight = params
                 inputs, _, _, eps = unaffined.args
+                if get_shape(inputs)[-1:] != get_shape(weight):
+                    continue
 
                 with graph_module.graph.inserting_before(node):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, None, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        layer_norm_node = graph_module.graph.call_function(
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (layer_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(layer_norm_node, propagate_meta=True)
                 changed = True
             elif check_add_op(node):
@@ -194,10 +194,17 @@ class FusedLayerNorm(Pattern):
                     continue
                 unbiased, bias = params
                 inputs, weight, _, eps = unbiased.args
+                if get_shape(inputs)[-1:] != get_shape(bias):
+                    continue
 
                 with graph_module.graph.inserting_before(node):
                     layer_norm_node = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, bias, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        layer_norm_node = graph_module.graph.call_function(
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (layer_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(layer_norm_node, propagate_meta=True)
                 changed = True
 
@@ -213,13 +220,35 @@ class RemoveLayerNormCast(Pattern):
         if not hasattr(graph_module, "fused_layer_norm"):
             graph_module.add_module("fused_layer_norm", DefaultLayerNorm())
         for node in reversed(graph_module.graph.nodes):
-            if _is_casted_layernorm(node):
-                layer_norm_node = get_input_node(node, 0)
-                inputs, weight, bias, eps = layer_norm_node.args
-                real_inputs = get_input_node(inputs, 0)
-                with graph_module.graph.inserting_before(node):
-                    new_rmsnorm = graph_module.graph.call_module("fused_layer_norm", (real_inputs, weight, bias, eps))
+            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultLayerNorm):
+                # since all internal operations should have been promoted to f32, its okay to remove all typecasts
+                # and it will do no harm to throughput
+                do_replace = False
+                inputs, weight, bias, eps = node.args
+                if is_type_cast(inputs):
+                    inputs = get_input_node(inputs, 0)
+                    do_replace = True
+                if is_type_cast(weight):
+                    weight = get_input_node(weight, 0)
+                    do_replace = True
+                if is_type_cast(bias):
+                    bias = get_input_node(bias, 0)
+                    do_replace = True
+                if do_replace:
+                    if len(node.users) == 1 and is_type_cast(list(node.users)[0]):
+                        result_node = list(node.users)[0]
+                    else:
+                        result_node = node
+                    with graph_module.graph.inserting_before(node):
+                        new_layernorm = graph_module.graph.call_module("fused_layer_norm", (inputs, weight, bias, eps))
 
-                node.replace_all_uses_with(new_rmsnorm)
-                is_modified = True
+                        if inputs.meta["val"].dtype != result_node.meta["val"].dtype:
+                            new_layernorm = graph_module.graph.call_function(
+                                aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                                (new_layernorm,),
+                                {"dtype": result_node.meta["val"].dtype},
+                            )
+                        result_node.replace_all_uses_with(new_layernorm, propagate_meta=True)
+                        is_modified = True
+
         return is_modified

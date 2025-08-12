@@ -21,6 +21,11 @@ class PassManager:
 
         self._pattern_manager = PatternManager(self._config)
 
+        from .remove_runtime_assertions import RemoveAssertions
+
+        if RemoveAssertions._opt_level <= self._config.opt_level:
+            self._passes.append(RemoveAssertions())
+
         from .dce import Dce
 
         if Dce._opt_level <= self._config.opt_level:

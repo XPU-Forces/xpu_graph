@@ -51,6 +51,10 @@ def naive_layernorm_liftdtype(inputs, weight, bias):
     return naive_layernorm(inputs.to(torch.float32), weight, bias).to(inputs.dtype)
 
 
+def naive_layernorm_liftparamdtype(inputs, weight, bias):
+    return naive_layernorm(inputs, weight.to(torch.float32), bias.to(torch.float32)).to(inputs.dtype)
+
+
 def layernorm_test(xpu_graph, func, input_dtype, weight_dtype, bias_dtype):
     inputs = torch.randn((8, 1024), device=device, dtype=input_dtype)
     if weight_dtype is not None:
@@ -103,6 +107,7 @@ class TestLayerNorm:
         "pattern_func,input_dtype,weight_dtype,bias_dtype",
         [
             (naive_layernorm, torch.float32, torch.float32, torch.float32),
+            (naive_layernorm, torch.float16, torch.float32, torch.float32),
             (naive_layernorm_noweight, torch.float32, torch.float32, torch.float32),
             (naive_layernorm_noweight_nobias, torch.float32, torch.float32, None),
             (naive_layernorm_nobias, torch.float32, torch.float32, None),
@@ -110,6 +115,8 @@ class TestLayerNorm:
             (naive_layernorm_liftdtype, torch.float32, torch.bfloat16, torch.bfloat16),
             (naive_layernorm_liftdtype, torch.float16, torch.float16, torch.float16),
             (naive_layernorm_liftdtype, torch.float16, torch.float32, torch.float32),
+            (naive_layernorm_liftparamdtype, torch.float32, torch.float16, torch.float16),
+            (naive_layernorm_liftparamdtype, torch.float16, torch.float16, torch.float16),
         ],
     )
     def test_layernorm_patterns(self, caplog, pattern_func, input_dtype, weight_dtype, bias_dtype):
@@ -117,6 +124,10 @@ class TestLayerNorm:
             layernorm_test(self.infer_backend, pattern_func, input_dtype, weight_dtype, bias_dtype)
         assert "Pattern.FusedLayerNorm changed graph" in caplog.text
         if pattern_func is naive_layernorm_liftdtype and input_dtype != torch.float32:
+            assert "Pattern.RemoveLayerNormCast" in caplog.text
+        if pattern_func is naive_layernorm_liftparamdtype and (
+            weight_dtype != torch.float32 or bias_dtype != torch.float32
+        ):
             assert "Pattern.RemoveLayerNormCast" in caplog.text
 
     @pytest.mark.parametrize(
@@ -130,6 +141,8 @@ class TestLayerNorm:
             (naive_layernorm_liftdtype, torch.float32, torch.bfloat16, torch.bfloat16, torch.float32),
             (naive_layernorm_liftdtype, torch.float16, torch.float16, torch.float16, torch.float16),
             (naive_layernorm_liftdtype, torch.float16, torch.float32, torch.float32, torch.float32),
+            (naive_layernorm_liftparamdtype, torch.float16, torch.float16, torch.float16, torch.float32),
+            (naive_layernorm_liftparamdtype, torch.float32, torch.float16, torch.float16, torch.float32),
         ],
     )
     def test_layernrom_patterns_with_loss_and_grad(
@@ -141,6 +154,10 @@ class TestLayerNorm:
             )
         assert "Pattern.FusedLayerNorm changed graph" in caplog.text
         if pattern_func is naive_layernorm_liftdtype and input_dtype != torch.float32:
+            assert "Pattern.RemoveLayerNormCast" in caplog.text
+        if pattern_func is naive_layernorm_liftparamdtype and (
+            weight_dtype != torch.float32 or bias_dtype != torch.float32
+        ):
             assert "Pattern.RemoveLayerNormCast" in caplog.text
 
 

@@ -103,16 +103,19 @@ def assertTensorsEqual(
 
 class need_xpu_graph_logs:
     def __init__(self):
-        self.original_propagate = logger.propagate
-        self.original_level = logger.level
+        xpugraph_logger = logging.getLogger("xpu_graph")
+        self.original_propagate = xpugraph_logger.propagate
+        self.original_level = xpugraph_logger.level
 
     def __enter__(self):
-        logger.propagate = True
-        logger.setLevel(logging.DEBUG)
+        xpugraph_logger = logging.getLogger("xpu_graph")
+        xpugraph_logger.propagate = True
+        xpugraph_logger.setLevel(logging.DEBUG)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        logger.propagate = self.original_propagate
-        logger.setLevel(self.original_level)
+        xpugraph_logger = logging.getLogger("xpu_graph")
+        xpugraph_logger.propagate = self.original_propagate
+        xpugraph_logger.setLevel(self.original_level)
 
 
 class skip_xpu_graph_cache:

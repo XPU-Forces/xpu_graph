@@ -1,4 +1,6 @@
 import torch
+
+aten = torch.ops.aten
 from torch import fx
 
 from xpu_graph.config import OptLevel
@@ -85,22 +87,6 @@ def _is_unaffined_rmsnorm(node: fx.Node):
     return True, (inputs, eps)
 
 
-def _is_casted_rmsnorm(node: fx.Node):
-    if not is_type_cast(node):
-        return False
-    inner = get_input_node(node, 0)
-    if not is_exclusively_used(inner, node):
-        return False
-    if inner.op == "call_module" and isinstance(getattr(inner.graph.owning_module, inner.target), DefaultRMSNorm):
-        inputs = inner.args[0]
-        if not is_type_cast(inputs):
-            return False
-        real_inputs = get_input_node(inputs, 0)
-        return real_inputs.meta["val"].dtype == node.meta["val"].dtype
-
-    return False
-
-
 def _is_rmsnorm(node: fx.Node):
     if check_mul_op(node):
         arg0 = node.args[0]
@@ -142,7 +128,12 @@ class FusedRMSNorm(Pattern):
 
                 with graph_module.graph.inserting_before(node):
                     rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, None, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        rms_norm_node = graph_module.graph.call_function(
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (rms_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(rms_norm_node, propagate_meta=True)
                 is_modified = True
             elif check_mul_op(node):
@@ -153,7 +144,12 @@ class FusedRMSNorm(Pattern):
                 inputs, _, eps = unaffined.args
                 with graph_module.graph.inserting_before(node):
                     rms_norm_node = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps))
-
+                    if inputs.meta["val"].dtype != node.meta["val"].dtype:
+                        rms_norm_node = graph_module.graph.call_function(
+                            aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default,
+                            (rms_norm_node,),
+                            {"dtype": node.meta["val"].dtype},
+                        )
                 node.replace_all_uses_with(rms_norm_node, propagate_meta=True)
                 is_modified = True
 
@@ -169,13 +165,28 @@ class RemoveRMSNormCast(Pattern):
         if not hasattr(graph_module, "fused_rms_norm"):
             graph_module.add_module("fused_rms_norm", DefaultRMSNorm())
         for node in reversed(graph_module.graph.nodes):
-            if _is_casted_rmsnorm(node):
-                rms_node = get_input_node(node, 0)
-                inputs, weight, eps = rms_node.args
-                real_inputs = get_input_node(inputs, 0)
-                with graph_module.graph.inserting_before(node):
-                    new_rmsnorm = graph_module.graph.call_module("fused_rms_norm", (real_inputs, weight, eps))
-
-                node.replace_all_uses_with(new_rmsnorm)
-                is_modified = True
+            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultRMSNorm):
+                inputs, weight, eps = node.args
+                do_replace = False
+                if is_type_cast(inputs):
+                    do_replace = True
+                    inputs = get_input_node(inputs, 0)
+                if is_type_cast(weight):
+                    do_replace = True
+                    weight = get_input_node(weight, 0)
+                if do_replace:
+                    if len(node.users) == 1 and is_type_cast(list(node.users)[0]):
+                        result_node = list(node.users)[0]
+                    else:
+                        result_node = node
+                    with graph_module.graph.inserting_before(node):
+                        new_rmsnorm = graph_module.graph.call_module("fused_rms_norm", (inputs, weight, eps))
+                        if inputs.meta["val"].dtype != result_node.meta["val"].dtype:
+                            new_rmsnorm = graph_module.graph.call_function(
+                                (aten.to.dtype if self._current_stage is FxStage.pregrad else aten._to_copy.default),
+                                (new_rmsnorm,),
+                                {"dtype": result_node.meta["val"].dtype},
+                            )
+                        result_node.replace_all_uses_with(new_rmsnorm, propagate_meta=True)
+                        is_modified = True
         return is_modified
