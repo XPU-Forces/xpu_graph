@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 import xpu_graph
-from tests.common.test_models import ConstantInplaceModel, InplaceModel, all_models
+from tests.common.test_models import InplaceModel, all_models
 from xpu_graph import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern

@@ -173,7 +173,12 @@ class XpuGraph:
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
+            if self._config.debuggers and "inference" in self._config.debuggers:
+                from xpu_graph.monitors import FunctionMonitor
 
+                monitor = FunctionMonitor(dynamo_gm, mark=os.environ.get("RANK", "0"))
+                logger.info("Wrapping compiled funciton with %s", monitor)
+                xpu_gm = monitor.guard(xpu_gm)
         return xpu_gm
 
     def get_pattern_manager(self):
