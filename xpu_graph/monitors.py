@@ -36,14 +36,13 @@ def _invoke_backward(func, inputs, outputs, grad_outputs):
 
 
 class AutogradMonitor:
-    def __init__(self, golden_fn: Callable, mark=0, propagate_real=True):
+    def __init__(self, golden_fn: Callable, mark=0):
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
         if isinstance(golden_fn, Module):
             assert len(golden_fn.state_dict()) == 0
         self.mark = mark
-        self.propagate_real = propagate_real
 
     def guard(self, compiled_fn):
         class MonitoredCompiled(torch.autograd.Function):
@@ -53,18 +52,20 @@ class AutogradMonitor:
             @staticmethod
             def forward(ctx, *inputs):
                 logger.debug("Monitored forward")
-                detached_inputs = [
+                actual_inputs = [
                     t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t for t in inputs
                 ]
                 # Currently, we assume no mutations on inputs
 
                 # restore the random state after golden forward
+                golden_inputs = copy.deepcopy(actual_inputs)
                 with torch.random.fork_rng(device_type=torch._utils._get_available_device_type()):
-                    golden_outputs = _invoke_forward(MonitoredCompiled.golden_func, detached_inputs)
+                    golden_outputs = _invoke_forward(MonitoredCompiled.golden_func, golden_inputs)
 
-                actual_outputs = _invoke_forward(MonitoredCompiled.target_func, detached_inputs)
+                actual_outputs = _invoke_forward(MonitoredCompiled.target_func, actual_inputs)
                 try:
-                    torch.testing.assert_close(actual_outputs, golden_outputs)  # , atol=0, rtol=0)
+                    torch.testing.assert_close(actual_inputs, golden_inputs)
+                    torch.testing.assert_close(actual_outputs, golden_outputs)
                 except AssertionError as e:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
@@ -81,7 +82,8 @@ class AutogradMonitor:
                             gm_f.write(mod_str)
 
                     dump_glob = {
-                        "inputs": detached_inputs,
+                        "golden_inputs": golden_inputs,
+                        "actual_inputs": actual_inputs,
                         "golden_outputs": golden_outputs,
                         "actual_outputs": actual_outputs,
                     }
@@ -91,36 +93,32 @@ class AutogradMonitor:
                     )
 
                 ctx.saved_states = {
-                    "inputs": detached_inputs,
+                    "golden_inputs": golden_inputs,
+                    "actual_inputs": actual_inputs,
                     "golden_outputs": golden_outputs,
                     "actual_outputs": actual_outputs,
                 }
 
                 # Note: wrap the results with a tuple, thus the backward function is guaranteed to be triggered
-                if self.propagate_real:
-                    return tuple(
-                        t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t
-                        for t in actual_outputs
-                    )
-                else:
-                    return tuple(
-                        t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t
-                        for t in golden_outputs
-                    )
+                return tuple(
+                    t.detach().requires_grad_(t.requires_grad) if isinstance(t, torch.Tensor) else t
+                    for t in actual_outputs
+                )
 
             @staticmethod
             def backward(ctx, *grad_outputs):
                 logger.debug("Monitored backward")
 
-                inputs = ctx.saved_states["inputs"]
+                golden_inputs = ctx.saved_states["golden_inputs"]
+                actual_inputs = ctx.saved_states["actual_inputs"]
                 golden_outputs = ctx.saved_states["golden_outputs"]
                 actual_outputs = ctx.saved_states["actual_outputs"]
 
                 golden_grad_inputs = _invoke_backward(
-                    MonitoredCompiled.golden_func, inputs, golden_outputs, grad_outputs
+                    MonitoredCompiled.golden_func, golden_inputs, golden_outputs, grad_outputs
                 )
                 actual_grad_inputs = _invoke_backward(
-                    MonitoredCompiled.target_func, inputs, actual_outputs, grad_outputs
+                    MonitoredCompiled.target_func, actual_inputs, actual_outputs, grad_outputs
                 )
                 try:
                     torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs)  # , atol=0, rtol=0)
@@ -139,7 +137,8 @@ class AutogradMonitor:
                             )
                             gm_f.write(mod_str)
                     dump_glob = {
-                        "inputs": inputs,
+                        "golden_inputs": golden_inputs,
+                        "actual_inputs": actual_inputs,
                         "grad_outputs": grad_outputs,
                         "golden_grad_inputs": golden_grad_inputs,
                         "actual_grad_inputs": actual_grad_inputs,
@@ -148,10 +147,7 @@ class AutogradMonitor:
                         dump_glob,
                         os.path.join(dump_path, "dump_glob_bwd.pt"),
                     )
-                if self.propagate_real:
-                    return actual_grad_inputs
-                else:
-                    return golden_grad_inputs
+                return actual_grad_inputs
 
         # Similar to what torch._functorch.autograd does, wrap the forward function again
         def monitored_forward(*inputs):

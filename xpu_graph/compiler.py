@@ -1,4 +1,4 @@
-import logging
+import os
 from itertools import chain
 
 import torch
@@ -160,18 +160,11 @@ class XpuGraph:
             )(pregrad_gm, fake_inputs)
 
             if self._config.debuggers and "autograd" in self._config.debuggers:
-                if fw_metadata.num_mutated_inp_runtime_indices > 0:
-                    logger.warning(
-                        "The compiled graph has mutated inputs, and thus cannot be monitored by autograd monitor. This may be resulted from an inplace operation in your model. Modify it with an out-place version and try again."
-                    )
-                else:
-                    import os
+                from xpu_graph.monitors import AutogradMonitor
 
-                    from xpu_graph.monitors import AutogradMonitor
-
-                    monitor = AutogradMonitor(dynamo_gm, mark=os.environ.get("RANK", "0"))
-                    logger.info("Wrapping compiled funciton with %s", monitor)
-                    xpu_gm = monitor.guard(xpu_gm)
+                monitor = AutogradMonitor(dynamo_gm, mark=os.environ.get("RANK", "0"))
+                logger.info("Wrapping compiled funciton with %s", monitor)
+                xpu_gm = monitor.guard(xpu_gm)
         else:
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
