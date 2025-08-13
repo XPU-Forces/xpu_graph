@@ -14,11 +14,7 @@ def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kw
         return cudagraphs(module, example_inputs)
 
     from torch import _TorchCompileInductorWrapper
-    from torch._inductor.compile_fx import (
-        compile_fx,
-        compile_fx_inner,
-        get_cpp_wrapper_config,
-    )
+    from torch._inductor.compile_fx import compile_fx, compile_fx_inner
 
     options = {}
     dynamic = config_dict.get("dynamic", True)
@@ -27,7 +23,12 @@ def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kw
         from packaging import version
 
         torch_version = version.parse(torch.__version__[:5])
-        config = get_cpp_wrapper_config() if cpp_wrapper and torch_version >= version.parse("2.7.0") else {}
+        if cpp_wrapper and torch_version >= version.parse("2.7.0"):
+            from torch._inductor import get_cpp_wrapper_config
+
+            config = get_cpp_wrapper_config()
+        else:
+            config = {}
         with torch._inductor.config.patch(**config):
             compiled_func = compile_fx_inner(module, example_inputs, cpp_wrapper=cpp_wrapper, **kwargs)
     return compiled_func
