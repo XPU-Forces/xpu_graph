@@ -26,9 +26,7 @@ def matmul_test(xpu_graph_backend, func):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(input1, input2)
     res = func(input1, input2)
-    assertTensorsEqual(
-        res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True
-    )
+    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True)
 
 
 class TestMatMul:
