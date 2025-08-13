@@ -17,6 +17,10 @@ aten = torch.ops.aten
 
 
 def fn0(input1, input2):
+    return input2 @ input1.T
+
+
+def fn1(input1, input2):
     return input1 + input2
 
 
@@ -39,9 +43,7 @@ class TestMatMul:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [
-            fn0,
-        ],
+        [fn0, fn1],
     )
     def test_matmul_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
