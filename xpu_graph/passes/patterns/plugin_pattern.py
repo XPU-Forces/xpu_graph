@@ -35,9 +35,7 @@ class PluginPattern(Pattern):
     ):
         super().__init__()
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
-        self._eager_pattern, _, _ = dispatch_graph(
-            symbolic_trace(eager_func), example_inputs, stage=self._current_stage
-        )
+        self._eager_pattern, _ = dispatch_graph(symbolic_trace(eager_func), example_inputs, stage=self._current_stage)
         self._replacement = symbolic_trace(replacement)
 
         self._filter_list = list(filter_list) if filter_list is not None else []

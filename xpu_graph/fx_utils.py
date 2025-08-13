@@ -107,7 +107,7 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     dispatched_gm.recompile()
 
     fake_inputs = fake_flat_args[params_len:]
-    return dispatched_gm, fake_inputs, fw_metadata
+    return dispatched_gm, fake_inputs
 
 
 def find_nodes(graph, *, op: str, target=None):
