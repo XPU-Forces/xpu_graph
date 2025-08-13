@@ -63,10 +63,12 @@ class ComboSliceWhereCat(Pattern):
             if node.target == torch.ops.aten.stack.default:
                 is_stack = True
             ori_cat_input = node.args[0]
-            if is_stack:
-                axis = 0
-            else:
+            if "dim" in node.kwargs:
+                axis = node.kwargs["dim"]
+            elif len(node.args) > 1:
                 axis = node.args[1]
+            else:
+                axis = 0
             if len(ori_cat_input) < MINI_LEN:
                 continue
             start, end = match_sub_list(

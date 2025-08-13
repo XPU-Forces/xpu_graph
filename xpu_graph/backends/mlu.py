@@ -20,6 +20,15 @@ def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kw
     dynamic = config_dict.get("dynamic", True)
     inductor_backend = _TorchCompileInductorWrapper(mode, options, dynamic)
     with torch._inductor.config.patch(inductor_backend.config):
-        compiled_func = compile_fx_inner(module, example_inputs, cpp_wrapper=cpp_wrapper, **kwargs)
+        from packaging import version
 
+        torch_version = version.parse(torch.__version__[:5])
+        if cpp_wrapper and torch_version >= version.parse("2.7.0"):
+            from torch._inductor import get_cpp_wrapper_config
+
+            config = get_cpp_wrapper_config()
+        else:
+            config = {}
+        with torch._inductor.config.patch(**config):
+            compiled_func = compile_fx_inner(module, example_inputs, cpp_wrapper=cpp_wrapper, **kwargs)
     return compiled_func

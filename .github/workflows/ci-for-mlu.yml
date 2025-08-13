@@ -48,7 +48,7 @@ jobs:
     name: Run mlu tests
     runs-on: MLU
     container:
-      image: hub.byted.org/ci/xpu_graph:934ebcfdd670bcea94aa0a0ed247a576
+      image: hub.byted.org/ci/xpu_graph:c5672b8705309273fc76f33d6eeefcfd
       options: --privileged=true --ipc=host --pid=host --user root --network host
     steps:
     - uses: actions/checkout@v4
