@@ -7,7 +7,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import SerializeWrapper, XpuGraphCache, default_cache
 from .config import OptLevel, Target, XpuGraphConfig
-from .fx_utils import FxStage, decompose_for_inductor, dispatch_graph
+from .fx_utils import FxStage, dispatch_graph
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
@@ -65,7 +65,7 @@ class XpuGraph:
 
         logger.info(f"{config}")
 
-        if self._config.target == Target.npu and self._config.vendor_compiler_config["compiler"] == "ge":
+        if self._config.target == Target.npu and self._config.vendor_compiler_config.get("compiler", None) == "ge":
             self._config.enable_cache = False
             logger.warning("Target NPU ge-compiler does not support cache.")
 
@@ -116,8 +116,6 @@ class XpuGraph:
                 logger.info(f"node statistic: {str(nodes_statistics)}")
 
                 if stage != FxStage.pregrad and self._config.vendor_compiler_config:
-                    xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
-                    logger.debug(f"After decompose_for_inductor, graph like:\n {xpu_compiled.graph}")
                     extra_kwargs = {}
                     if stage == FxStage.inference:
                         extra_kwargs["is_inference"] = True
