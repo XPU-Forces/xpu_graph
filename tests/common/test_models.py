@@ -42,6 +42,24 @@ class ConstantInplaceModel(nn.Module):
     def forward(self, x):
         x = self.fc(x)
         indices = x.sum(dim=-1).nonzero().squeeze(-1)
+        indices = indices[max(indices.shape[0] // 2, 1) :]
+        y = x[indices].sum(-1)
+        max_len = indices.max() + 1
+        zeros = torch.zeros(max_len, dtype=y.dtype, device=y.device)
+        zeros.scatter_(0, indices, y)
+        result = torch.cat([zeros, torch.zeros(x.shape[0] - max_len, dtype=zeros.dtype, device=zeros.device)], dim=0)
+        return result
+
+
+class ConstantInplaceModelV2(nn.Module):
+    def __init__(self, input_dim):
+        super(ConstantInplaceModelV2, self).__init__()
+        self.fc = nn.Linear(input_dim, 16)
+
+    def forward(self, x):
+        x = self.fc(x)
+        indices = x.sum(dim=-1).nonzero().squeeze(-1)
+        indices = indices[max(indices.shape[0] // 2, 1) :]
         y = x[indices].sum(-1)
         max_len = indices.max() + 1
         zeros = torch.zeros(max_len, dtype=y.dtype, device=y.device)
