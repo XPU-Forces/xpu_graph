@@ -168,12 +168,16 @@ class XpuGraph:
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
-        if self._config.enable_interceptor:
+        if self._config.enable_interceptor is not None:
             from xpu_graph.interceptor import intercept
 
             logger.info("Wrapping compiled funciton with interceptor")
             xpu_gm = intercept(
-                xpu_gm, golden_fn=dynamo_gm, is_training=self._config.is_training, mark=os.environ.get("RANK", "0")
+                xpu_gm,
+                golden_fn=dynamo_gm,
+                is_training=self._config.is_training,
+                mark=os.environ.get("RANK", "0"),
+                config_str=self._config.enable_interceptor,
             )
         return xpu_gm
 

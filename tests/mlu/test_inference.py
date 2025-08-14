@@ -66,7 +66,7 @@ class TestFreezeInference:
 class TestInferenceWithInterceptor:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
+            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
 
     @pytest.mark.parametrize(
@@ -83,7 +83,7 @@ class TestInferenceWithInterceptor:
 class TestFreezeInferenceWithInterceptor:
     def setup_class(self):
         self.freeze_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor=True
+            is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
         # Warning: DO NOT create both freeze and non-freeze in the same test case,
 
@@ -111,7 +111,7 @@ class FaultyPattern(Pattern):
 class TestInferenceXFail:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
+            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
         self.faulty_pattern = FaultyPattern()
         self.infer_backend.get_pattern_manager().register_pattern(self.faulty_pattern)
@@ -129,13 +129,13 @@ class TestInferenceXFail:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True, enable_interceptor=True
+        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)
 
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True, enable_interceptor=True
+        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)

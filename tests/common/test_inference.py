@@ -68,7 +68,7 @@ class TestFreezeInference:
 class TestInferenceWithInterceptor:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
+            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
 
@@ -86,7 +86,7 @@ class TestInferenceWithInterceptor:
 class TestFreezeInferenceWithInterceptor:
     def setup_class(self):
         freeze_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor=True
+            is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
         # Warning: DO NOT create both freeze and non-freeze in the same test case,
         self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
@@ -115,7 +115,7 @@ class FaultyPattern(Pattern):
 class TestInferenceXFail:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor=True
+            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
         self.faulty_pattern = FaultyPattern()
@@ -134,14 +134,14 @@ class TestInferenceXFail:
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True, enable_interceptor=True
+        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)
 
     config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True, enable_interceptor=True
+        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:

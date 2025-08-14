@@ -72,7 +72,7 @@ class TestTrainingWithInterceptor:
             is_training=True,
             opt_level=OptLevel.level1,
             freeze=False,
-            enable_interceptor=True,
+            enable_interceptor="rtol=1e-6,atol=1e-5",
             vendor_compiler_config=None,  # FIXME: inductor has some bug with index_put
             cache=xpu_graph.cache.no_cache(),
         )
@@ -105,7 +105,7 @@ class TestTrainingXFail:
             is_training=True,
             opt_level=OptLevel.level1,
             freeze=False,
-            enable_interceptor=True,
+            enable_interceptor="rtol=1e-6,atol=1e-5",
             cache=xpu_graph.cache.no_cache(),
         )
         self.faulty_pattern = FaultyPattern()
@@ -129,7 +129,7 @@ class TestTrainingXFail:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=True, opt_level=OptLevel.level1, freeze=False, debug=True, enable_interceptor=True
+        is_training=True, opt_level=OptLevel.level1, freeze=False, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
     for ModCls in all_models:
         compare_training(ModCls, xpu_graph_backend)

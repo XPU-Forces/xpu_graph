@@ -13,11 +13,23 @@ from xpu_graph.utils import logger
 CASE_CNT = itertools.count()
 
 
-def intercept(target_fn, *, golden_fn, is_training, mark=0):
+def intercept(target_fn, *, golden_fn, is_training, mark=0, config_str=""):
+    check_configs = {}
+    for item in config_str.split(","):
+        key, val = item.split("=")
+        if key in ["rtol", "atol"]:
+            val = float(val)
+            check_configs[key] = val
+        elif key in ["allow_subclasses", "equal_nan", "check_device", "check_dtype", "check_layout", "check_stride"]:
+            val = val.lower() in ["true", "1", "on"]
+            check_configs[key] = val
+        else:
+            logger.warning(f"Invalid key: {key}")
+
     if is_training:
-        return AutogradInterceptor(golden_fn, mark).guard(target_fn)
+        return AutogradInterceptor(golden_fn, mark, **check_configs).guard(target_fn)
     else:
-        return FunctionInterceptor(golden_fn, mark).guard(target_fn)
+        return FunctionInterceptor(golden_fn, mark, **check_configs).guard(target_fn)
 
 
 def _invoke_inference(func, inputs):
@@ -59,11 +71,12 @@ def _invoke_backward(func, inputs, outputs, grad_outputs, inputs_requires_grad):
 
 
 class FunctionInterceptor:
-    def __init__(self, golden_fn: Callable, mark=0):
+    def __init__(self, golden_fn: Callable, mark=0, **check_configs):
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
         self.mark = mark
+        self.check_configs = check_configs
 
     def guard(self, compiled_fn):
         # Similar to what torch._functorch.autograd does, wrap the forward function again
@@ -79,8 +92,8 @@ class FunctionInterceptor:
 
             actual_outputs = _invoke_inference(compiled_fn, actual_inputs)
             try:
-                torch.testing.assert_close(actual_inputs, golden_inputs)
-                torch.testing.assert_close(actual_outputs, golden_outputs)
+                torch.testing.assert_close(actual_inputs, golden_inputs, **self.check_configs)
+                torch.testing.assert_close(actual_outputs, golden_outputs, **self.check_configs)
             except AssertionError as e:
                 global CASE_CNT
                 case_id = next(CASE_CNT)
@@ -121,13 +134,14 @@ class FunctionInterceptor:
 
 
 class AutogradInterceptor:
-    def __init__(self, golden_fn: Callable, mark=0):
+    def __init__(self, golden_fn: Callable, mark=0, **check_configs):
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
         if isinstance(golden_fn, Module):
             assert len(golden_fn.state_dict()) == 0
         self.mark = mark
+        self.check_configs = check_configs
 
     def guard(self, compiled_fn):
         class MonitoredCompiled(torch.autograd.Function):
@@ -152,8 +166,8 @@ class AutogradInterceptor:
 
                 actual_outputs = _invoke_forward(MonitoredCompiled.target_func, actual_inputs)
                 try:
-                    torch.testing.assert_close(actual_inputs, golden_inputs)
-                    torch.testing.assert_close(actual_outputs, golden_outputs)
+                    torch.testing.assert_close(actual_inputs, golden_inputs, **self.check_configs)
+                    torch.testing.assert_close(actual_outputs, golden_outputs, **self.check_configs)
                 except AssertionError as e:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
@@ -220,7 +234,7 @@ class AutogradInterceptor:
                     MonitoredCompiled.target_func, actual_inputs, actual_outputs, grad_outputs, inputs_requires_grad
                 )
                 try:
-                    torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs)  # , atol=0, rtol=0)
+                    torch.testing.assert_close(actual_grad_inputs, golden_grad_inputs, **self.check_configs)
                 except AssertionError as e:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
@@ -273,10 +287,11 @@ from torch.utils._python_dispatch import TorchDispatchMode
 
 
 class OpInterceptor(TorchDispatchMode):
-    def __init__(self, golden_funcs, mark=None, dispatch_key=None):
+    def __init__(self, golden_funcs, mark=None, dispatch_key=None, **check_configs):
         super().__init__(dispatch_key)
         self.golden_funcs = golden_funcs
         self.mark = mark if mark is not None else "op"
+        self.check_configs = check_configs
 
     def __torch_dispatch__(self, func, types, args, kwargs=None):
         if func in self.golden_funcs:
@@ -289,8 +304,8 @@ class OpInterceptor(TorchDispatchMode):
                 golden_outputs = golden_fn(*golden_inputs, **(kwargs or {}))
             actual_outputs = func(*args, **(kwargs or {}))
             try:
-                torch.testing.assert_close(actual_inputs, golden_inputs)
-                torch.testing.assert_close(actual_outputs, golden_outputs)
+                torch.testing.assert_close(actual_inputs, golden_inputs, **self.check_configs)
+                torch.testing.assert_close(actual_outputs, golden_outputs, **self.check_configs)
             except AssertionError as e:
                 global CASE_CNT
                 case_id = next(CASE_CNT)
