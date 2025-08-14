@@ -3,6 +3,9 @@ from typing import Dict
 import torch
 import torch_mlu
 
+from xpu_graph.fx_utils import decompose_for_inductor
+from xpu_graph.utils import logger
+
 
 def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kwargs) -> torch.nn.Module:
     mode = config_dict.get("mode", "reduce-overhead")
@@ -19,6 +22,10 @@ def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kw
     options = {}
     dynamic = config_dict.get("dynamic", True)
     inductor_backend = _TorchCompileInductorWrapper(mode, options, dynamic)
+
+    module = decompose_for_inductor(module, example_inputs)
+    logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
+
     with torch._inductor.config.patch(inductor_backend.config):
         from packaging import version
 

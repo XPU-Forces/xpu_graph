@@ -13,7 +13,7 @@ class MyModule(torch.nn.Module):
         self.linear = torch.nn.Linear(4, 5)
 
     def forward(self, x):
-        return self.linear(x).relu()
+        return torch.ops.aten._to_copy(self.linear(x).relu(), dtype=torch.int32)
 
 
 class TestGeAndAclGraphMode:
@@ -29,9 +29,12 @@ class TestGeAndAclGraphMode:
                     False,
                     target=Target.npu,
                     freeze=True,  # WARNING(liuyuan): Critical for nn.Module with Parameter under pytorch 2.5-
+                    debug=True,
                     vendor_compiler_config={"mode": 1, "compiler": "ge"},
                 )
             ),
+            dynamic=False,
+            fullgraph=True,
         )
         assert self.ge_func is not None
         self.acl_graph_func = torch.compile(
@@ -41,9 +44,12 @@ class TestGeAndAclGraphMode:
                     False,
                     target=Target.npu,
                     freeze=True,  # WARNING(liuyuan): Critical for nn.Module with Parameter under pytorch 2.5-
+                    debug=True,
                     vendor_compiler_config={"mode": "reduce-overhead", "compiler": "ge"},
                 )
             ),
+            dynamic=False,
+            fullgraph=True,
         )
         assert self.acl_graph_func is not None
 

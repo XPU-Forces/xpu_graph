@@ -2,6 +2,9 @@ from typing import Dict
 
 import torch
 
+from xpu_graph.fx_utils import decompose_for_inductor
+from xpu_graph.utils import logger
+
 
 def ge_compiler(module: torch.nn.Module, example_inputs, config_dict, **kwargs) -> torch.nn.Module:
     import torch.fx as fx
@@ -45,6 +48,10 @@ def inductor_compiler(module: torch.nn.Module, inputs, config_dict: Dict, **kwar
     options = {}
     dynamic = config_dict.get("dynamic", False)
     inductor_backend = _TorchCompileInductorWrapper(mode, options, dynamic)
+
+    module = decompose_for_inductor(module, inputs)
+    logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
+
     with torch._inductor.config.patch(inductor_backend.config):
         compiled_func = compile_fx_inner(module, inputs, **kwargs)
 
