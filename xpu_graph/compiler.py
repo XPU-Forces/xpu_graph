@@ -10,7 +10,7 @@ from .config import OptLevel, Target, XpuGraphConfig
 from .fx_utils import FxStage, dispatch_graph
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
-from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
+from .utils import GitLikeDiffer, NodesStatistics, logger, setup_logger
 
 __all__ = [
     "optimize_graph",
@@ -30,24 +30,23 @@ def optimize_graph(gm, sample_inputs, config=None):
     config._reset_config_with_env()
 
     # Setup logging based on config
-    setup_logger(config.debug)
+    with setup_logger(debug=config.debug):
+        logger.info(f"{config}")
 
-    logger.info(f"{config}")
+        # Create fake inputs for optimization
+        fake_mode = FakeTensorMode()
+        fake_mode.allow_non_fake_inputs = True
+        fake_inputs = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in sample_inputs]
 
-    # Create fake inputs for optimization
-    fake_mode = FakeTensorMode()
-    fake_mode.allow_non_fake_inputs = True
-    fake_inputs = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in sample_inputs]
+        with fake_mode:
+            logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
+            logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
 
-    with fake_mode:
-        logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
-        logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
+            pass_manager = PassManager(config)
+            xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
 
-        pass_manager = PassManager(config)
-        xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
-
-        logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
-        logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
+            logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
+            logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
 
     return xpu_optimized
 
@@ -59,24 +58,25 @@ class XpuGraph:
         cache: XpuGraphCache = None,
     ):
         config._reset_config_with_env()
-        self._config = config
         # Setup logging based on config
-        setup_logger(self._config.debug)
+        with setup_logger(debug=config.debug):
+            self._config = config
 
-        logger.info(f"{config}")
+            if self._config.target == Target.npu and self._config.vendor_compiler_config.get("compiler", None) == "ge":
+                self._config.enable_cache = False
+                logger.warning("Target NPU ge-compiler does not support cache.")
 
-        if self._config.target == Target.npu and self._config.vendor_compiler_config.get("compiler", None) == "ge":
-            self._config.enable_cache = False
-            logger.warning("Target NPU ge-compiler does not support cache.")
+            self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
 
-        self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
-        self._set_context()
-        # WARNING(liuyuan): _pass_manager MUST be initilized after _set_context because triton kernel depends on environment varaibels that fetched in _set_context.
-        self._pass_manager = PassManager(self._config)
-        # NOTE(liuyuan): The plugin patterns should be placed before those built-in.
-        self._pass_manager.get_pattern_manager().insert_patterns(
-            chain.from_iterable(__PLUGIN_PATTERN_GROUP__.get(self._config.target, {}).values())
-        )
+            logger.info(f"{self._config} {self._cache}")
+
+            self._set_context()
+            # WARNING(liuyuan): _pass_manager MUST be initilized after _set_context because triton kernel depends on environment varaibels that fetched in _set_context.
+            self._pass_manager = PassManager(self._config)
+            # NOTE(liuyuan): The plugin patterns should be placed before those built-in.
+            self._pass_manager.get_pattern_manager().insert_patterns(
+                chain.from_iterable(__PLUGIN_PATTERN_GROUP__.get(self._config.target, {}).values())
+            )
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, fake_inputs, stage: FxStage):
@@ -97,7 +97,7 @@ class XpuGraph:
 
                 # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
                 original_gm_graph = gm.graph
-                with local_logger("before"):
+                with setup_logger(name="before"):
                     logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
                     logger.info(f"xpu_graph passes start {stage}...")
 
@@ -105,7 +105,7 @@ class XpuGraph:
                 xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
                 nodes_statistics.insert_statistics("after xpu_graph", xpu_compiled)
 
-                with local_logger("after"):
+                with setup_logger(name="after"):
                     logger.info("xpu_graph passes complete")
                     logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                     logger.debug(
@@ -135,37 +135,39 @@ class XpuGraph:
             return xpu_compiled
 
         def _staged_compiler(stage: FxStage):
+            @setup_logger(name=stage.name)
             def wrapped(gm, sample_inputs):
-                with local_logger(stage.name):
-                    xpu_compiled = _compiler(gm, sample_inputs, stage)
+                xpu_compiled = _compiler(gm, sample_inputs, stage)
                 return xpu_compiled
 
             return wrapped
 
-        if self._config.is_training:
-            # Since: 1. dynamo has eliminated control-flow for input GraphModule
-            #    and 2. aot_autograd traces grad again
-            # It's okay use optimized infer-graph for training as well
-            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
-            logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.pregrad)
-            logger.info("decompose graph complete")
-            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+        with setup_logger(debug=self._config.debug):
+            if self._config.is_training:
+                # Since: 1. dynamo has eliminated control-flow for input GraphModule
+                #    and 2. aot_autograd traces grad again
+                # It's okay use optimized infer-graph for training as well
+                logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+                logger.info("decompose graph start...")
+                dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.pregrad)
+                logger.info("decompose graph complete")
+                logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
 
-            pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
+                pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
-            xpu_gm = aot_autograd(
-                fw_compiler=_staged_compiler(FxStage.forward),
-                bw_compiler=_staged_compiler(FxStage.backward),
-            )(pregrad_gm, fake_inputs)
-        else:
-            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
-            logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
-            logger.info("decompose graph complete")
-            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+                xpu_gm = aot_autograd(
+                    fw_compiler=_staged_compiler(FxStage.forward),
+                    bw_compiler=_staged_compiler(FxStage.backward),
+                )(pregrad_gm, fake_inputs)
 
-            xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
+            else:
+                logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+                logger.info("decompose graph start...")
+                dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
+                logger.info("decompose graph complete")
+                logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+
+                xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
         return xpu_gm
 

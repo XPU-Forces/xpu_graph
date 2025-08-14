@@ -6,7 +6,7 @@ from enum import Enum
 from functools import total_ordering
 from typing import Any, Dict, List, Optional
 
-from .utils import __XPU_GRAPH_ENVS__, logger
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
 
 class Target(Enum):

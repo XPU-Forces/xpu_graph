@@ -102,7 +102,8 @@ def assertTensorsEqual(
 
 
 class need_xpu_graph_logs:
-    def __init__(self):
+    def __init__(self, set_debug=True):
+        self.set_debug = set_debug
         xpugraph_logger = logging.getLogger("xpu_graph")
         self.original_propagate = xpugraph_logger.propagate
         self.original_level = xpugraph_logger.level
@@ -110,7 +111,8 @@ class need_xpu_graph_logs:
     def __enter__(self):
         xpugraph_logger = logging.getLogger("xpu_graph")
         xpugraph_logger.propagate = True
-        xpugraph_logger.setLevel(logging.DEBUG)
+        if self.set_debug:
+            xpugraph_logger.setLevel(logging.DEBUG)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         xpugraph_logger = logging.getLogger("xpu_graph")
