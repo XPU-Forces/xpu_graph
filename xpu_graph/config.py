@@ -59,7 +59,8 @@ class XpuGraphConfig:
     # mode must be one of {"cudagraphs", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"},
     # we add a "cudagraphs" option. At this mode, XpuGraph will only enable torch.compile in-tree backend "cudugraphs".
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
-    vendor_compiler_config: Optional[Dict[str, Any]] = None
+    # NOTE(liuyuan): `if {}`` is also equal to `if None`.
+    vendor_compiler_config: Dict[str, Any] = field(default_factory=dict)
 
     def _reset_config_with_env(self):
         import os
