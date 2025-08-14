@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from xpu_graph.test_utils import is_similar
+
 
 class SimpleModel(nn.Module):
     def __init__(self, input_dim):
@@ -81,3 +83,68 @@ class DropoutModel(nn.Module):
 
 
 all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, DropoutModel]
+
+
+def compare_inference(device, data_type, ModCls, backend, bsz=8, input_dim=16):
+    torch._dynamo.reset()
+    golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
+    compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
+    compiled.load_state_dict(golden.state_dict())
+    compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
+    golden_input = compiled_input.clone()
+    target = torch.randn((bsz, 1), device=device, dtype=data_type)
+
+    loss_fn = nn.MSELoss()
+
+    with torch.inference_mode():
+        rng_state = torch.random.get_rng_state()
+        loss_golden = loss_fn(golden(golden_input), target)
+
+        torch.random.set_rng_state(rng_state)
+        loss_compiled = loss_fn(compiled(compiled_input), target)
+
+    assert is_similar(compiled_input, golden_input)
+    assert is_similar(loss_golden, loss_compiled)
+
+
+def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input_dim=16):
+    torch._dynamo.reset()
+    golden = ModCls(input_dim).to(device=device, dtype=data_type).train()
+    compiled = ModCls(input_dim).to(device=device, dtype=data_type).train()
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
+    compiled.load_state_dict(golden.state_dict())
+    compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
+    golden_input = compiled_input.clone()
+    target = torch.randn((bsz, 1), device=device, dtype=data_type)
+    optimizer_golden = torch.optim.AdamW(golden.parameters())
+    optimizer_compiled = torch.optim.AdamW(compiled.parameters())
+    optimizer_compiled.load_state_dict(optimizer_golden.state_dict())
+    print(optimizer_golden.state_dict(), optimizer_compiled.state_dict())
+
+    loss_fn = nn.MSELoss()
+
+    for i in range(nsteps):
+        if device == "cpu":
+            rng_state = torch.random.get_rng_state()
+            optimizer_golden.zero_grad()
+            loss_golden = loss_fn(golden(golden_input), target)
+            loss_golden.backward()
+            optimizer_golden.step()
+            torch.random.set_rng_state(rng_state)
+        else:
+            with torch.random.fork_rng(device_type=device):
+                optimizer_golden.zero_grad()
+                loss_golden = loss_fn(golden(golden_input), target)
+                loss_golden.backward()
+                optimizer_golden.step()
+
+        optimizer_compiled.zero_grad()
+        loss_compiled = loss_fn(compiled(compiled_input), target)
+        loss_compiled.backward()
+        optimizer_compiled.step()
+
+        print(f"Step: {i} golden: {loss_golden}, compiled: {loss_compiled}")
+
+        assert is_similar(compiled_input, golden_input)
+        assert is_similar(loss_golden, loss_compiled)
