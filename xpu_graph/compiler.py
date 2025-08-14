@@ -148,7 +148,7 @@ class XpuGraph:
             # It's okay use optimized infer-graph for training as well
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.pregrad)
+            dispatched_gm, fake_inputs, fw_metadata = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.pregrad)
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
 
@@ -162,7 +162,7 @@ class XpuGraph:
         else:
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
+            dispatched_gm, fake_inputs, fw_metadata = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
 
@@ -175,6 +175,7 @@ class XpuGraph:
             xpu_gm = intercept(
                 xpu_gm,
                 golden_fn=dynamo_gm,
+                fw_metadata=fw_metadata,
                 is_training=self._config.is_training,
                 mark=os.environ.get("RANK", "0"),
                 config_str=self._config.enable_interceptor,

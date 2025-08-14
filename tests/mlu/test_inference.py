@@ -111,7 +111,10 @@ class FaultyPattern(Pattern):
 class TestInferenceXFail:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
+            is_training=False,
+            opt_level=OptLevel.level2,
+            freeze=False,
+            enable_interceptor="rtol=1e-6,atol=1e-5,use_golden=1",
         )
         self.faulty_pattern = FaultyPattern()
         self.infer_backend.get_pattern_manager().register_pattern(self.faulty_pattern)
@@ -122,8 +125,7 @@ class TestInferenceXFail:
     )
     def test_xfail_patterns(self, caplog, ReproCls):
         with need_xpu_graph_logs():
-            with pytest.raises(AssertionError):
-                compare_inference(ReproCls, self.infer_backend)
+            compare_inference(ReproCls, self.infer_backend)
         assert "The inference pass diverges" in caplog.text
 
 
