@@ -31,6 +31,7 @@ class PluginPattern(Pattern):
         filter_list: List[Callable[["InternalMatch", fx.GraphModule, fx.GraphModule], bool]] = (lambda: True,),
         is_training=False,
         name=None,
+        ignore_literal=False,
     ):
         super().__init__()
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
@@ -41,6 +42,7 @@ class PluginPattern(Pattern):
         self._filter_list = list(filter_list) if filter_list is not None else []
         self._refine_graph_for_literal(example_inputs)
         self.name = name
+        self.ignore_literal = ignore_literal
 
         logger.debug(
             "Pattern %s-%s : %s\n with Replacement %s",
@@ -78,8 +80,7 @@ class PluginPattern(Pattern):
             literal_mapping = functools.partial(mapping, candidates=candidates)
             for node in graph.nodes:
                 node.args = pytree.tree_map(literal_mapping, node.args)
-                for k, v in node.kwargs.items():
-                    node.kwargs[k] = literal_mapping(v)
+                node.kwargs = pytree.tree_map(literal_mapping, node.kwargs)
             graph.lint()
             gm.recompile()
 
@@ -89,7 +90,7 @@ class PluginPattern(Pattern):
 
     def process(self, gm: fx.GraphModule):
         matched = subgraph_rewriter.replace_pattern_with_filters(
-            gm, self._eager_pattern, self._replacement, self._filter_list, ignore_literals=True
+            gm, self._eager_pattern, self._replacement, self._filter_list, ignore_literals=self.ignore_literal
         )
         return len(matched) > 0
 
@@ -114,6 +115,7 @@ def register_plugin_pattern(
     extra_checks=None,
     is_training=False,
     postfix=None,
+    ignore_literal=False,
 ):
     func_name = f"{eager_func.__module__}-{eager_func.__name__}"
     sign = inspect.signature(eager_func)
@@ -152,6 +154,7 @@ def register_plugin_pattern(
             extra_checks,
             is_training,
             "-".join((func_name, postfix)) if postfix else func_name,
+            ignore_literal=ignore_literal,
         )
     )
 
@@ -167,6 +170,7 @@ def register_this_as_plugin_pattern(
     is_training=False,
     argument_elimination=None,
     postfix=None,
+    ignore_literal=False,
 ):
     def new_func_maker(func):
         __META_FUNC_STR__ = "def new_func{sign}: new_args, new_kwargs = {args_generator}{sign};return {original_func}(*new_args, **new_kwargs)"
@@ -202,6 +206,7 @@ def register_this_as_plugin_pattern(
                 extra_checks,
                 is_training,
                 postfix,
+                ignore_literal,
             )
         else:
             register_plugin_pattern(
@@ -212,6 +217,7 @@ def register_this_as_plugin_pattern(
                 extra_checks,
                 is_training,
                 postfix,
+                ignore_literal,
             )
         # NOTE(liuyuan): No need to wrap the function to be decorated because we are not going to change the invoking to it.
         return func
