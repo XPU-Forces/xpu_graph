@@ -67,6 +67,8 @@ jobs:
         pip install dist/*.whl --force-reinstall --no-deps
     - name: Running npu tests
       shell: bash
+      env:
+        COV_OMIT: "xpu_graph/backends/mlu.py,xpu_graph/passes/patterns/targets/mlu/*"
       run: |
         echo "Running npu tests..."
         python3 -m pytest --cov=xpu_graph --ignore=tests/common/test_inference.py tests/common tests/npu
