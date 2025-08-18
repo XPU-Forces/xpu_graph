@@ -39,7 +39,6 @@ class XpuGraphConfig:
     opt_level: OptLevel = field(default_factory=lambda: OptLevel.level1)
     dump_graph: bool = False
     enable_cache: bool = True
-    use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = (
         # Only take effects when "is_training" is False.
         # Freezing parameter will change model's parameter from inputs into attributes.
