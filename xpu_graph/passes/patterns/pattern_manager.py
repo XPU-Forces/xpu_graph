@@ -37,12 +37,6 @@ class PatternManager(Optimizer):
         for group, patterns in get_structure_patterns(config).items():
             self._patterns[group] += patterns
 
-        if config.use_xpu_ops:
-            from .xpu_ops import get_all_patterns as get_xpu_ops_patterns
-
-            for group, patterns in get_xpu_ops_patterns(config).items():
-                self._patterns[group] += patterns
-
         from .targets import get_all_patterns as get_target_patterns
 
         for group, patterns in get_target_patterns(config).items():
