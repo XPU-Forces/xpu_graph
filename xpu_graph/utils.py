@@ -77,7 +77,7 @@ class setup_logger(ContextDecorator):
         else:
             self.logger = logger._logger
         # outer settings has higher priority
-        self.level = logging.DEBUG if debug or name in _debug_entries else logger.level
+        self.level = logging.DEBUG if debug or self.logger.name in _debug_entries else logger.level
 
     def __enter__(self):
         self.orig_logger = logger._logger
