@@ -4,13 +4,42 @@ import logging
 import os
 import sys
 import time
+from contextlib import ContextDecorator
 
 import torch
 
 
+class __XPU_GRAPH_ENVS__:
+    aot_config_is_export = "XPUGRAPH_DEPRECATED_AOT_CONFIG_IS_EXPORT"
+    cache_dir = "XPUGRAPH_CACHE_DIR"
+    dump_dir = "XPUGRAPH_DUMP_DIR"
+    debug = "XPUGRAPH_DEBUG"
+    opt_level = "XPUGRAPH_OPT_LEVEL"
+    vendor_compiler_mode = "VENDOR_COMPILER_MODE"
+    logs = "XPUGRAPH_LOGS"
+
+
+def get_bool_env_var(name, default_value: bool):
+    val = os.environ.get(name, default_value)
+    if isinstance(val, str):
+        val = val.lower()
+        if val in ["true", "1", "on"]:
+            return True
+        elif val in ["false", "0", "off"]:
+            return False
+        else:
+            raise ValueError(f"Invalid value for {name}: {val}")
+    else:
+        return val
+
+
 class _LoggerWrapper:
-    def __init__(self, root_name):
+    def __init__(self, root_name, level=None):
         logger = logging.getLogger(root_name)
+        if level is None:
+            level = logging.DEBUG if get_bool_env_var(__XPU_GRAPH_ENVS__.debug, False) else logging.INFO
+
+        logger.setLevel(level)
 
         if len(logger.handlers) == 0:
             # Skip if handlers already exist
@@ -38,31 +67,28 @@ class _LoggerWrapper:
 logger = _LoggerWrapper("xpu_graph")
 
 
-def setup_logger(is_debug):
-    logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
+_debug_entries = ["xpu_graph." + name for name in os.getenv(__XPU_GRAPH_ENVS__.logs, "").split(",")]
 
 
-_debug_entries = ["xpu_graph." + name for name in os.getenv("XPUGRAPH_LOGS", "").split(",")]
-
-
-class local_logger:
-    def __init__(self, name, level=None):
-        self.name = name
-        self.logger = logger.getChild(self.name)
-
-        if self.logger.name in _debug_entries:
-            level = logging.DEBUG
-        self.level = level or logger.level
+class setup_logger(ContextDecorator):
+    def __init__(self, *, debug: bool = False, name=None):
+        if name is not None:
+            self.logger = logger.getChild(name)
+        else:
+            self.logger = logger._logger
+        # outer settings has higher priority
+        self.level = logging.DEBUG if debug or self.logger.name in _debug_entries else logger.level
 
     def __enter__(self):
         self.orig_logger = logger._logger
-        self.logger.setLevel(self.level)
         logger._logger = self.logger
 
+        self.orig_level = logger.level
+        logger.setLevel(self.level)
+
     def __exit__(self, exc_type, exc_value, traceback):
+        logger.setLevel(self.orig_level)
         logger._logger = self.orig_logger
-        self.logger = None
-        self.orig_logger = None
 
 
 def xpu_timer(func):
@@ -178,27 +204,3 @@ class GitLikeDiffer:
 
     def __str__(self):
         return self.diff()
-
-
-class __XPU_GRAPH_ENVS__:
-    aot_config_is_export = "XPUGRAPH_DEPRECATED_AOT_CONFIG_IS_EXPORT"
-    cache_dir = "XPUGRAPH_CACHE_DIR"
-    dump_dir = "XPUGRAPH_DUMP_DIR"
-    debug = "XPUGRAPH_DEBUG"
-    opt_level = "XPUGRAPH_OPT_LEVEL"
-    vendor_compiler_mode = "VENDOR_COMPILER_MODE"
-    logs = "XPUGRAPH_LOGS"
-
-
-def get_bool_env_var(name, default_value: bool):
-    val = os.environ.get(name, default_value)
-    if isinstance(val, str):
-        val = val.lower()
-        if val in ["true", "1", "on"]:
-            return True
-        elif val in ["false", "0", "off"]:
-            return False
-        else:
-            raise ValueError(f"Invalid value for {name}: {val}")
-    else:
-        return val
