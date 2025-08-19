@@ -14,7 +14,8 @@ def get_all_patterns(config: XpuGraphConfig):
     }
 
     using_ge_backend_with_super_kernel = (
-        config.vendor_compiler_config.get("compiler", None) == "ge"
+        config.vendor_compiler_config is not None
+        and config.vendor_compiler_config.get("compiler", None) == "ge"
         and config.vendor_compiler_config.get("enable_super_kernel", False)
         and config.vendor_compiler_config.get("mode", None) == None
     )
