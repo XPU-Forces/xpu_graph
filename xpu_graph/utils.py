@@ -34,10 +34,12 @@ def get_bool_env_var(name, default_value: bool):
 
 
 class _LoggerWrapper:
-    def __init__(self, root_name, default_level=logging.INFO):
+    def __init__(self, root_name, level=None):
         logger = logging.getLogger(root_name)
+        if level is None:
+            level = logging.DEBUG if get_bool_env_var(__XPU_GRAPH_ENVS__.debug, False) else logging.INFO
 
-        logger.setLevel(default_level)
+        logger.setLevel(level)
 
         if len(logger.handlers) == 0:
             # Skip if handlers already exist
