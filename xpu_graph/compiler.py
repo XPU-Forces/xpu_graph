@@ -115,20 +115,16 @@ class XpuGraph:
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
 
-                if stage != FxStage.pregrad and self._config.vendor_compiler_config:
-                    extra_kwargs = {}
-                    if stage == FxStage.inference:
-                        extra_kwargs["is_inference"] = True
-                    elif stage == FxStage.backward:
-                        extra_kwargs["is_backward"] = True
+                if stage != FxStage.pregrad and self._config.vendor_compiler_config is not None:
                     from .backends import vendor_compiler
 
                     xpu_compiled = vendor_compiler(
                         xpu_compiled,
                         fake_inputs,
-                        self._config.target,
-                        self._config.vendor_compiler_config,
-                        **extra_kwargs,
+                        target=self._config.target,
+                        is_inference=stage == FxStage.inference,
+                        is_backward=stage == FxStage.backward,
+                        **self._config.vendor_compiler_config,
                     )
 
                 xpu_compiled = SerializeWrapper(xpu_compiled)

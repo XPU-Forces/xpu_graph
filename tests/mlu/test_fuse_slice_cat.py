@@ -339,7 +339,7 @@ class TestCatSlice:
             is_training=False,
             freeze=True,
             opt_level=OptLevel.level1,
-            vendor_compiler_config=False,
+            vendor_compiler_config=None,
         )
 
     @pytest.mark.parametrize(

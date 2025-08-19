@@ -1,8 +1,12 @@
+import os
+import tempfile
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional
+
+from .utils import __XPU_GRAPH_ENVS__, logger
 
 
 class Target(Enum):
@@ -58,16 +62,15 @@ class XpuGraphConfig:
     # mode must be one of {"cudagraphs", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"},
     # we add a "cudagraphs" option. At this mode, XpuGraph will only enable torch.compile in-tree backend "cudugraphs".
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
-    # NOTE(liuyuan): `if {}`` is also equal to `if None`.
-    vendor_compiler_config: Dict[str, Any] = field(default_factory=dict)
+    vendor_compiler_config: Optional[Dict[str, Any]] = None
 
     def _reset_config_with_env(self):
         import os
 
-        if os.getenv("XPUGRAPH_DEBUG") is not None:
-            self.debug = os.getenv("XPUGRAPH_DEBUG", "0") == "1"  # 1: enable 0: disable
+        if os.getenv(__XPU_GRAPH_ENVS__.debug) is not None:
+            self.debug = get_bool_env_var(__XPU_GRAPH_ENVS__.debug, False)
 
-        opt_level_env = os.getenv("XPUGRAPH_OPT_LEVEL", str(self.opt_level.value))
+        opt_level_env = os.getenv(__XPU_GRAPH_ENVS__.opt_level, str(self.opt_level.value))
         if opt_level_env == "0":
             self.opt_level = OptLevel.level0
         elif opt_level_env == "1":
@@ -79,7 +82,7 @@ class XpuGraphConfig:
         else:
             warnings.warn("Illegal XPUGRAPH_OPT_LEVEL value, XPUGRAPH_OPT_LEVEL will not take effect.")
 
-        vendor_compiler_mode = os.getenv("VENDOR_COMPILER_MODE", "Null")
+        vendor_compiler_mode = os.getenv(__XPU_GRAPH_ENVS__.vendor_compiler_mode, "Null")
         if vendor_compiler_mode != "Null":
             if vendor_compiler_mode == "none":
                 self.vendor_compiler_config = None
@@ -94,3 +97,25 @@ class XpuGraphConfig:
                     warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
                 else:
                     self.vendor_compiler_config = {"mode": vendor_compiler_mode}
+
+
+def get_cache_dir():
+    cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)
+    if cache_path is None:
+        import tempfile
+
+        cache_path = tempfile.mkdtemp(prefix="xpugraph_")
+        os.environ[__XPU_GRAPH_ENVS__.cache_dir] = cache_path
+        logger.debug(f"Use {cache_path} as default local cache")
+    return cache_path
+
+
+def get_dump_dir():
+    dump_path = os.getenv(__XPU_GRAPH_ENVS__.dump_dir)
+    if dump_path is None:
+        import tempfile
+
+        dump_path = tempfile.mkdtemp(prefix="xpugraph_")
+        os.environ[__XPU_GRAPH_ENVS__.dump_dir] = dump_path
+        logger.debug(f"Use {dump_path} as default dump path")
+    return dump_path

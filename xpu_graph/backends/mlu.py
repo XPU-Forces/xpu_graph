@@ -7,9 +7,15 @@ from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger
 
 
-def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kwargs) -> torch.nn.Module:
+def mlu_compile(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
+    logger.info("Decompose gm for mlu_inductor")
+    module = decompose_for_inductor(module, example_inputs)
+    logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
+
     mode = config_dict.get("mode", "reduce-overhead")
     cpp_wrapper = config_dict.get("cpp_wrapper", False)
+    is_inference = config_dict.get("is_inference", False)
+    is_backward = config_dict.get("is_backward", False)
 
     if mode == "cudagraphs":
         from torch._dynamo.backends.cudagraphs import cudagraphs
@@ -23,9 +29,6 @@ def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kw
     dynamic = config_dict.get("dynamic", True)
     inductor_backend = _TorchCompileInductorWrapper(mode, options, dynamic)
 
-    module = decompose_for_inductor(module, example_inputs)
-    logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
-
     with torch._inductor.config.patch(inductor_backend.config):
         from packaging import version
 
@@ -37,5 +40,7 @@ def mlu_compile(module: torch.nn.Module, example_inputs, config_dict: Dict, **kw
         else:
             config = {}
         with torch._inductor.config.patch(**config):
-            compiled_func = compile_fx_inner(module, example_inputs, cpp_wrapper=cpp_wrapper, **kwargs)
+            compiled_func = compile_fx_inner(
+                module, example_inputs, cpp_wrapper=cpp_wrapper, is_inference=is_inference, is_backward=is_backward
+            )
     return compiled_func

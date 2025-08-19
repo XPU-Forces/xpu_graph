@@ -1,10 +1,11 @@
 import copy
 import hashlib
+import importlib
 import os
 import pickle
 import sys
 from os import PathLike
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import torch
 from torch._dynamo.convert_frame import compile_lock
@@ -30,9 +31,9 @@ from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
 from torch.utils._python_dispatch import _disable_current_modes
 
-from .config import XpuGraphConfig
+from .config import XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
-from .utils import __XPU_GRAPH_ENVS__, logger
+from .utils import logger
 
 
 class _ArgWrapper:
@@ -45,7 +46,7 @@ class _ArgWrapper:
 def _get_target_function(fn_name: str):
     fqn_list = fn_name.split(".")
     try:
-        target = sys.modules[fqn_list[0]]
+        target = importlib.import_module(fqn_list[0])
         for attr in fqn_list[1:]:
             target = getattr(target, attr)
         assert callable(target)
@@ -274,11 +275,5 @@ def no_cache():
 
 
 def default_cache():
-    cache_path = os.getenv(__XPU_GRAPH_ENVS__["cache_dir"])
-    if cache_path is None:
-        import tempfile
-
-        cache_path = tempfile.mkdtemp(prefix="xpugraph_")
-        os.environ[__XPU_GRAPH_ENVS__["cache_dir"]] = cache_path
-        logger.debug(f"Use {cache_path} as default local cache")
+    cache_path = get_cache_dir()
     return XpuGraphLocalCache(cache_path)
