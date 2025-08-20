@@ -7,6 +7,7 @@ from unittest.mock import patch
 import torch
 import torch.fx as fx
 import torch.utils._pytree as pytree
+from packaging import version
 from torch._decomp.decompositions_for_rng import PhiloxStateTracker
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.utils import preserve_rng_state
@@ -351,3 +352,16 @@ def has_storage(node: fx.Node) -> bool:
         return False
 
     return True
+
+
+def get_disable_fake_mode():
+    torch_version = version.parse(torch.__version__[:5])
+    if torch_version < version.parse("2.5"):
+        from torch.fx.experimental.proxy_tensor import (
+            maybe_disable_fake_tensor_mode as disable_fake_mode,
+        )
+    else:
+        from torch._subclasses.fake_tensor import (
+            unset_fake_temporarily as disable_fake_mode,
+        )
+    return disable_fake_mode

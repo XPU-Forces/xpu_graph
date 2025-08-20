@@ -3,3 +3,5 @@ __pycache__
 build
 dist
 fusion_result.json
+*debug*
+kernel_meta/
