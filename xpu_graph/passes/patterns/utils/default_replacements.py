@@ -70,6 +70,8 @@ class DenseParams:
         self.input = node.args[0]
         self.weight = node.args[1]
         self.weight_trans = node.args[2]
+        if not self.check_shape():
+            return False
 
         if node.args[3] is not None:
             if not self.set_bias(node.args[3]):
@@ -148,15 +150,12 @@ class DenseParams:
         k2, n2 = self.weight_shape()
 
         bias_shape = bias.meta["val"].shape
-        if len(bias_shape) == 1:
-            if (bias_shape != torch.Size([n2])) and (bias_shape != torch.Size([1])):
-                return False
-        elif len(bias_shape) == 2:
-            m3, n3 = bias_shape
-            if n2 != n3:
-                return False
-            if (m1 != m3) and (m3 != 1):
-                return False
+        try:
+            shape_compat = torch.broadcast_shapes(torch.Size([m1, n2]), bias_shape) == torch.Size([m1, n2])
+        except:
+            shape_compat = False
+        if not shape_compat:
+            return False
         self.bias = bias
         return True
 
@@ -167,7 +166,7 @@ class DenseParams:
         return False
 
 
-class DenseLayer(nn.Module):
+class DefaultDenseLayer(nn.Module):
     def forward(self, input, weight, weight_trans, bias, act):
         if weight_trans:
             weight = weight.transpose(0, 1)
@@ -193,7 +192,6 @@ class BatchDenseParams:
         self.input: Optional[fx.Node] = None
         self.weight: Optional[fx.Node] = None
         self.weight_trans: bool = False
-        self.residual: Optional[fx.Node] = None
         self.bias: Optional[fx.Node] = None
         self.act: str = "none"
 
@@ -202,27 +200,29 @@ class BatchDenseParams:
             self.input,
             self.weight,
             self.weight_trans,
-            self.residual,
             self.bias,
             self.act,
         )
 
     def set_node(self, node):
-        if len(node.args) != 6:
+        if len(node.args) != 5:
             return False
         self.input = node.args[0]
         self.weight = node.args[1]
         self.weight_trans = node.args[2]
-        self.residual = node.args[3]
-        self.bias = node.args[4]
-        self.act = node.args[5]
+        if not self.check_shape():
+            return False
+        if node.args[3] is not None:
+            if not self.set_bias(node.args[3]):
+                return False
+        if not self.set_act(node.args[4]):
+            return False
         return True
 
-    def set_params(self, input, weight, weight_trans, residual, bias, act):
+    def set_params(self, input, weight, weight_trans, bias, act):
         self.input = input
         self.weight = weight
         self.weight_trans = weight_trans
-        self.residual = residual
         self.bias = bias
         self.act = act
         assert self.check_shape()
@@ -272,18 +272,13 @@ class BatchDenseParams:
         b2, k2, n2 = self.weight_shape()
 
         bias_shape = bias.meta["val"].shape
-        if len(bias_shape) < 3:
+        try:
+            shape_compat = torch.broadcast_shapes(torch.Size([b1, m1, n2]), bias_shape) == torch.Size([b1, m1, n2])
+        except:
+            shape_compat = False
+        if not shape_compat:
             return False
-        else:
-            b3, m3, n3 = bias_shape
-            if b3 != b1 or n3 != n2:
-                return False
-            elif m3 == 1:
-                self.bias = bias
-            elif m3 == m1:
-                self.residual = bias
-        if self.input and self.weight:
-            return self.check_shape()
+        self.bias = bias
         return True
 
     def set_act(self, act_str):
@@ -299,39 +294,23 @@ class BatchDenseParams:
             return False
         b1, m1, k1 = self.input_shape()
         b2, k2, n2 = self.weight_shape()
-        if (b1 != 1 and b2 != 1 and b1 != b2) or (k1 != k2):
+        if (b1 != b2) or (k1 != k2):
             logger.warning(
                 f"BatchMatmul pass: Unsupported dim input_shape: {self.input_shape()}, weight_shape: {self.weight_shape()}"
             )
             return False
-        if self.bias:
-            b3, m3, n3 = self.bias.meta["val"].shape
-            if b3 != b1 or m3 != 1 or n3 != n2:
-                logger.warning(
-                    f"BatchMatmul pass: Unsupported dim input_shape: {self.input_shape()}, weight_shape: {self.weight_shape()}, bias_shape: {self.bias.meta['val'].shape}"
-                )
-                return False
-        if self.residual:
-            b4, m4, n4 = self.residual.meta["val"].shape
-            if b4 != b1 or m4 != m1 or n4 != n2:
-                logger.warning(
-                    f"BatchMatmul pass: Unsupported dim input_shape: {self.input_shape()}, weight_shape: {self.weight_shape()}, residual_shape: {self.residual.meta['val'].shape}"
-                )
-                return False
         return True
 
 
-class BatchDenseLayer(nn.Module):
-    def forward(self, input, weight, weight_trans, residual, bias, act_str):
+class DefaultBatchDenseLayer(nn.Module):
+    def forward(self, input, weight, weight_trans, bias, act_str):
         if weight_trans:
             weight = weight.transpose(-2, -1)
 
-        y = torch.matmul(input, weight)
-
         if bias is not None:
-            y = y + bias
-        elif residual is not None:
-            y = y + residual
+            y = torch.baddbmm(bias, input, weight)
+        else:
+            y = torch.bmm(input, weight)
 
         if act_str == "gelu":
             y = F.gelu(y)
@@ -340,6 +319,6 @@ class BatchDenseLayer(nn.Module):
         return y
 
 
-class ScaledDotProductAttention(nn.Module):
+class DefaultSDPA(nn.Module):
     def forward(self, q, k, v, attn_mask, scale):
         return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)

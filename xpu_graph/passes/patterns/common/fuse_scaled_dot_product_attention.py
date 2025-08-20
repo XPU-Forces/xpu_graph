@@ -1,7 +1,5 @@
 import torch
 import torch.fx as fx
-import torch.nn as nn
-import torch.nn.functional as F
 
 from xpu_graph.config import OptLevel
 from xpu_graph.constant_manager import is_constant
@@ -13,7 +11,7 @@ from xpu_graph.passes.patterns.utils.check_ops import (
     get_actual_node,
 )
 from xpu_graph.passes.patterns.utils.default_replacements import (
-    ScaledDotProductAttention,
+    DefaultSDPA,
 )
 from xpu_graph.utils import logger
 
@@ -79,17 +77,20 @@ def _get_wrapped_constant(node: fx.Node):
 
 
 def _is_bmm(node: fx.Node):
-    return (
+    if not (
         isinstance(node, fx.Node)
         and node.op == "call_module"
         and (
             node.target == "fused_batch_dense_layer_replacement"
             or node.target == "custom_batch_dense_layer_replacement"
         )
-        and node.args[3] == None
-        and node.args[4] == None
-        and node.args[5] == "none"
-    )
+    ):
+        return False
+    from ..utils.default_replacements import BatchDenseParams
+
+    bmm_params = BatchDenseParams()
+    bmm_params.set_node(node)
+    return bmm_params.bias is None and bmm_params.act == "none"
 
 
 def _is_bmm_add(node: fx.Node):
@@ -173,7 +174,7 @@ class FusedSDPA(Pattern):
 
     def process(self, graph_module: fx.GraphModule):
         if not hasattr(graph_module, "fused_sdpa"):
-            graph_module.add_submodule("fused_sdpa", ScaledDotProductAttention())
+            graph_module.add_submodule("fused_sdpa", DefaultSDPA())
         modified = False
         for node in reversed(graph_module.graph.nodes):
             matched, fa_param = _is_fa(node)

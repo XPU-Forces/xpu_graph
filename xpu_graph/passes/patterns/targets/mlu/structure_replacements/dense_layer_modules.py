@@ -62,33 +62,46 @@ class DenseLayerModule(torch.nn.Module):
 
 
 class BatchDenseLayerModule(torch.nn.Module):
-    def forward(self, inputs, weight, weight_trans, residual, bias, act):
+    def forward(self, inputs, weight, weight_trans, bias, act):
         import torch_mlu_ops
 
         if not inputs.is_contiguous():
             inputs = inputs.contiguous()
         if not weight.is_contiguous():
             weight = weight.contiguous()
-        if residual is not None:
+        b, m, _ = inputs.shape
+        _, _, n = weight.shape
+        if bias is not None and bias.shape == torch.Size([b, m, n]):
+            residual = bias
+            bias = None
             beta = 1.0
         else:
+            residual = None
             beta = 0.0
 
         dtype = inputs.dtype
 
-        output = torch_mlu_ops.batch_matmul(
-            inputs,
-            weight,
-            residual,
-            1.0,
-            beta,
-            1.0,
-            1.0,
-            False,
-            weight_trans,
-            None,
-            bias,
-            act,
-            dtype,
-        )
+        if bias is None or bias.shape == torch.Size([b, 1, n]):
+            output = torch_mlu_ops.batch_matmul(
+                inputs,
+                weight,
+                residual,
+                1.0,
+                beta,
+                1.0,
+                1.0,
+                False,
+                weight_trans,
+                None,
+                bias,
+                act,
+                dtype,
+            )
+        else:
+            output = torch.baddbmm(bias, inputs, weight.T if weight_trans else weight)
+            if act == "gelu":
+                output = torch.nn.functional.gelu(output)
+            elif act == "silu":
+                output = torch.nn.functional.silu(output)
+
         return output

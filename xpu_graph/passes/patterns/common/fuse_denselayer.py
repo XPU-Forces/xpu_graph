@@ -9,9 +9,9 @@ from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.default_replacements import (
-    BatchDenseLayer,
     BatchDenseParams,
-    DenseLayer,
+    DefaultBatchDenseLayer,
+    DefaultDenseLayer,
     DenseParams,
     replace_with_module,
 )
@@ -90,7 +90,7 @@ def match_mm_add1(graph_module):
         mm_node = node.args[0]
         if not isinstance(mm_node, fx.Node):
             continue
-        if mm_node.target != "fused_dense_layer_replacement" or mm_node.args[3] != None or mm_node.args[4] != "none":
+        if mm_node.target != "fused_dense_layer_replacement":
             continue
         if len(mm_node.users) != 1:
             continue
@@ -98,6 +98,8 @@ def match_mm_add1(graph_module):
         mm_param = DenseParams()
         if not mm_param.set_node(mm_node):
             logger.debug(f"MatMulAdd Pass: invalid pattern in match_mm_add: {mm_node.name}")
+            continue
+        if mm_param.bias != None or mm_param.act != "none":
             continue
 
         bias = node.args[1]
@@ -128,7 +130,7 @@ def match_mm_act(graph_module):
         if not is_cat:
             continue
         mm_node = node.args[0]
-        if mm_node.target != "fused_dense_layer_replacement" or mm_node.args[4] != "none":
+        if mm_node.target != "fused_dense_layer_replacement":
             continue
         if len(mm_node.users) != 1:
             continue
@@ -136,7 +138,7 @@ def match_mm_act(graph_module):
         if not mm_param.set_node(mm_node):
             logger.info(f"MatMul Pass: invalid pattern in match_mm_add: {mm_node.name}")
             continue
-        if not mm_param.set_act(act_str):
+        if mm_param.act != "none" or not mm_param.set_act(act_str):
             continue
         new_node = replace_with_module(graph_module, node, "fused_dense_layer_replacement", mm_param.as_tuple())
         assert new_node.args[0] == mm_param.input
@@ -153,7 +155,7 @@ class FusedMatMul(Pattern):
         is_modified = False
         # mm
         if not hasattr(graph_module, "fused_dense_layer_replacement"):
-            graph_module.add_submodule("fused_dense_layer_replacement", DenseLayer())
+            graph_module.add_submodule("fused_dense_layer_replacement", DefaultDenseLayer())
         is_modified |= match_mm(graph_module)
 
         return is_modified
@@ -167,7 +169,7 @@ class FusedMatMulAdd(Pattern):
         is_modified = False
         # mm+bias
         if not hasattr(graph_module, "fused_dense_layer_replacement"):
-            graph_module.add_submodule("fused_dense_layer_replacement", DenseLayer())
+            graph_module.add_submodule("fused_dense_layer_replacement", DefaultDenseLayer())
         is_modified |= match_mm_add1(graph_module)
         is_modified |= match_mm_add2(graph_module)
 
@@ -181,7 +183,7 @@ class FusedMatMulAct(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         if not hasattr(graph_module, "fused_dense_layer_replacement"):
-            graph_module.add_submodule("fused_dense_layer_replacement", DenseLayer())
+            graph_module.add_submodule("fused_dense_layer_replacement", DefaultDenseLayer())
         # find all mm + act or mm_add + act patterns
         is_modified |= match_mm_act(graph_module)
 
@@ -208,12 +210,7 @@ def match_bmm_add(graph_module):
         bmm_node = node.args[0]
         if not isinstance(bmm_node, fx.Node):
             continue
-        if (
-            bmm_node.target != "fused_batch_dense_layer_replacement"
-            or bmm_node.args[3] != None
-            or bmm_node.args[4] != None
-            or bmm_node.args[5] != "none"
-        ):
+        if bmm_node.target != "fused_batch_dense_layer_replacement":
             continue
         if len(bmm_node.users) != 1:
             continue
@@ -221,6 +218,8 @@ def match_bmm_add(graph_module):
         bmm_param = BatchDenseParams()
         if not bmm_param.set_node(bmm_node):
             logger.debug(f"BatchDenseLayer Pass: invalid pattern in match_bmm_add: {bmm_node.name}")
+            continue
+        if bmm_param.bias != None or bmm_param.act != "none":
             continue
         bias = node.args[1]
         if not bmm_param.set_bias(bias):
@@ -239,7 +238,7 @@ def match_bmm_act(graph_module):
         if not is_act:
             continue
         bmm_node = node.args[0]
-        if bmm_node.target != "fused_batch_dense_layer_replacement" or bmm_node.args[5] != "none":
+        if bmm_node.target != "fused_batch_dense_layer_replacement":
             continue
         if len(bmm_node.users) != 1:
             continue
@@ -247,7 +246,7 @@ def match_bmm_act(graph_module):
         if not bmm_param.set_node(bmm_node):
             logger.info(f"BatchDenseLayer Pass: invalid pattern in match_bmm_act: {bmm_node.name}")
             continue
-        if not bmm_param.set_act(act_str):
+        if bmm_param.act != "none" or not bmm_param.set_act(act_str):
             continue
         new_node = replace_with_module(graph_module, node, "fused_batch_dense_layer_replacement", bmm_param.as_tuple())
         assert new_node.args[0] == bmm_param.input
@@ -258,11 +257,12 @@ def match_bmm_act(graph_module):
 
 class FusedBMM(Pattern):
     _opt_level = OptLevel.level2
+    _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         if not hasattr(graph_module, "fused_batch_dense_layer_replacement"):
-            graph_module.add_submodule("fused_batch_dense_layer_replacement", BatchDenseLayer())
+            graph_module.add_submodule("fused_batch_dense_layer_replacement", DefaultBatchDenseLayer())
         # find all bmm patterns
         is_modified |= match_bmm(graph_module)
         return is_modified
@@ -270,11 +270,12 @@ class FusedBMM(Pattern):
 
 class FusedBMMAdd(Pattern):
     _opt_level = OptLevel.level2
+    _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         if not hasattr(graph_module, "fused_batch_dense_layer_replacement"):
-            graph_module.add_submodule("fused_batch_dense_layer_replacement", BatchDenseLayer())
+            graph_module.add_submodule("fused_batch_dense_layer_replacement", DefaultBatchDenseLayer())
         # find all bmm + add patterns
         is_modified |= match_bmm_add(graph_module)
         return is_modified
@@ -282,11 +283,12 @@ class FusedBMMAdd(Pattern):
 
 class FusedBMMAct(Pattern):
     _opt_level = OptLevel.level2
+    _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         if not hasattr(graph_module, "fused_batch_dense_layer_replacement"):
-            graph_module.add_submodule("fused_batch_dense_layer_replacement", BatchDenseLayer())
+            graph_module.add_submodule("fused_batch_dense_layer_replacement", DefaultBatchDenseLayer())
         # find all bmm + act / bmm_add + act patterns
         is_modified |= match_bmm_act(graph_module)
         return is_modified

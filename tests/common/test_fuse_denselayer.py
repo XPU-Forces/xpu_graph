@@ -15,9 +15,10 @@ data_type = torch.float32
 aten = torch.ops.aten
 
 
-def fn0(inputs, weight, bias=None):
+def fn_addmm(inputs, weight, bias=None):
     output = torch.matmul(inputs, weight)
-    return output + bias if bias is not None else output
+    output = output + bias if bias is not None else output
+    return F.gelu(output)
 
 
 def matmul_test(xpu_graph_backend, func):
@@ -40,19 +41,83 @@ class TestMatMul:
     @pytest.mark.parametrize(
         "pattern_func",
         [
-            fn0,
+            fn_addmm,
         ],
     )
-    def test_matmul_patterns(self, caplog, pattern_func):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
-            matmul_test(self.train_backend, pattern_func)
+    @pytest.mark.parametrize(
+        "is_training",
+        [
+            True,
+            False,
+        ],
+    )
+    def test_matmul_patterns(self, caplog, pattern_func, is_training):
+        if is_training:
+            backend = self.train_backend
+        else:
+            backend = self.infer_backend
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(backend):
+            matmul_test(backend, pattern_func)
+
+        assert "Pattern.FusedMatMul changed graph" in caplog.text
         assert "Pattern.FusedMatMulAdd changed graph" in caplog.text
+        assert "Pattern.FusedMatMulAct changed graph" in caplog.text
+
+
+def fn_addbmm(inputs, weight, bias=None):
+    output = torch.bmm(inputs, weight)
+    output = output + bias if bias is not None else output
+    return F.gelu(output)
+
+
+def bmm_test(xpu_graph_backend, func):
+    inputs = torch.randn((2048, 337, 16), device=device, dtype=data_type)
+    weight = torch.randn((2048, 16, 16), device=device, dtype=data_type)
+    bias = torch.randn((16), device=device, dtype=data_type)
+    res = func(inputs, weight, bias)
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+    res1 = compiled(inputs, weight, bias)
+    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True)
+
+
+class TestBMM:
+    def setup_class(self):
+        infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2)
+        self.infer_backend = xpu_graph.XpuGraph(infer_config)
+        train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2)
+        self.train_backend = xpu_graph.XpuGraph(train_config)
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [
+            fn_addbmm,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "is_training",
+        [
+            True,
+            False,
+        ],
+    )
+    def test_bmm_patterns(self, caplog, pattern_func, is_training):
+        if is_training:
+            backend = self.train_backend
+        else:
+            backend = self.infer_backend
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(backend):
+            bmm_test(backend, pattern_func)
+        assert "Pattern.FusedBMM changed graph" in caplog.text
+        assert "Pattern.FusedBMMAdd changed graph" in caplog.text
+        assert "Pattern.FusedBMMAct changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True)
     infer_backend = xpu_graph.XpuGraph(infer_config)
-    matmul_test(infer_backend, fn0)
+    matmul_test(infer_backend, fn_addmm)
+    bmm_test(infer_backend, fn_addbmm)
     train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2, debug=True)
     train_backend = xpu_graph.XpuGraph(train_config)
-    matmul_test(train_backend, fn0)
+    matmul_test(train_backend, fn_addmm)
+    bmm_test(train_backend, fn_addbmm)

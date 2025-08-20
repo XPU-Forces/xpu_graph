@@ -3,8 +3,8 @@ from torch import fx
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.default_replacements import (
-    BatchDenseLayer,
-    DenseLayer,
+    DefaultBatchDenseLayer,
+    DefaultDenseLayer,
 )
 
 
@@ -21,7 +21,7 @@ class CustomDenseLayer(Pattern):
             graph_module.add_submodule("custom_dense_layer_replacement", self.target_mod(fast_act))
         changed = False
         for node in reversed(graph_module.graph.nodes):
-            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DenseLayer):
+            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultDenseLayer):
                 node.target = "custom_dense_layer_replacement"
                 changed = True
         return changed
@@ -37,7 +37,7 @@ class CustomBatchDenseLayer(Pattern):
         if not hasattr(graph_module, "custom_batch_dense_layer_replacement"):
             graph_module.add_submodule("custom_batch_dense_layer_replacement", self.target_mod())
         for node in reversed(graph_module.graph.nodes):
-            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), BatchDenseLayer):
+            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultBatchDenseLayer):
                 node.target = "custom_batch_dense_layer_replacement"
                 changed = True
         return changed
