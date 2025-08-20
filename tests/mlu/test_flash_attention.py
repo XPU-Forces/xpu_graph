@@ -45,16 +45,21 @@ def _sfdp_pattern_4(query, key, value, scale_factor, dropout_p=0.0):
     ).matmul(value)
 
 
+def _sfdp_pattern_5(query, key, value, attn_mask):
+    attn_weight = torch.softmax((query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) + attn_mask, dim=-1)
+    # attn_weight = torch.dropout(attn_weight, dropout_p)
+    return attn_weight @ value
+
+
 def _sfdp_pattern_5_1(query, key, value):
     attn_weight = torch.softmax((query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))), dim=-1)
     # attn_weight = torch.dropout(attn_weight, dropout_p)
     return attn_weight @ value
 
 
-def _sfdp_pattern_5(query, key, value, attn_mask):
-    attn_weight = torch.softmax((query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) + attn_mask, dim=-1)
-    # attn_weight = torch.dropout(attn_weight, dropout_p)
-    return attn_weight @ value
+def _sfdp_pattern_5_2(query, key, value, attn_mask):
+    # qkv:3d, mask:4d
+    return _sfdp_pattern_5(query, key, value, attn_mask)
 
 
 def _sfdp_pattern_6(query, key, value, attn_mask, dropout_p=0.0):
@@ -187,6 +192,48 @@ def _sfdp_pattern_16(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
     )
 
 
+def _sfdp_pattern_16_1(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+    return (
+        torch.nn.functional.dropout(
+            (torch.matmul(q, k.transpose(-2, -1)).div(inv_scale) + attn_mask).softmax(dim=-1),
+            dropout_p,
+        )
+        .to(dtype=query.dtype)
+        .matmul(v)
+    )
+
+
+def _sfdp_pattern_16_2(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+    return (
+        torch.nn.functional.dropout(
+            (torch.matmul(q.div(inv_scale), k.transpose(-2, -1)) + attn_mask).softmax(dim=-1),
+            dropout_p,
+        )
+        .to(dtype=query.dtype)
+        .matmul(v)
+    )
+
+
+def _sfdp_pattern_16_3(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+    return (
+        torch.nn.functional.dropout(
+            (torch.matmul(q.div(inv_scale), k.transpose(-2, -1)) + attn_mask).softmax(dim=-1),
+            dropout_p,
+        )
+        .to(dtype=query.dtype)
+        .matmul(v)
+    ).transpose(1, 2)
+
+
 def _sfdp_pattern_17(query, key, value, attn_mask, inv_scale, dropout_p):
     # for DistilBert with dropout
     q = query.permute([0, 2, 1, 3])
@@ -291,6 +338,9 @@ def fa_test(xpu_graph_backend, func):
         _sfdp_pattern_14,
         _sfdp_pattern_15,
         _sfdp_pattern_16,
+        _sfdp_pattern_16_1,
+        _sfdp_pattern_16_2,
+        _sfdp_pattern_16_3,
     ]:
         softmax_scale = 1 / math.sqrt(head_size)
     elif func in [_sfdp_pattern_2, _sfdp_pattern_4]:
@@ -304,6 +354,7 @@ def fa_test(xpu_graph_backend, func):
         _sfdp_pattern_4,
         _sfdp_pattern_5,
         _sfdp_pattern_5_1,
+        _sfdp_pattern_5_2,
         _sfdp_pattern_6,
         _sfdp_pattern_6_1,
         _sfdp_pattern_13,
@@ -314,6 +365,10 @@ def fa_test(xpu_graph_backend, func):
         q = torch.randn(batch, head_num_q, seq_q, head_size, dtype=dtype, device="mlu")
         k = torch.randn(batch, head_num_k, seq_k, head_size, dtype=dtype, device="mlu")
         v = torch.randn(batch, head_num_k, seq_k, head_size, dtype=dtype, device="mlu")
+        if func in [_sfdp_pattern_5_2]:
+            q = q.view(-1, seq_q, head_size)
+            k = k.view(-1, seq_k, head_size)
+            v = v.view(-1, seq_k, head_size)
     else:  # have trans
         q = torch.randn(batch, seq_q, head_num_q, head_size, dtype=dtype, device="mlu")
         k = torch.randn(batch, seq_k, head_num_k, head_size, dtype=dtype, device="mlu")
@@ -329,10 +384,14 @@ def fa_test(xpu_graph_backend, func):
 
     if func in [
         _sfdp_pattern_5,
+        _sfdp_pattern_5_2,
         _sfdp_pattern_6,
         _sfdp_pattern_6_1,
         _sfdp_pattern_14,
         _sfdp_pattern_16,
+        _sfdp_pattern_16_1,
+        _sfdp_pattern_16_2,
+        _sfdp_pattern_16_3,
         _sfdp_pattern_transformer_2,
         _sfdp_pattern_transformer_3,
     ]:
@@ -369,6 +428,7 @@ class TestFA:
             _sfdp_pattern_4,
             _sfdp_pattern_5,
             _sfdp_pattern_5_1,
+            _sfdp_pattern_5_2,
             _sfdp_pattern_6,
             _sfdp_pattern_6_1,
             _sfdp_pattern_7,
@@ -378,6 +438,10 @@ class TestFA:
             _sfdp_pattern_11,
             _sfdp_pattern_12,
             _sfdp_pattern_13,
+            _sfdp_pattern_16,
+            _sfdp_pattern_16_1,
+            _sfdp_pattern_16_2,
+            _sfdp_pattern_16_3,
         ],
     )
     def test_sfdp_patterns(self, caplog, pattern_func):
