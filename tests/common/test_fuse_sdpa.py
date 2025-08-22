@@ -14,6 +14,11 @@ from xpu_graph.test_utils import (
 DEVICE = "cpu"
 
 
+def _sdpa_pattern_tensor_scale(query, key, value, inv_scale):
+    # query:bsz, self.num_heads, q_len, head_dim
+    return torch.matmul(query, key.transpose(-2, -1)).div(inv_scale).softmax(dim=-1).matmul(value)
+
+
 def _sdpa_pattern_1(query, key, value, inv_scale):
     # query:bsz, self.num_heads, q_len, head_dim
     return torch.matmul(query, key.transpose(-2, -1)).div(inv_scale).softmax(dim=-1).matmul(value)
@@ -47,16 +52,21 @@ def _sdpa_pattern_4(query, key, value, scale_factor, dropout_p=0.0):
     ).matmul(value)
 
 
+def _sdpa_pattern_5(query, key, value, attn_mask):
+    attn_weight = torch.softmax((query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) + attn_mask, dim=-1)
+    # attn_weight = torch.dropout(attn_weight, dropout_p)
+    return attn_weight @ value
+
+
 def _sdpa_pattern_5_1(query, key, value):
     attn_weight = torch.softmax((query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))), dim=-1)
     # attn_weight = torch.dropout(attn_weight, dropout_p)
     return attn_weight @ value
 
 
-def _sdpa_pattern_5(query, key, value, attn_mask):
-    attn_weight = torch.softmax((query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) + attn_mask, dim=-1)
-    # attn_weight = torch.dropout(attn_weight, dropout_p)
-    return attn_weight @ value
+def _sdpa_pattern_5_2(query, key, value, attn_mask):
+    # qkv:3d, mask:4d
+    return _sdpa_pattern_5(query, key, value, attn_mask)
 
 
 def _sdpa_pattern_6(query, key, value, attn_mask, dropout_p=0.0):
@@ -189,6 +199,48 @@ def _sdpa_pattern_16(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
     )
 
 
+def _sdpa_pattern_16_1(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+    return (
+        torch.nn.functional.dropout(
+            (torch.matmul(q, k.transpose(-2, -1)).div(inv_scale) + attn_mask).softmax(dim=-1),
+            dropout_p,
+        )
+        .to(dtype=query.dtype)
+        .matmul(v)
+    )
+
+
+def _sdpa_pattern_16_2(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+    return (
+        torch.nn.functional.dropout(
+            (torch.matmul(q.div(inv_scale), k.transpose(-2, -1)) + attn_mask).softmax(dim=-1),
+            dropout_p,
+        )
+        .to(dtype=query.dtype)
+        .matmul(v)
+    )
+
+
+def _sdpa_pattern_16_3(query, key, value, inv_scale, attn_mask, dropout_p=0.0):
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+    return (
+        torch.nn.functional.dropout(
+            (torch.matmul(q.div(inv_scale), k.transpose(-2, -1)) + attn_mask).softmax(dim=-1),
+            dropout_p,
+        )
+        .to(dtype=query.dtype)
+        .matmul(v)
+    ).transpose(1, 2)
+
+
 def _sdpa_pattern_17(query, key, value, attn_mask, inv_scale, dropout_p):
     # for DistilBert with dropout
     q = query.permute([0, 2, 1, 3])
@@ -297,6 +349,8 @@ def fa_test(xpu_graph_backend, func):
         softmax_scale = 1 / math.sqrt(head_size)
     elif func in [_sdpa_pattern_2, _sdpa_pattern_4]:
         softmax_scale = math.sqrt(head_size)
+    elif func in [_sdpa_pattern_tensor_scale]:
+        softmax_scale = torch.Tensor([1 / math.sqrt(head_size)]).to(dtype=dtype, device=DEVICE)
 
     if func in [
         _sdpa_pattern_1,
@@ -327,7 +381,7 @@ def fa_test(xpu_graph_backend, func):
         k = k.reshape(-1, *k.shape[2:])
         v = v.reshape(-1, *v.shape[2:])
 
-    args = (q, k, v, 1 / softmax_scale) if softmax_scale else (q, k, v)
+    args = (q, k, v, 1 / softmax_scale) if softmax_scale is not None else (q, k, v)
 
     if func in [
         _sdpa_pattern_5,
@@ -363,6 +417,7 @@ class TestFA:
     @pytest.mark.parametrize(
         "pattern_func",
         [
+            _sdpa_pattern_tensor_scale,
             _sdpa_pattern_transformer_1,
             _sdpa_pattern_transformer_2,
             _sdpa_pattern_transformer_3,
@@ -401,6 +456,7 @@ if __name__ == "__main__":
             debug=True,
         )
     )
+    fa_test(xpu_graph_backend, _sdpa_pattern_tensor_scale)
     fa_test(xpu_graph_backend, _sdpa_pattern_1)
     fa_test(xpu_graph_backend, _sdpa_pattern_1_1)
     fa_test(xpu_graph_backend, _sdpa_pattern_2)

@@ -128,10 +128,10 @@ def _is_fa(node: fx.Node):
     if is_scale_op:
         scale, is_div = params
         if isinstance(scale, fx.Node):
-            if scale.meta["val"].numel() == 1 and is_constant(scale):
-                scale = _get_wrapped_constant(scale)
-            else:
+            if not scale.meta["val"].numel() == 1:
                 return False, []
+            if is_constant(scale):
+                scale = _get_wrapped_constant(scale)
 
         bmm_1_node = div_input_node
 

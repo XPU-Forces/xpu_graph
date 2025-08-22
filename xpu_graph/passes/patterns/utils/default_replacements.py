@@ -319,6 +319,22 @@ class DefaultBatchDenseLayer(nn.Module):
         return y
 
 
+@torch.library.custom_op("xpu_graph::sdpa_wrapped_scale", mutates_args=())
+def sdpa_wrapped_scale(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor, scale: torch.Tensor
+) -> torch.Tensor:
+    scale = scale.item()
+    return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)
+
+
+@torch.library.register_fake("xpu_graph::sdpa_wrapped_scale")
+def _(q, k, v, attn_mask, scale):
+    scale = 1.0
+    return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)
+
+
 class DefaultSDPA(nn.Module):
     def forward(self, q, k, v, attn_mask, scale):
+        if isinstance(scale, torch.Tensor):
+            return torch.ops.xpu_graph.sdpa_wrapped_scale(q, k, v, attn_mask, scale)
         return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)
