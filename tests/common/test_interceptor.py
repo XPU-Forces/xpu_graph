@@ -163,7 +163,7 @@ if __name__ == "__main__":
     xpu_graph_backend.get_pattern_manager().register_pattern(faulty_pattern)
 
     faulty_pattern._support_stages = [FxStage.forward]
-    compare_training(InplaceModel, xpu_graph_backend, nsteps=2)
+    compare_training(device, data_type, InplaceModel, xpu_graph_backend, nsteps=2)
 
     faulty_pattern._support_stages = [FxStage.backward]
-    compare_training(InplaceModel, xpu_graph_backend, nsteps=2)
+    compare_training(device, data_type, InplaceModel, xpu_graph_backend, nsteps=2)

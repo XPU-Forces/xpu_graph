@@ -79,6 +79,17 @@ def _invoke_backward(func, inputs, outputs, grad_outputs, inputs_requires_grad):
     return tuple(grad_inputs)
 
 
+def compare_tensor_list(base_list, trgt_list, **check_configs):
+    diverge_cnt = 0
+    for i, (base_t, trgt_t) in enumerate(zip(base_list, trgt_list)):
+        try:
+            torch.testing.assert_close(trgt_t, base_t, **check_configs)
+        except AssertionError as e:
+            diverge_cnt += 1
+            logger.warning(f"Tensor {i} diverges:\n{e}")
+    return diverge_cnt
+
+
 class FunctionInterceptor:
     def __init__(self, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
         # Note: The monitor is used for training.
@@ -99,7 +110,7 @@ class FunctionInterceptor:
 
         # Similar to what torch._functorch.autograd does, wrap the forward function again
         def monitored_inference(*inputs):
-            logger.debug("Monitored inference")
+            logger.info("Monitored inference")
 
             base_inputs = inputs
             if self.impure:
@@ -118,16 +129,19 @@ class FunctionInterceptor:
                 trgt_outputs = _invoke_inference(trgt_func, trgt_inputs)
 
             base_outputs = _invoke_inference(base_func, base_inputs)
-            try:
-                if self.impure:
-                    torch.testing.assert_close(base_inputs, trgt_inputs, **self.check_configs)
-                torch.testing.assert_close(base_outputs, trgt_outputs, **self.check_configs)
-            except AssertionError as e:
+            input_diverge_cnt = 0
+            if self.impure:
+                input_diverge_cnt = compare_tensor_list(base_inputs, trgt_inputs, **self.check_configs)
+            output_diverge_cnt = compare_tensor_list(base_outputs, trgt_outputs, **self.check_configs)
+            diverge_cnt = input_diverge_cnt + output_diverge_cnt
+            if diverge_cnt > 0:
                 global CASE_CNT
                 case_id = next(CASE_CNT)
                 dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_inference_{case_id}")
                 logger.warning(
-                    f"The inference pass diverges for {self.golden_fn}\ncases saved_to: {dump_path}\nError: {e}"
+                    f"Summary: The inference pass diverges for {self.golden_fn}\n"
+                    f"         input_diverge_cnt: {input_diverge_cnt}, output_diverge_cnt: {output_diverge_cnt}\n"
+                    f"         cases saved_to: {dump_path}"
                 )
                 os.makedirs(dump_path, exist_ok=True)
                 if isinstance(self.golden_fn, GraphModule):
@@ -188,7 +202,7 @@ class AutogradInterceptor:
         class MonitoredCompiled(torch.autograd.Function):
             @staticmethod
             def forward(ctx, *inputs):
-                logger.debug("Monitored forward")
+                logger.info("Monitored forward")
 
                 inputs_requires_grad = [isinstance(t, torch.Tensor) and t.requires_grad for t in inputs]
                 base_inputs = [
@@ -209,16 +223,19 @@ class AutogradInterceptor:
                     trgt_outputs = _invoke_forward(trgt_func, trgt_inputs)
 
                 base_outputs = _invoke_forward(base_func, base_inputs)
-                try:
-                    if self.impure:
-                        torch.testing.assert_close(base_inputs, trgt_inputs, **self.check_configs)
-                    torch.testing.assert_close(base_outputs, trgt_outputs, **self.check_configs)
-                except AssertionError as e:
+                input_diverge_cnt = 0
+                if self.impure:
+                    input_diverge_cnt = compare_tensor_list(base_inputs, trgt_inputs, **self.check_configs)
+                output_diverge_cnt = compare_tensor_list(base_outputs, trgt_outputs, **self.check_configs)
+                diverge_cnt = input_diverge_cnt + output_diverge_cnt
+                if diverge_cnt > 0:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
                     dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_forward_{case_id}")
                     logger.warning(
-                        f"The forward pass diverges for {self.golden_fn}\ncases saved_to: {dump_path}\nError: {e}"
+                        f"Summary: The forward pass diverges for {self.golden_fn}\n"
+                        f"         input_diverge_cnt: {input_diverge_cnt}, output_diverge_cnt: {output_diverge_cnt}\n"
+                        f"         cases saved_to: {dump_path}"
                     )
                     os.makedirs(dump_path, exist_ok=True)
                     if isinstance(self.golden_fn, GraphModule):
@@ -271,7 +288,7 @@ class AutogradInterceptor:
 
             @staticmethod
             def backward(ctx, *grad_outputs):
-                logger.debug("Monitored backward")
+                logger.info("Monitored backward")
 
                 base_inputs = ctx.saved_states["base_inputs"]
                 trgt_inputs = ctx.saved_states["trgt_inputs"]
@@ -285,14 +302,15 @@ class AutogradInterceptor:
                 base_grad_inputs = _invoke_backward(
                     base_func, base_inputs, base_outputs, grad_outputs, inputs_requires_grad
                 )
-                try:
-                    torch.testing.assert_close(base_grad_inputs, trgt_grad_inputs, **self.check_configs)
-                except AssertionError as e:
+                grad_diverge_cnt = compare_tensor_list(base_grad_inputs, trgt_grad_inputs, **self.check_configs)
+                if grad_diverge_cnt > 0:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
                     dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_backward_{case_id}")
                     logger.warning(
-                        f"The backward pass diverges for {self.golden_fn}\ncases saved_to: {dump_path}\nError: {e}"
+                        f"Summary: The backward pass diverges for {self.golden_fn}\n"
+                        f"         grad_diverge_cnt: {grad_diverge_cnt}\n"
+                        f"         cases saved_to: {dump_path}"
                     )
                     os.makedirs(dump_path, exist_ok=True)
                     if isinstance(self.golden_fn, GraphModule):
@@ -361,14 +379,17 @@ class OpInterceptor(TorchDispatchMode):
             with torch.random.fork_rng(device_type=torch._utils._get_available_device_type()):
                 golden_outputs = golden_fn(*golden_inputs, **(kwargs or {}))
             actual_outputs = func(*args, **(kwargs or {}))
-            try:
-                torch.testing.assert_close(actual_inputs, golden_inputs, **self.check_configs)
-                torch.testing.assert_close(actual_outputs, golden_outputs, **self.check_configs)
-            except AssertionError as e:
+            input_diverge_cnt = compare_tensor_list(actual_inputs, golden_inputs, **self.check_configs)
+            output_diverge_cnt = compare_tensor_list(actual_outputs, golden_outputs, **self.check_configs)
+            if input_diverge_cnt > 0 or output_diverge_cnt > 0:
                 global CASE_CNT
                 case_id = next(CASE_CNT)
                 dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_op_{case_id}")
-                logger.warning(f"The op diverges for {func}\ncases saved_to: {dump_path}\nError: {e}")
+                logger.warning(
+                    f"Summary: The op diverges for {func}\n"
+                    f"         input_diverge_cnt: {input_diverge_cnt}, output_diverge_cnt: {output_diverge_cnt}\n"
+                    f"         cases saved_to: {dump_path}"
+                )
                 os.makedirs(dump_path, exist_ok=True)
                 dump_glob = {
                     "golden_inputs": golden_inputs,
