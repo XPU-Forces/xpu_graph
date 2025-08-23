@@ -5,15 +5,10 @@ from torch.fx import map_arg
 
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.default_replacements import DenseParams
 
 
 def _is_dense_layer_node(node):
-    return (
-        isinstance(node, fx.Node)
-        and node.op == "call_module"
-        and (node.target == "fused_dense_layer_replacement" or node.target == "custom_dense_layer_replacement")
-    )
+    return isinstance(node, fx.Node) and node.op == "call_module" and node.target == "custom_dense_layer_replacement"
 
 
 def _is_serial_mm_2dot(
@@ -22,51 +17,51 @@ def _is_serial_mm_2dot(
     if not _is_dense_layer_node(node):
         return False, []
 
-    dense_params1 = DenseParams().set_params(*node.args)
+    inputs1, weight1, weight_trans1, bias1, act1 = node.args
 
-    dense_result0 = dense_params1.input
+    dense_result0 = inputs1
     if not _is_dense_layer_node(dense_result0):
         return False, []
 
     if len(dense_result0.users) > 1:
         return False, []
 
-    dense_params0 = DenseParams().set_params(*dense_result0.args)
+    inputs0, weight0, weight_trans0, bias0, act0 = dense_result0.args
 
     is_up_bias, is_down_bias = False, False
-    if dense_params0.bias is not None:
+    if bias0 is not None:
         is_up_bias = True
-    if dense_params1.bias is not None:
+    if bias1 is not None:
         is_down_bias = True
 
     is_up_act, is_down_act = True, True
-    if dense_params0.act == "none":
+    if act0 == "none":
         is_up_act = False
-    elif dense_params0.act == "relu":
+    elif act0 == "relu":
         is_up_act = True
     else:
         return False, []
 
-    if dense_params1.act == "none":
+    if act1 == "none":
         is_down_act = False
-    elif dense_params1.act == "relu":
+    elif act1 == "relu":
         is_down_act = True
     else:
         return False, []
 
-    if dense_params0.weight_trans or dense_params0.weight_trans:
+    if weight_trans0 or weight_trans1:
         return False, []
 
     return True, [
-        dense_params0.input,
-        dense_params0.weight,
-        dense_params0.bias,
-        dense_params1.weight,
-        dense_params1.bias,
-        dense_params0.act,
-        dense_params1.act,
-        dense_params0.weight_trans,
-        dense_params1.weight_trans,
+        inputs0,
+        weight0,
+        bias0,
+        weight1,
+        bias1,
+        act0,
+        act1,
+        weight_trans0,
+        weight_trans1,
         is_up_bias,
         is_down_bias,
         is_up_act,
@@ -87,32 +82,32 @@ def _is_serial_mm_3dot(
     if len(matmul_node.users) > 1:
         return False, []
 
-    dense_params0 = DenseParams().set_params(*matmul_node.args)
+    inputs0, weight0, weight_trans0, bias0, act0 = matmul_node.args
 
-    if dense_params0.weight_trans:
+    if weight_trans0:
         return False, []
 
     is_first_bias = False
-    if dense_params0.bias is not None:
+    if bias0 is not None:
         is_first_bias = True
 
     is_first_act = True
-    if dense_params0.act == "none":
+    if act0 == "none":
         is_first_act = False
-    elif dense_params0.act == "relu":
+    elif act0 == "relu":
         is_first_act = True
     else:
         return False, []
 
     ffn_params = [
-        dense_params0.input,
-        dense_params0.weight,
-        dense_params0.bias,
+        inputs0,
+        weight0,
+        bias0,
     ]
     ffn_params += node.args[1:5]
-    ffn_params += [dense_params0.act]
+    ffn_params += [act0]
     ffn_params += node.args[5:7]
-    ffn_params += [dense_params0.weight_trans]
+    ffn_params += [weight_trans0]
     ffn_params += node.args[7:9]
     ffn_params += [is_first_bias]
     ffn_params += node.args[9:11]

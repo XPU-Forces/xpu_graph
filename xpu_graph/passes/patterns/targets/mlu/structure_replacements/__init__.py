@@ -9,7 +9,12 @@ from ..triton_kernel.fused_slice_cat import fused_slice_cat
 from ..triton_kernel.fused_slice_v2 import fused_slice_low_v2
 from ..triton_kernel.fused_sum_3d import fused_sum_3d_input
 from ..triton_kernel.get_mlu_devinfo import get_device_properties
-from .dense_layer_modules import BatchDenseLayerModule, DenseLayerModule
+from .dense_layer_modules import (
+    BatchDenseLayerModule,
+    can_fuse_custom_denselayer,
+    DenseLayerModule,
+    can_fuse_custom_batch_denselayer,
+)
 from .flash_attention_modules import FlashAttentionModule, can_fuse_fa
 from .norm_modules import LayerNormModule, RMSNormModule
 
@@ -318,8 +323,8 @@ def get_structure_replacements(config):
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
-        "CustomDenseLayer": DenseLayerModule,
-        "CustomBatchDenseLayer": BatchDenseLayerModule,
+        "CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
+        "CustomBatchDenseLayer": (BatchDenseLayerModule, can_fuse_custom_batch_denselayer),
         "FusedDenseTower2": (FusedDenseTower2Replacement, can_fuse_dense_tower2),
         "FusedDenseTower3": (FusedDenseTower3Replacement, can_fuse_dense_tower3),
         "FlashAttention": (FlashAttentionModule, can_fuse_fa),

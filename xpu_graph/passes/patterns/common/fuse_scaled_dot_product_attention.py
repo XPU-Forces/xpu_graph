@@ -9,10 +9,13 @@ from xpu_graph.passes.patterns.utils.check_ops import (
     check_softmax_op,
     check_sub_or_add_op,
     get_actual_node,
+    check_bmm_op,
+    check_baddbmm_op,
 )
 from xpu_graph.passes.patterns.utils.default_replacements import (
     DefaultSDPA,
 )
+from xpu_graph.fx_utils import FxStage, _get_wrapped_constant
 from xpu_graph.utils import logger
 
 
@@ -58,58 +61,11 @@ def validate_attention_shape(q_shape, k_shape, v_shape, mask_shape):
             return True, [total_bn // num_heads, num_heads, q_len, k_len, q_shape[-1], v_shape[-1]]
 
 
-def _get_wrapped_constant(node: fx.Node):
-    disable_fake_mode = None
-    from packaging import version
-
-    torch_version = version.parse(torch.__version__[:5])
-    if torch_version < version.parse("2.5"):
-        from torch.fx.experimental.proxy_tensor import (
-            maybe_disable_fake_tensor_mode as disable_fake_mode,
-        )
-    else:
-        from torch._subclasses.fake_tensor import (
-            unset_fake_temporarily as disable_fake_mode,
-        )
-    with disable_fake_mode():
-        node = getattr(node.graph.owning_module, node.target)
-        return node.item()
-
-
-def _is_bmm(node: fx.Node):
-    if not (
-        isinstance(node, fx.Node)
-        and node.op == "call_module"
-        and (
-            node.target == "fused_batch_dense_layer_replacement"
-            or node.target == "custom_batch_dense_layer_replacement"
-        )
-    ):
-        return False
-    from ..utils.default_replacements import BatchDenseParams
-
-    bmm_params = BatchDenseParams()
-    bmm_params.set_node(node)
-    return bmm_params.bias is None and bmm_params.act == "none"
-
-
-def _is_bmm_add(node: fx.Node):
-    return (
-        isinstance(node, fx.Node)
-        and node.op == "call_module"
-        and (
-            node.target == "fused_batch_dense_layer_replacement"
-            or node.target == "custom_batch_dense_layer_replacement"
-        )
-        and node.args[5] == "none"
-    )
-
-
-def _is_fa(node: fx.Node):
-    if not _is_bmm(node):
+def _is_fa(node: fx.Node, is_inference: bool):
+    _is_bmm, score_node, v_node = check_bmm_op(node)
+    if not _is_bmm:
         return False, []
-    trans_v = node.args[2]
-    softmax_node = get_actual_node(node, 0)
+    softmax_node = get_actual_node(score_node)
     if not check_softmax_op(softmax_node):
         return False, []
 
@@ -132,31 +88,27 @@ def _is_fa(node: fx.Node):
                 return False, []
             if is_constant(scale):
                 scale = _get_wrapped_constant(scale)
+            elif not is_inference:
+                # Currently, we cannot handle FA with softmax_scale gradients
+                return False, []
 
         bmm_1_node = div_input_node
 
-    if not _is_bmm(bmm_1_node):
-        if is_bias_op or is_scale_op or not _is_bmm_add(bmm_1_node):
+    _is_bmm, q_node, k_node = check_bmm_op(bmm_1_node)
+    if not _is_bmm:
+        _is_baddbmm, mask, q_node, k_node = check_baddbmm_op(bmm_1_node)
+        if is_bias_op or is_scale_op or not _is_baddbmm:
             logger.debug("Flash attention pass: Too many add operations")
             return False, []
-        bias = bmm_1_node.args[3] or bmm_1_node.args[4]
-        is_bias_op = bias is not None
-        if is_bias_op:
-            mask, is_add = (bias, True)
-
-    trans_k = bmm_1_node.args[2]
-
-    q_node = bmm_1_node.args[0]
-    k_node = bmm_1_node.args[1]
-    v_node = node.args[1]
+        is_bias_op = True
+        is_add = True
 
     q_shape = q_node.meta["val"].shape
     k_shape = k_node.meta["val"].shape
-    if not trans_k:
-        k_shape = k_shape[:-2] + (k_shape[-1], k_shape[-2])
+    k_shape = k_shape[:-2] + (k_shape[-1], k_shape[-2])
+
     v_shape = v_node.meta["val"].shape
-    if trans_v:
-        v_shape = v_shape[:-2] + (v_shape[-1], v_shape[-2])
+
     if is_bias_op and isinstance(mask, fx.Node):
         mask_shape = mask.meta["val"].shape
     else:
@@ -166,7 +118,7 @@ def _is_fa(node: fx.Node):
     if not is_valid:
         return False, []
 
-    return True, [q_node, k_node, trans_k, v_node, trans_v, scale, is_div, mask, is_add, attn_shape]
+    return True, [q_node, k_node, v_node, scale, is_div, mask, is_add, attn_shape]
 
 
 class FusedSDPA(Pattern):
@@ -177,24 +129,20 @@ class FusedSDPA(Pattern):
             graph_module.add_submodule("fused_sdpa", DefaultSDPA())
         modified = False
         for node in reversed(graph_module.graph.nodes):
-            matched, fa_param = _is_fa(node)
+            is_inference = self._current_stage == FxStage.inference
+            matched, fa_param = _is_fa(node, is_inference)
             if not matched:
                 continue
 
-            q, k, trans_k, v, trans_v, scale, is_div, attn_mask, is_add, attn_shape = fa_param
+            q, k, v, scale, is_div, attn_mask, is_add, attn_shape = fa_param
             logger.debug(f"Flash attention pass: Attention shape: {attn_shape}")
             batch_size, num_heads, q_len, kv_len, qk_dim, v_dim = attn_shape
             with graph_module.graph.inserting_before(node):
-                if not trans_k:
-                    k = graph_module.graph.call_function(
-                        torch.ops.aten.transpose.int,
-                        (k, -1, -2),
-                    )
-                if trans_v:
-                    v = graph_module.graph.call_function(
-                        torch.ops.aten.transpose.int,
-                        (v, -1, -2),
-                    )
+                # If k has been transposed, the extra transpose will be folded afterwards
+                k = graph_module.graph.call_function(
+                    torch.ops.aten.transpose.int,
+                    (k, -1, -2),
+                )
                 q = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
                     (q, (batch_size, num_heads, q_len, qk_dim)),

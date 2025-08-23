@@ -50,8 +50,11 @@ def get_input_kw_node(node, key):
     return None
 
 
-def get_actual_node(node, idx):
-    new_node = node.args[idx]
+def get_actual_node(node, idx=None):
+    if idx is None:
+        new_node = node
+    else:
+        new_node = node.args[idx]
     changed1 = True
     while changed1:
         changed1 = False
@@ -305,6 +308,17 @@ def check_addmm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
     if not check_op(node, aten.addmm.default):
+        return False, None, None, None
+    arg1 = get_input_node(node, 0)
+    arg2 = get_input_node(node, 1)
+    arg3 = get_input_node(node, 2)
+    return True, arg1, arg2, arg3
+
+
+def check_baddbmm_op(
+    node: fx.Node,
+) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
+    if not check_op(node, aten.baddbmm.default):
         return False, None, None, None
     arg1 = get_input_node(node, 0)
     arg2 = get_input_node(node, 1)

@@ -138,15 +138,10 @@ class TestBMM:
     def test_bmm_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             bmm_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedBMM changed graph" in caplog.text
         if pattern_func in [fn1, fn2, fn4, fn5, fn8, fn9, fn11, fn12]:
-            assert "Pattern.FusedBMMAdd changed graph" in caplog.text
+            assert "Pattern.FusedBAddBMM changed graph" in caplog.text
         else:
-            assert "Pattern.FusedBMMAdd changed graph" not in caplog.text
-        if pattern_func in [fn3, fn4, fn5, fn10, fn11, fn12]:
-            assert "Pattern.FusedBMMAct changed graph" in caplog.text
-        else:
-            assert "Pattern.FusedBMMAct changed graph" not in caplog.text
+            assert "Pattern.FusedBAddBMM changed graph" not in caplog.text
         assert "Pattern.CustomBatchDenseLayer changed graph" in caplog.text
 
 

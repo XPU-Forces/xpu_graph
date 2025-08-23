@@ -49,7 +49,7 @@ class TestMatMul:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             matmul_test(self.xpu_graph_backend, pattern_func)
         if pattern_func in [fn0]:
-            assert "Pattern.FusedMatMul changed graph" in caplog.text
+            assert "Pattern.CustomDenseLayer changed graph" in caplog.text
 
 
 if __name__ == "__main__":
