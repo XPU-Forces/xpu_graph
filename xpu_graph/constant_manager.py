@@ -1,5 +1,5 @@
 import hashlib
-from functools import lru_cache
+from collections import defaultdict
 
 import torch
 import torch.fx as fx
@@ -59,19 +59,32 @@ class ConstantManager:
     def __init__(self, gm: fx.GraphModule):
         self._gm = gm
         self._constant_id = 0
-
         self._hash_to_name_map = {}
-
         self._initialize_from_graph()
 
     def _initialize_from_graph(self):
+        temp_hash_to_names = defaultdict(list)
         all_constants = {**dict(self._gm.named_buffers()), **dict(self._gm.named_parameters())}
 
         for name, const_tensor in all_constants.items():
             if name.startswith(_ALL_CONSTANT_PREFIXES):
                 tensor_hash = _get_tensor_hash(const_tensor)
-                if tensor_hash not in self._hash_to_name_map:
-                    self._hash_to_name_map[tensor_hash] = name
+                temp_hash_to_names[tensor_hash].append(name)
+
+        for tensor_hash, names_list in temp_hash_to_names.items():
+            if len(names_list) > 1:
+                primary_name = names_list[0]
+                logger.info(
+                    f"[ConstantManager] Found redundant constants for hash {tensor_hash[:8]}... Using '{primary_name}' as primary."
+                )
+
+                for redundant_name in names_list[1:]:
+                    for node in self._gm.graph.nodes:
+                        if node.op == "get_attr" and node.target == redundant_name:
+                            logger.debug(f"Redirecting get_attr '{redundant_name}' to '{primary_name}'")
+                            node.target = primary_name
+
+            self._hash_to_name_map[tensor_hash] = names_list[0]
 
     def register_constant(self, constant: torch.Tensor, name: str) -> str:
         constant_hash = _get_tensor_hash(constant)
@@ -80,13 +93,42 @@ class ConstantManager:
             return self._hash_to_name_map[constant_hash]
         else:
             constant_name = _FOLDED_CONST_PREFIX + name + f"_{self._constant_id}"
-
             self._gm.register_buffer(constant_name, constant)
             self._constant_id += 1
-
             self._hash_to_name_map[constant_hash] = constant_name
-
             return constant_name
+
+    def remove_redundant_constants(self) -> bool:
+        changed = False
+
+        alive_constants = {
+            node.target
+            for node in self._gm.graph.nodes
+            if node.op == "get_attr" and node.target.startswith(_ALL_CONSTANT_PREFIXES)
+        }
+
+        all_attribute_names = set(dict(self._gm.named_parameters(recurse=False)).keys()).union(
+            dict(self._gm.named_buffers(recurse=False)).keys(), self._gm.__dict__.keys()
+        )
+
+        for name in all_attribute_names:
+            if name.startswith(_ALL_CONSTANT_PREFIXES):
+                if name not in alive_constants:
+                    try:
+                        if hasattr(self._gm, name):
+                            delattr(self._gm, name)
+
+                            logger.debug(f"Removed unused constant: {name}")
+                            changed = True
+                    except AttributeError:
+                        logger.warning(f"Tried to delete {name}, but failed.")
+
+        if changed:
+            hashes_to_delete = [h for h, n in self._hash_to_name_map.items() if n not in alive_constants]
+            for h in hashes_to_delete:
+                del self._hash_to_name_map[h]
+
+        return changed
 
 
 def get_constant_manager(gm):

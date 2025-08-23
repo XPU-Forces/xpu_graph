@@ -180,8 +180,12 @@ class TestConstantFolding:
 
         assert is_similar(result, expect), f"Failed for {testcase_class.__name__}"
         assert "Optimizer.ConstantFolding" in caplog.text
-        if testcase_class == CanConstantFolding1:
-            assert "Pruned unused constant attribute" in caplog.text
+        if (
+            testcase_class == CanConstantFolding1
+            or testcase_class == FoldLogicalFullFull
+            or testcase_class == FoldLogicalFullConst
+        ):
+            assert "Removed unused constant" in caplog.text
 
     @pytest.mark.parametrize(
         "testcase_class, inputs",
