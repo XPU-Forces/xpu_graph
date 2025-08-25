@@ -72,6 +72,18 @@ class CanConstantFolding2(torch.nn.Module):
         return torch.matmul(x, weight)
 
 
+class CanConstantFolding3(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight_0 = torch.nn.Parameter(torch.ones(128, 64), requires_grad=False)
+        self.weight_1 = torch.nn.Parameter(torch.ones(128, 64), requires_grad=False)
+
+    @torch.no_grad()
+    def forward(self, x):
+        weight = self.weight_0 + self.weight_1
+        return torch.matmul(x, weight)
+
+
 # --- full_like -> slice ---
 class FoldFullLikeSlice(torch.nn.Module):
     def __init__(self):
@@ -164,6 +176,7 @@ class TestConstantFolding:
         [
             (CanConstantFolding1, (torch.rand(128, 128),)),
             (CanConstantFolding2, (torch.rand(128, 128),)),
+            (CanConstantFolding3, (torch.rand(128, 128),)),
             (FoldFullLikeSlice, (torch.rand(128, 128),)),
             (FoldFullLikeTo, (torch.rand(128, 128),)),
             (FoldWhereConstTrue, (torch.rand(128, 128), torch.rand(128, 128))),
