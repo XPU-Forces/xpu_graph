@@ -86,6 +86,19 @@ class ConstantManager:
 
             self._hash_to_name_map[tensor_hash] = names_list[0]
 
+    def _print_constants(self):
+        all_constants = []
+        for name, _ in self._gm.named_parameters():
+            all_constants.append(name)
+        for name, _ in self._gm.named_buffers():
+            all_constants.append(name)
+
+        if all_constants:
+            for const_name in sorted(all_constants):
+                logger.debug(f"Found {len(all_constants)} managed constants in the GraphModule: {const_name}")
+        else:
+            logger.debug(f"No managed constants found.")
+
     def register_constant(self, constant: torch.Tensor, name: str) -> str:
         constant_hash = _get_tensor_hash(constant)
 
@@ -128,6 +141,7 @@ class ConstantManager:
             for h in hashes_to_delete:
                 del self._hash_to_name_map[h]
 
+        self._print_constants()
         return changed
 
 

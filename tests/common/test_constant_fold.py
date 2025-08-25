@@ -84,6 +84,19 @@ class CanConstantFolding3(torch.nn.Module):
         return torch.matmul(x, weight)
 
 
+class CanConstantFolding4(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight_0 = torch.nn.Parameter(torch.ones(128, 64), requires_grad=False)
+        self.weight_1 = torch.nn.Parameter(torch.ones(128, 64), requires_grad=False)
+        self.weight_2 = torch.nn.Parameter(torch.ones(128, 128), requires_grad=False)
+
+    @torch.no_grad()
+    def forward(self, x):
+        weight_cat = torch.cat([self.weight_0, self.weight_1], dim=1)
+        return torch.matmul(torch.matmul(x, weight_cat), self.weight_2)
+
+
 # --- full_like -> slice ---
 class FoldFullLikeSlice(torch.nn.Module):
     def __init__(self):
@@ -177,6 +190,7 @@ class TestConstantFolding:
             (CanConstantFolding1, (torch.rand(128, 128),)),
             (CanConstantFolding2, (torch.rand(128, 128),)),
             (CanConstantFolding3, (torch.rand(128, 128),)),
+            (CanConstantFolding4, (torch.rand(128, 128),)),
             (FoldFullLikeSlice, (torch.rand(128, 128),)),
             (FoldFullLikeTo, (torch.rand(128, 128),)),
             (FoldWhereConstTrue, (torch.rand(128, 128), torch.rand(128, 128))),
@@ -193,12 +207,18 @@ class TestConstantFolding:
 
         assert is_similar(result, expect), f"Failed for {testcase_class.__name__}"
         assert "Optimizer.ConstantFolding" in caplog.text
-        if (
-            testcase_class == CanConstantFolding1
-            or testcase_class == FoldLogicalFullFull
-            or testcase_class == FoldLogicalFullConst
-        ):
-            assert "Removed unused constant" in caplog.text
+        if testcase_class == CanConstantFolding1:
+            assert caplog.text.count("Removed unused constant") == 1
+        elif testcase_class == CanConstantFolding2:
+            assert caplog.text.count("Removed unused constant") == 2
+        elif testcase_class == CanConstantFolding3:
+            assert caplog.text.count("Removed unused constant") == 2
+        elif testcase_class == CanConstantFolding4:
+            assert caplog.text.count("Removed unused constant") == 2
+        elif testcase_class == FoldLogicalFullFull:
+            assert caplog.text.count("Removed unused constant") == 2
+        elif testcase_class == FoldLogicalFullConst:
+            assert caplog.text.count("Removed unused constant") == 2
 
     @pytest.mark.parametrize(
         "testcase_class, inputs",
