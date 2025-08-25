@@ -2,7 +2,7 @@ import torch.fx as fx
 from torch.fx.node import map_arg
 
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.default_replacements import DefaultSDPA
+from xpu_graph.passes.patterns.utils.default_replacements import SDPAWrappedScale
 
 
 class FlashAttention(Pattern):
@@ -16,7 +16,7 @@ class FlashAttention(Pattern):
         if not hasattr(graph_module, "fa_replacement"):
             graph_module.add_submodule("fa_replacement", self.target_mod())
         for node in reversed(graph_module.graph.nodes):
-            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultSDPA):
+            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), SDPAWrappedScale):
                 if self.constraint_fn(*map_arg(node.args, lambda arg: arg.meta["val"])):
                     node.target = "fa_replacement"
                     changed = True

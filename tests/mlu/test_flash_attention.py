@@ -608,7 +608,32 @@ class TestFA:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             fa_test(self.xpu_graph_backend, pattern)
         assert "Pattern.FusedSDPA changed graph" in caplog.text
-        assert "Pattern.FlashAttention changed graph" in caplog.text
+        if pattern in [_sdpa_pattern_tensor_scale]:
+            assert "Unwrap scale " in caplog.text
+            assert "Pattern.FlashAttention" in caplog.text
+
+
+class TestFAWithTAOScale:
+    def setup_class(self):
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False,
+            freeze=False,
+            constant_folding=True,
+            folding_freezed_params=False,
+            opt_level=OptLevel.level3,
+        )
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            _sdpa_pattern_tensor_scale,
+        ],
+    )
+    def test_sdpa_patterns(self, caplog, pattern):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            fa_test(self.xpu_graph_backend, pattern)
+        assert "Pattern.FusedSDPA changed graph" in caplog.text
+        assert "Unwrap scale " not in caplog.text
 
 
 if __name__ == "__main__":

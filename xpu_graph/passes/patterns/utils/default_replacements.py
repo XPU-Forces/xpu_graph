@@ -52,8 +52,6 @@ def _(q, k, v, attn_mask, scale):
     return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)
 
 
-class DefaultSDPA(nn.Module):
+class SDPAWrappedScale(nn.Module):
     def forward(self, q, k, v, attn_mask, scale):
-        if isinstance(scale, torch.Tensor):
-            return torch.ops.xpu_graph.sdpa_wrapped_scale(q, k, v, attn_mask, scale)
-        return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, scale=scale)
+        return torch.ops.xpu_graph.sdpa_wrapped_scale(q, k, v, attn_mask, scale)

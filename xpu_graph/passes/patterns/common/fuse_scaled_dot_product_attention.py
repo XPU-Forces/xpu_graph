@@ -13,7 +13,7 @@ from xpu_graph.passes.patterns.utils.check_ops import (
     check_sub_or_add_op,
     get_actual_node,
 )
-from xpu_graph.passes.patterns.utils.default_replacements import DefaultSDPA
+from xpu_graph.passes.patterns.utils.default_replacements import SDPAWrappedScale
 from xpu_graph.utils import logger
 
 
@@ -86,9 +86,6 @@ def _is_fa(node: fx.Node, is_inference: bool):
                 return False, []
             if is_constant(scale):
                 scale = _get_wrapped_constant(scale)
-            elif not is_inference:
-                # Currently, we cannot handle FA with softmax_scale gradients
-                return False, []
 
         bmm_1_node = div_input_node
 
@@ -123,8 +120,6 @@ class FusedSDPA(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule):
-        if not hasattr(graph_module, "fused_sdpa"):
-            graph_module.add_submodule("fused_sdpa", DefaultSDPA())
         modified = False
         for node in reversed(graph_module.graph.nodes):
             is_inference = self._current_stage == FxStage.inference
@@ -136,22 +131,42 @@ class FusedSDPA(Pattern):
             logger.debug(f"Flash attention pass: Attention shape: {attn_shape}")
             batch_size, num_heads, q_len, kv_len, qk_dim, v_dim = attn_shape
             with graph_module.graph.inserting_before(node):
+                is_scale_wrapped = False
+                if isinstance(scale, fx.Node):
+                    if self._opt_level > OptLevel.level2:
+                        q = graph_module.graph.call_function(
+                            torch.ops.aten.div.Tensor if is_div else torch.ops.aten.mul.Tensor,
+                            args=(q, scale),
+                        )
+                        scale = 1.0
+                    else:
+                        logger.warning("Unwrap scale for scaled_dot_product_attention, which may introduce extra sync")
+                        is_scale_wrapped = True
+
+                if is_div:
+                    if is_scale_wrapped:
+                        scale = graph_module.graph.call_function(
+                            torch.ops.aten.reciprocal.default,
+                            args=(scale,),
+                        )
+                    else:
+                        scale = 1.0 / float(scale)
                 # If k has been transposed, the extra transpose will be folded afterwards
                 k = graph_module.graph.call_function(
                     torch.ops.aten.transpose.int,
-                    (k, -1, -2),
+                    args=(k, -1, -2),
                 )
                 q = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    (q, (batch_size, num_heads, q_len, qk_dim)),
+                    args=(q, (batch_size, num_heads, q_len, qk_dim)),
                 )
                 k = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    (k, (batch_size, num_heads, kv_len, qk_dim)),
+                    args=(k, (batch_size, num_heads, kv_len, qk_dim)),
                 )
                 v = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    (v, (batch_size, num_heads, kv_len, v_dim)),
+                    args=(v, (batch_size, num_heads, kv_len, v_dim)),
                 )
 
                 if attn_mask is not None and not is_add:
@@ -162,26 +177,23 @@ class FusedSDPA(Pattern):
                         )
                     else:
                         attn_mask = -attn_mask
-                if is_div:
-                    if isinstance(scale, fx.Node):
-                        scale = graph_module.graph.call_function(
-                            torch.ops.aten.reciprocal.default,
-                            (scale,),
-                        )
-                    else:
-                        scale = 1.0 / float(scale)
-                if isinstance(scale, fx.Node):
-                    scale = graph_module.graph.call_function(
-                        torch.ops.aten.view.default,
-                        (scale, []),
+
+                if is_scale_wrapped:
+                    if not hasattr(graph_module, "fused_sdpa"):
+                        graph_module.add_submodule("fused_sdpa", SDPAWrappedScale())
+                    fused = graph_module.graph.call_module(
+                        "fused_sdpa",
+                        args=(q, k, v, attn_mask, scale),
                     )
-                fused = graph_module.graph.call_module(
-                    "fused_sdpa",
-                    args=(q, k, v, attn_mask, scale),
-                )
+                else:
+                    fused = graph_module.graph.call_function(
+                        torch.ops.aten.scaled_dot_product_attention.default,
+                        args=(q, k, v),
+                        kwargs={"attn_mask": attn_mask, "scale": scale},
+                    )
                 view = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    (fused, node.meta["val"].shape),
+                    args=(fused, node.meta["val"].shape),
                 )
             node.replace_all_uses_with(view)
             modified = True
