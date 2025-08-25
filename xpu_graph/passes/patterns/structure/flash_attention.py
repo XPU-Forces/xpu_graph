@@ -2,9 +2,7 @@ import torch.fx as fx
 from torch.fx.node import map_arg
 
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.default_replacements import (
-    DefaultSDPA,
-)
+from xpu_graph.passes.patterns.utils.default_replacements import DefaultSDPA
 
 
 class FlashAttention(Pattern):

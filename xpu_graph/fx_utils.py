@@ -1,14 +1,13 @@
 import itertools
 from contextlib import nullcontext
 from enum import Enum
-from packaging import version
 from typing import Callable, Union
 from unittest.mock import patch
 
 import torch
 import torch.fx as fx
 import torch.utils._pytree as pytree
-
+from packaging import version
 from torch._decomp.decompositions_for_rng import PhiloxStateTracker
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.utils import preserve_rng_state

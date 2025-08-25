@@ -3,19 +3,17 @@ import torch.fx as fx
 
 from xpu_graph.config import OptLevel
 from xpu_graph.constant_manager import is_constant
+from xpu_graph.fx_utils import FxStage, _get_wrapped_constant
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import (
+    check_baddbmm_op,
+    check_bmm_op,
     check_div_or_mul_op,
     check_softmax_op,
     check_sub_or_add_op,
     get_actual_node,
-    check_bmm_op,
-    check_baddbmm_op,
 )
-from xpu_graph.passes.patterns.utils.default_replacements import (
-    DefaultSDPA,
-)
-from xpu_graph.fx_utils import FxStage, _get_wrapped_constant
+from xpu_graph.passes.patterns.utils.default_replacements import DefaultSDPA
 from xpu_graph.utils import logger
 
 

@@ -11,9 +11,9 @@ from ..triton_kernel.fused_sum_3d import fused_sum_3d_input
 from ..triton_kernel.get_mlu_devinfo import get_device_properties
 from .dense_layer_modules import (
     BatchDenseLayerModule,
-    can_fuse_custom_denselayer,
     DenseLayerModule,
     can_fuse_custom_batch_denselayer,
+    can_fuse_custom_denselayer,
 )
 from .flash_attention_modules import FlashAttentionModule, can_fuse_fa
 from .norm_modules import LayerNormModule, RMSNormModule

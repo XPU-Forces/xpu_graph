@@ -1,6 +1,6 @@
-import torch
-
 from typing import Optional
+
+import torch
 
 
 @torch.library.custom_op("xpu_graph::mlu_fa_wrapped_scale", mutates_args=())
