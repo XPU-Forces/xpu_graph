@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
@@ -26,6 +27,11 @@ def fn3(a):
 
 def fn4(a):
     output = torch.sum(a, dim=(1, 3), keepdim=True)
+    return output
+
+
+def fn5(a):
+    output = torch.sum(a, dim=None, keepdim=True)
     return output
 
 
@@ -58,6 +64,16 @@ class TestReduce:
             reduce_test(self.xpu_graph, pattern_func)
         assert "Pattern.FoldReduce changed graph" in caplog.text
 
+    def test_reduce_none_patterns(self, caplog):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
+            compiled = torch.compile(fn5, backend=self.xpu_graph, dynamic=False)
+            a = torch.randn(1, 1, 1, 1)
+            res = fn5(a)
+            res1 = compiled(a)
+            for i in range(len(res)):
+                assert torch.equal(res[i].float(), res1[i].float())
+            assert "Pattern.FoldReduce changed graph" in caplog.text
+
 
 if __name__ == "__main__":
     config = xpu_graph.config.XpuGraphConfig(is_training=False, debug=True)
@@ -67,3 +83,4 @@ if __name__ == "__main__":
     # reduce_test(xpu_graph, fn2)
     # reduce_test(xpu_graph, fn3)
     # reduce_test(xpu_graph, fn4)
+    # reduce_test(xpu_graph, fn5)
