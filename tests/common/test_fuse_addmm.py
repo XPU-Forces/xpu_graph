@@ -1,4 +1,5 @@
 import pytest
+import random
 import torch
 import torch.nn.functional as F
 
@@ -21,10 +22,16 @@ def fn_addmm(inputs, weight, bias=None):
     return F.gelu(output)
 
 
-def matmul_test(xpu_graph_backend, func):
-    inputs = torch.randn((128, 5897), device=device, dtype=data_type)
-    weight = torch.randn((5897, 540), device=device, dtype=data_type)
-    bias = torch.randn((128, 540), device=device, dtype=data_type)
+def matmul_test(xpu_graph_backend, func, inputs_dtype, weight_dtype, bias_dtype):
+    is_training = xpu_graph_backend._config.is_training
+    inputs = torch.randn((128, 5897), device=device, dtype=inputs_dtype)
+    weight = torch.randn((5897, 540), device=device, dtype=weight_dtype, requires_grad=is_training)
+    if bias_dtype in [int, float]:
+        bias = bias_dtype(random.randint(1, 10))
+    elif bias_dtype is None:
+        bias = None
+    else:
+        bias = torch.randn((128, 540), device=device, dtype=bias_dtype, requires_grad=is_training)
     res = func(inputs, weight, bias)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, weight, bias)
@@ -51,21 +58,31 @@ class TestMatMul:
             False,
         ],
     )
-    def test_matmul_patterns(self, caplog, pattern_func, is_training):
+    @pytest.mark.parametrize(
+        "inputs_dtype,weight_dtype,bias_dtype",
+        [
+            (torch.float32, torch.float32, torch.float32),
+            (torch.float32, torch.float32, float),
+            (torch.float32, torch.float32, None),
+        ],
+    )
+    def test_matmul_patterns(self, caplog, pattern_func, is_training, inputs_dtype, weight_dtype, bias_dtype):
         if is_training:
             backend = self.train_backend
         else:
             backend = self.infer_backend
         with need_xpu_graph_logs(), skip_xpu_graph_cache(backend):
-            matmul_test(backend, pattern_func)
-
-        assert "Pattern.FusedAddMM changed graph" in caplog.text
+            matmul_test(backend, pattern_func, inputs_dtype, weight_dtype, bias_dtype)
+        if bias_dtype is not None:
+            assert "Pattern.FusedAddMM changed graph" in caplog.text
+        else:
+            assert "Pattern.FusedAddMM changed graph" not in caplog.text
 
 
 if __name__ == "__main__":
     infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True)
     infer_backend = xpu_graph.XpuGraph(infer_config)
-    matmul_test(infer_backend, fn_addmm)
+    matmul_test(infer_backend, fn_addmm, torch.float32, torch.float32, torch.float32)
     train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2, debug=True)
     train_backend = xpu_graph.XpuGraph(train_config)
-    matmul_test(train_backend, fn_addmm)
+    matmul_test(train_backend, fn_addmm, torch.float32, torch.float32, torch.float32)
