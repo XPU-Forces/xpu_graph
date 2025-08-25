@@ -47,11 +47,12 @@ class XpuGraphConfig:
         # Only take effects when "is_training" is False.
         # Freezing parameter will change model's parameter from inputs into attributes.
         # This may help XpuGraph do better constant folding.
+        # WARNING: DO NOT freeze if you need to UPDATE your parameters
         False
     )
     constant_folding: bool = True
     folding_freezed_params: bool = (
-        # Only take effects whe freeze is True and constant_folding is True
+        # (Experimental) Only take effects whe freeze is True and constant_folding is True
         # When freeze is True, params exists as attributes in GraphModule.
         # If folding_freezed_params is True, XpuGraph will treat freezed parameters as constants and fold them
         # If folding_freezed_params is False, XpuGraph will not fold freezed parameters and allow parameter hot-swapping

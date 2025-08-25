@@ -34,7 +34,7 @@ def mlu_compile(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
         torch_version = version.parse(torch.__version__[:5])
         if cpp_wrapper and torch_version >= version.parse("2.7.0"):
-            from torch._inductor import get_cpp_wrapper_config
+            from torch._inductor.compile_fx import get_cpp_wrapper_config
 
             config = get_cpp_wrapper_config()
         else:
