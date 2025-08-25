@@ -139,6 +139,9 @@ class FusedSDPA(Pattern):
                             args=(q, scale),
                         )
                         scale = 1.0
+                    elif not is_inference:
+                        # Note: we currently do not provide SDPAWrappedScale.backward
+                        continue
                     else:
                         logger.warning("Unwrap scale for scaled_dot_product_attention, which may introduce extra sync")
                         is_scale_wrapped = True
