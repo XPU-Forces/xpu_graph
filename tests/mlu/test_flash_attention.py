@@ -610,7 +610,6 @@ class TestFA:
         assert "Pattern.FusedSDPA changed graph" in caplog.text
         if pattern in [_sdpa_pattern_tensor_scale]:
             assert "Unwrap scale " in caplog.text
-            assert "Pattern.FlashAttention" in caplog.text
 
 
 class TestFAWithTAOScale:

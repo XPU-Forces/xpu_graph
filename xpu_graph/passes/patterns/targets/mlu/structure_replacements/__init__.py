@@ -15,7 +15,6 @@ from .dense_layer_modules import (
     can_fuse_custom_batch_denselayer,
     can_fuse_custom_denselayer,
 )
-from .flash_attention_modules import FlashAttentionModule, can_fuse_fa
 from .norm_modules import LayerNormModule, RMSNormModule
 
 
@@ -166,154 +165,6 @@ class ComboSumModule(torch.nn.Module):
         return outputs
 
 
-class FusedDenseTower2Replacement(torch.nn.Module):
-    def forward(
-        self,
-        tinyffn_input,
-        up_fc_weight,
-        up_fc_bias,
-        down_proj_weight,
-        down_proj_bias,
-        act_mode_up,
-        act_mode_down,
-        is_transb_up,
-        is_transb_down,
-        is_up_bias,
-        is_down_bias,
-        is_up_act,
-        is_down_act,
-    ):
-        if not tinyffn_input.is_contiguous():
-            tinyffn_input = tinyffn_input.contiguous()
-        if not up_fc_weight.is_contiguous():
-            up_fc_weight = up_fc_weight.contiguous()
-        if not down_proj_weight.is_contiguous():
-            down_proj_weight = down_proj_weight.contiguous()
-        output = fuse_serial_mm_2dot(
-            tinyffn_input,
-            up_fc_weight,
-            up_fc_bias,
-            down_proj_weight,
-            down_proj_bias,
-            is_up_bias,
-            is_down_bias,
-            is_up_act,
-            is_down_act,
-        )
-        return output
-
-
-def can_fuse_dense_tower2(
-    tinyffn_input,
-    up_fc_weight,
-    up_fc_bias,
-    down_proj_weight,
-    down_proj_bias,
-    act_mode_up,
-    act_mode_down,
-    is_transb_up,
-    is_transb_down,
-    is_up_bias,
-    is_down_bias,
-    is_up_act,
-    is_down_act,
-):
-    K1, N1 = up_fc_weight.shape
-    N2, O2 = down_proj_weight.shape
-
-    if N1 != N2:
-        return False, []
-
-    size_of_dtype = 2
-    input_dtype = tinyffn_input.dtype
-    if input_dtype == torch.float32:
-        size_of_dtype = 4
-    # Note: all weights should accommodate the wram size (512KB)
-    return (K1 * N1 + N2 * O2 + N1 + O2) <= (512 / size_of_dtype * 1024)
-
-
-class FusedDenseTower3Replacement(torch.nn.Module):
-    def forward(
-        self,
-        first_input,
-        first_weight,
-        first_bias,
-        up_fc_weight,
-        up_fc_bias,
-        down_proj_weight,
-        down_proj_bias,
-        act_mode_first,
-        act_mode_up,
-        act_mode_down,
-        is_transb_first,
-        is_transb_up,
-        is_transb_down,
-        is_first_bias,
-        is_up_bias,
-        is_down_bias,
-        is_first_act,
-        is_up_act,
-        is_down_act,
-    ):
-        if not first_input.is_contiguous():
-            first_input = first_input.contiguous()
-        if not first_weight.is_contiguous():
-            first_weight = first_weight.contiguous()
-        if not up_fc_weight.is_contiguous():
-            up_fc_weight = up_fc_weight.contiguous()
-        if not down_proj_weight.is_contiguous():
-            down_proj_weight = down_proj_weight.contiguous()
-        output = fuse_serial_mm_3dot(
-            first_input,
-            first_weight,
-            first_bias,
-            up_fc_weight,
-            up_fc_bias,
-            down_proj_weight,
-            down_proj_bias,
-            is_first_bias,
-            is_up_bias,
-            is_down_bias,
-            is_first_act,
-            is_up_act,
-            is_down_act,
-        )
-        return output
-
-
-def can_fuse_dense_tower3(
-    first_input,
-    first_weight,
-    first_bias,
-    up_fc_weight,
-    up_fc_bias,
-    down_proj_weight,
-    down_proj_bias,
-    act_mode_first,
-    act_mode_up,
-    act_mode_down,
-    is_transb_first,
-    is_transb_up,
-    is_transb_down,
-    is_first_bias,
-    is_up_bias,
-    is_down_bias,
-    is_first_act,
-    is_up_act,
-    is_down_act,
-):
-    K1, N1 = first_weight.shape
-    N1, N2 = up_fc_weight.shape
-    N2, N3 = down_proj_weight.shape
-
-    size_of_dtype = 2
-    input_dtype = first_input.dtype
-    if input_dtype == torch.float32:
-        size_of_dtype = 4
-    # Note: all weights should accommodate the wram size (512KB)
-    return (K1 * N1 + N1 * N2 + N2 * N3 + N1 + N2 + N3) <= (512 / size_of_dtype * 1024)
-
-
 def get_structure_replacements(config):
     return {
         "CustomRMSNorm": RMSNormModule,
@@ -325,7 +176,4 @@ def get_structure_replacements(config):
         "ComboSum3dInp": ComboSumModule,
         "CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
         "CustomBatchDenseLayer": (BatchDenseLayerModule, can_fuse_custom_batch_denselayer),
-        "FusedDenseTower2": (FusedDenseTower2Replacement, can_fuse_dense_tower2),
-        "FusedDenseTower3": (FusedDenseTower3Replacement, can_fuse_dense_tower3),
-        "FlashAttention": (FlashAttentionModule, can_fuse_fa),
     }

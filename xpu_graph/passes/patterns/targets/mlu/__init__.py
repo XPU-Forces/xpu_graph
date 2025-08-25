@@ -18,6 +18,8 @@ def get_all_patterns(config: XpuGraphConfig):
 
         for name in dir(module):
             pat = getattr(module, name)
+            if isinstance(pat, type) and issubclass(pat, Pattern):
+                print(f"mlu target pattern: name {pat.__name__}")
             if (
                 isinstance(pat, type)
                 and issubclass(pat, Pattern)

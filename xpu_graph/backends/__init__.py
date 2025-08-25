@@ -12,11 +12,12 @@ def vendor_compiler(
 ) -> Callable:
     try:
         target_mod = importlib.import_module(f".{target.value}", __package__)
-        compile_fn = getattr(target_mod, f"{target.value}_compile")
-        logger.info(f"{target.value}_compile start...")
-        xpu_compiled = compile_fn(gm, fake_inputs, **config_dict)
-        logger.info(f"{target.value}_compile complete")
-        return xpu_compiled
     except Exception:
         logger.warning(f"{target.value}_compiler not found, return gm")
         return gm
+
+    compile_fn = getattr(target_mod, f"{target.value}_compile")
+    logger.info(f"{target.value}_compile start...")
+    xpu_compiled = compile_fn(gm, fake_inputs, **config_dict)
+    logger.info(f"{target.value}_compile complete")
+    return xpu_compiled
