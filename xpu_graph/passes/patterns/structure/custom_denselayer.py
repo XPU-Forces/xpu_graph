@@ -15,7 +15,7 @@ from ..utils.check_ops import (
 )
 
 
-def check_wright_trans(node):
+def check_weight_trans(node):
     weight_trans = False
     if check_trans_op(node):
         trans_param = (node.args[1], node.args[2])
@@ -44,7 +44,7 @@ def match_mm_act(node):
         is_addmm, bias, inputs, weights = check_addmm_op(linear_node)
         if not is_addmm:
             return False, []
-    weight_trans, weights = check_wright_trans(weights)
+    weight_trans, weights = check_weight_trans(weights)
     return True, [inputs, weights, weight_trans, bias, act_str]
 
 
@@ -64,7 +64,7 @@ def match_bmm_act(node):
         is_addmm, bias, inputs, weights = check_baddbmm_op(linear_node)
         if not is_addmm:
             return False, []
-    weight_trans, weights = check_wright_trans(weights)
+    weight_trans, weights = check_weight_trans(weights)
     return True, [inputs, weights, weight_trans, bias, act_str]
 
 
