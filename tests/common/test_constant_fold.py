@@ -208,17 +208,41 @@ class TestConstantFolding:
         assert is_similar(result, expect), f"Failed for {testcase_class.__name__}"
         assert "Optimizer.ConstantFolding" in caplog.text
         if testcase_class == CanConstantFolding1:
-            assert caplog.text.count("Removed unused constant") == 1
+            assert (
+                caplog.text.count("Removed unused constant") == 1
+                and "Found 1 managed constants"
+                in [l for l in caplog.text.splitlines() if "managed constants in the GraphModule:" in l][-1]
+            )
         elif testcase_class == CanConstantFolding2:
-            assert caplog.text.count("Removed unused constant") == 2
+            assert (
+                caplog.text.count("Removed unused constant") == 2
+                and "Found 1 managed constants"
+                in [l for l in caplog.text.splitlines() if "managed constants in the GraphModule:" in l][-1]
+            )
         elif testcase_class == CanConstantFolding3:
-            assert caplog.text.count("Removed unused constant") == 2
+            assert (
+                caplog.text.count("Removed unused constant") == 2
+                and "Found 1 managed constants"
+                in [l for l in caplog.text.splitlines() if "managed constants in the GraphModule:" in l][-1]
+            )
         elif testcase_class == CanConstantFolding4:
-            assert caplog.text.count("Removed unused constant") == 2
+            assert (
+                caplog.text.count("Removed unused constant") == 2
+                and "Found 1 managed constants"
+                in [l for l in caplog.text.splitlines() if "managed constants in the GraphModule:" in l][-1]
+            )
         elif testcase_class == FoldLogicalFullFull:
-            assert caplog.text.count("Removed unused constant") == 2
+            assert (
+                caplog.text.count("Removed unused constant") == 2
+                and "Found 1 managed constants"
+                in [l for l in caplog.text.splitlines() if "managed constants in the GraphModule:" in l][-1]
+            )
         elif testcase_class == FoldLogicalFullConst:
-            assert caplog.text.count("Removed unused constant") == 2
+            assert (
+                caplog.text.count("Removed unused constant") == 2
+                and "Found 1 managed constants"
+                in [l for l in caplog.text.splitlines() if "managed constants in the GraphModule:" in l][-1]
+            )
 
     @pytest.mark.parametrize(
         "testcase_class, inputs",
