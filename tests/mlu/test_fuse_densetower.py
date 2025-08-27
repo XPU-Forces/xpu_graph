@@ -11,11 +11,7 @@ device = "mlu:0"
 dtype = torch.float16
 
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 
 def fn0(ffn_input, ffn_weight1, ffn_weight2, ffn_weight3, bias1, bias2, bias3, act1, act2, act3):
@@ -75,7 +71,7 @@ def serial_mm_test(xpu_graph_backend, func):
         res1 = func(*args)
         res = compiled(*args)
 
-        assertTensorsEqual(res1.cpu().float(), res.cpu().float(), 0.003, use_MSE=True, use_RAE=True)
+        is_similar(res1.cpu().float(), res.cpu().float())
 
 
 class TestSerialMM:

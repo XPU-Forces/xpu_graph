@@ -6,11 +6,7 @@ import torch.nn.functional as F
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "cpu"
 data_type = torch.float32
@@ -36,7 +32,7 @@ def matmul_test(xpu_graph_backend, func, inputs_dtype, weight_dtype, bias_dtype)
     res = func(inputs, weight, bias)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, weight, bias)
-    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True)
+    is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestMatMul:

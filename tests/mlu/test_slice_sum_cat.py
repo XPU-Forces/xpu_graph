@@ -1,15 +1,10 @@
 import pytest
-
 import torch
 import torch_mlu
-import xpu_graph
 
+import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "mlu:0"
 aten = torch.ops.aten
@@ -86,16 +81,12 @@ def sumcat_test(xpu_graph_backend, func):
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res1 = func(*args)
         res = compiled(*args)
-        assertTensorsEqual(
-            res1.cpu().float(), res.cpu().float(), 0.001, use_MSE=True, use_RAE=True
-        )
+        is_similar(res1.cpu().float(), res.cpu().float())
 
 
 class TestSliceSumCat:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2
-        )
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -108,9 +99,7 @@ class TestSliceSumCat:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2
-    )
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
     sumcat_test(xpu_graph_backend, fn0)
     sumcat_test(xpu_graph_backend, fn1)
     sumcat_test(xpu_graph_backend, fn2)
