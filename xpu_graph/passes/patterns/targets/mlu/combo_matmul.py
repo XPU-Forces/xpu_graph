@@ -50,6 +50,8 @@ class FusedCombineBmm(nn.Module):
             if bias_batch is not None:
                 output = output + bias_batch
         else:
+            output = self.forward_mm(input_list, weight_list, bias_list)
+            '''
             if bias_list[0] is None:
                 output = self.forward_mm(input_list, weight_list, [], [], [], act)
             elif len(bias_list[0].shape) == 1:
@@ -57,6 +59,7 @@ class FusedCombineBmm(nn.Module):
             else:
                 beta = [1.0] * len(input_list)
                 output = self.forward_mm(input_list, weight_list, bias_list, [], beta, act)
+            '''
 
         # Apply activation function if specified
         if act == "relu":
@@ -78,7 +81,21 @@ class FusedCombineBmm(nn.Module):
         output = torch.bmm(input_batch.view(-1, M, K), weight_batch.view(-1, K, N)).view(T, B, M, N)
         return output
 
-    def forward_mm(self, input_list, weight_list, c_list, bias_list, beta, act: str):
+    def forward_mm(self, input_list, weight_list, bias_list):
+        if len(input_list) == 1:
+            input_list = input_list * len(weight_list)
+        batch_input = torch.stack(input_list)
+        batch_weight = torch.stack(weight_list)
+        if bias_list[0] is not None:
+            if len(bias_list[0].shape) == 1:
+                bias_list = [bias.unsqueeze(0) for bias in bias_list]
+            batch_bias = torch.stack(bias_list)
+            #output = torch.baddbmm(batch_bias, batch_input, batch_weight)
+            output = torch.bmm(batch_input, batch_weight) + batch_bias
+        else:
+            output = torch.bmm(batch_input, batch_weight)
+        return output
+    def forward_mm1(self, input_list, weight_list, c_list, bias_list, beta, act: str):
         output_list = torch.ops.torch_mlu.grouped_gemm(
             input_list,
             weight_list,

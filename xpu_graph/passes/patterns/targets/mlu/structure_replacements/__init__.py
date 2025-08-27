@@ -71,7 +71,7 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
 class FuseSliceCatSameInputModule_v2(torch.nn.Module):
     def __init__(self, many_slices):
         super().__init__()
-        self.use_triton = False  # True
+        self.use_triton = True
         from torch._subclasses.fake_tensor import unset_fake_temporarily
 
         device = torch.mlu.current_device()

@@ -1,7 +1,6 @@
 import operator
 
 import torch
-import torch_mlu
 from torch import fx, nn
 
 from xpu_graph.fx_utils import FxStage
@@ -30,6 +29,7 @@ class FusedSplit(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
+        return False
         gm.add_submodule("fused_split", self.target_mod())
         candidates = [
             node for node in gm.graph.nodes if node.op == "call_function" and node.target == torch.ops.aten.split.Tensor
