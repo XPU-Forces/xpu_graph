@@ -236,6 +236,7 @@ class FusedFlashAttention(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule):
+        return False
         graph_module.add_submodule("flash_attn_base", FlashAttentionReplacement())
         graph_module.add_submodule("flash_attn_transpose", FlashAttentionWithTranspose())
         modified = False

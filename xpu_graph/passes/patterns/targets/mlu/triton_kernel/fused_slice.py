@@ -25,15 +25,20 @@ def mlu_triton_slice_low_kernel(
     program_dim = tl.num_programs(axis=0)
     program_id = tl.program_id(0)
     block_jobs = total_jobs // program_dim
-    block_jobs_r = block_jobs
-    if program_id == program_dim - 1:
-        block_jobs_r = total_jobs - block_jobs * (program_dim - 1)
+    remainder = total_jobs % program_dim
+    if program_id < remainder:
+        block_jobs_r = block_jobs + 1
+        offset = program_id * (block_jobs + 1)
+    else:
+        block_jobs_r = block_jobs
+        offset = remainder * (block_jobs + 1) + (program_id - remainder) * block_jobs
 
     loop = (input_row + BLOCK_SIZE_R - 1) // BLOCK_SIZE_R
     for l in range(loop):
         for block_idx in range(block_jobs_r):
-            slice_idx = block_idx + block_jobs * program_id
+            slice_idx = block_idx + offset
             start_index = tl.load(start_indices_ptr + slice_idx)
+            output_ptr_offset = output_ptr + (slice_idx * input_row) * slice_len
 
             input_block_ptr = tl.make_block_ptr(
                 base=input_ptr,
@@ -45,10 +50,10 @@ def mlu_triton_slice_low_kernel(
             )
             value = tl.load(input_block_ptr, boundary_check=(0,), padding_option=0)
             output_block_ptr = tl.make_block_ptr(
-                base=output_ptr,
-                shape=(input_row * total_jobs, slice_len),
+                base=output_ptr_offset,
+                shape=(input_row, slice_len),
                 strides=(slice_len, 1),
-                offsets=(slice_idx * input_row + l * BLOCK_SIZE_R, 0),
+                offsets=(l * BLOCK_SIZE_R, 0),
                 block_shape=(BLOCK_SIZE_R, BLOCK_SIZE_C),
                 order=(1, 0),
             )
@@ -92,13 +97,13 @@ def fused_slice_low(
         block_size_c,
     )
 
-    return output_tensors
+    return output_tensors.view(num_slices, src_tensor.shape[0], slice_len)
 
 
 @fused_slice_low.register_fake
 def fused_slice_low_fake(src_tensor, start_indices, slice_len, n_rows, input_stride):
     output_tensors = torch.empty(
-        (len(start_indices) * src_tensor.shape[0], slice_len),
+        (len(start_indices), src_tensor.shape[0], slice_len),
         device=src_tensor.device,
         dtype=src_tensor.dtype,
     )

@@ -265,6 +265,7 @@ class FusedSerialMM2Dot(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return False
         graph_module.add_submodule("mlu_triton_serial_mm_2dot_replacement", FusedSerialMM2DotReplacement())
         for node in reversed(graph_module.graph.nodes):
             is_match, tinyffn_param = _is_serial_mm_2dot(node)
@@ -286,6 +287,7 @@ class FusedSerialMM3Dot(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return False
         graph_module.add_submodule("mlu_triton_serial_mm_3dot_replacement", FusedSerialMM3DotReplacement())
         for node in reversed(graph_module.graph.nodes):
             is_match, tinyffn_param = _is_serial_mm_3dot(node)
