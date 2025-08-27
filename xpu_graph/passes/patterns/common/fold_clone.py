@@ -47,3 +47,29 @@ class FoldClone(Pattern):
                 gm.graph.erase_node(clone)
 
         return changed
+
+class FoldClone1(Pattern):
+    _support_stages = [FxStage.inference]
+
+    def process(self, gm: fx.GraphModule):
+        changed = False 
+        candidates = [
+            node
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+            and node.target == torch.ops.aten.clone.default
+        ]
+
+        for clone in candidates:
+            inp = clone.args[0]
+            if len(inp.users) > 1:
+                continue
+            if "tensor_meta" not in inp.meta:
+                continue
+            if clone.kwargs != {}:
+                continue
+            changed = True
+            clone.replace_all_uses_with(inp)
+            gm.graph.erase_node(clone)
+
+        return changed

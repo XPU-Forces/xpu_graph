@@ -236,9 +236,12 @@ class FusedFlashAttention(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule):
+        return False
+        print("DEBUG open fused flash atten")
         graph_module.add_submodule("flash_attn_base", FlashAttentionReplacement())
         graph_module.add_submodule("flash_attn_transpose", FlashAttentionWithTranspose())
         modified = False
+        return modified
         for node in reversed(graph_module.graph.nodes):
             matched, fa_param = _is_fa(node)
             if not matched:
