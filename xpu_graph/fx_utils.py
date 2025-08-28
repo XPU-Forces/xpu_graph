@@ -1,4 +1,5 @@
 import itertools
+import operator
 from contextlib import nullcontext
 from enum import Enum
 from typing import Callable, Union
@@ -332,12 +333,84 @@ def _insert_mutations(gm, fw_metadata, input_nodes):
 
 
 def decompose_for_inductor(gm, fake_inputs):
-    gm = make_fx(
+    ref_gm = make_fx(
         gm,
         decomposition_table=torch._inductor.decomposition.select_decomp_table(),
         tracing_mode="fake",
         record_module_stack=True,
     )(*fake_inputs)
+    ref_gm.print_readable()
+    decompose_graph(gm, torch._inductor.decomposition.select_decomp_table())
+
+    return gm
+
+
+def decompose_graph(gm, decomposition_table=None):
+    new_graph = fx.Graph(gm, gm.graph._tracer_cls, gm.graph._tracer_extras)
+    env = {}
+    decomposition_table = decomposition_table or {}
+    for node in gm.graph.nodes:
+        if node.op == "call_module" or (
+            node.op == "call_function"
+            and (
+                node.target in decomposition_table
+                or (node.target != operator.getitem and not isinstance(node.target, torch._ops.OpOverload))
+            )
+        ):
+            sub_mod = gm.get_submodule(node.target) if isinstance(node.target, str) else node.target
+            print(sub_mod)
+            wrapped, arglist = wrapper_and_args_for_make_fx(sub_mod, node.args, node.kwargs or {})
+
+            # use the original (fake) tensor to avoid dynamic-control-flow issues
+            # and "real" tracing mode should be used to avoid fakify again
+            f_arglist = map_arg(arglist, lambda arg: arg.meta["val"])
+            print(f_arglist)
+            sub_graph = make_fx(wrapped, decomposition_table=decomposition_table, tracing_mode="real")(f_arglist)
+            print(sub_graph.graph)
+            local_env = {}
+            arg_iter = iter(arglist)
+            for sub_node in sub_graph.graph.nodes:
+                if sub_node.op == "placeholder":
+                    cur_arg = next(arg_iter)
+                    if isinstance(cur_arg, fx.Node):
+                        local_env[sub_node.name] = env[cur_arg.name]
+                elif sub_node.op == "output":
+                    sub_output = map_arg(sub_node.args[0], lambda x: local_env[x.name])
+                    print(sub_output)
+                    sub_output = sub_graph.graph._codegen.process_outputs(sub_output)
+                    print(sub_output)
+                elif sub_node.op == "get_attr":
+                    sub_attr = getattr(sub_graph, sub_node.target)
+                    glob_attr_name = node.target + "_" + sub_node.target
+                    if isinstance(sub_attr, torch.nn.Parameter):
+                        gm.register_parameter(glob_attr_name, sub_attr)
+                    elif isinstance(sub_attr, torch.Tensor):
+                        gm.register_buffer(glob_attr_name, sub_attr)
+                    else:
+                        setattr(gm, glob_attr_name, sub_attr)
+                    new_node = new_graph.get_attr(glob_attr_name)
+                    local_env[sub_node.name] = new_node
+                else:
+                    new_node = new_graph.node_copy(sub_node, lambda x: local_env[x.name])
+                    local_env[sub_node.name] = new_node
+            env[node.name] = sub_output
+        elif node.op == "call_function" and node.target == operator.getitem:
+            base = node.args[0]
+            idx = node.args[1]
+            if isinstance(base, fx.Node) and not isinstance(env[base.name], fx.Node):
+                env[node.name] = operator.getitem(env[base.name], idx)
+            else:
+                new_node = new_graph.node_copy(node, lambda x: env[x.name])
+                env[node.name] = new_node
+        else:
+            new_node = new_graph.node_copy(node, lambda x: env[x.name])
+            env[node.name] = new_node
+
+    new_graph.lint()
+    gm.graph = new_graph
+    gm.recompile()
+    gm.delete_all_unused_submodules()
+    gm.print_readable()
     return gm
 
 
