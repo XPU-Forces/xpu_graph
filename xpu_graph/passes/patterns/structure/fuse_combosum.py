@@ -101,7 +101,9 @@ class ComboSum3dInp(Pattern):
 
             for idx, ori_node in enumerate(sum_nodes):
                 with graph_module.graph.inserting_after(new_nodes):
-                    idx_node = graph_module.graph.call_function(operator.getitem, args=(new_nodes, idx))
+                    idx_node = graph_module.graph.call_function(
+                        operator.getitem, args=(new_nodes, idx)
+                    )
                 ori_node.replace_all_uses_with(idx_node)
                 partly_topo_sort(graph_module, idx_node)
                 graph_module.graph.erase_node(ori_node)

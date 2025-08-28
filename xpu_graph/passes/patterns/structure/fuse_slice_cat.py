@@ -1,6 +1,6 @@
 import torch
 from torch import nn, fx
-from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from typing import Callable
 from xpu_graph import OptLevel
 from ..utils.check_ops import (
@@ -13,6 +13,7 @@ from ..utils.check_ops import (
 from ..utils.match_sub_list import match_sub_list
 
 MAX_INT64 = 9223372036854775807
+
 
 class MergeCatReplacement(nn.Module):
     def forward(self, input_tensor_list, cat_axis=0):
@@ -27,6 +28,7 @@ class MergeCatReplacement(nn.Module):
             ],
             axis=0,
         )
+
 
 def validate_slice_operation(n_list):
     if len(n_list) < 2:
@@ -49,6 +51,7 @@ def validate_slice_operation(n_list):
         return False, None, None
     return True, slice_input[0], slice_param
 
+
 def fuse_mixed_ops_and_cat(graph_module: fx.GraphModule):
     changed = False
     for node in reversed(graph_module.graph.nodes):
@@ -60,7 +63,9 @@ def fuse_mixed_ops_and_cat(graph_module: fx.GraphModule):
         if cat_axis == 0:
             continue
         ori_cat_input = node.args[0]
-        start, end = match_sub_list(ori_cat_input, lambda val: check_slice_op(val) and check_meta_2d(val))
+        start, end = match_sub_list(
+            ori_cat_input, lambda val: check_slice_op(val) and check_meta_2d(val)
+        )
         n_list = node.args[0][start : end + 1]
         is_slice, src_node, slice_param = validate_slice_operation(n_list)
         if not is_slice:
@@ -96,9 +101,11 @@ def fuse_mixed_ops_and_cat(graph_module: fx.GraphModule):
 
 
 class FusedCatSlice(Pattern):
-    '''
+    _pattern_group = PatternGroup.GROUP1
+    """
     slice + cat -> fuse_slice_cat
-    '''
+    """
+
     def __init__(self, target_mod: torch.nn.Module, *super_args):
         super().__init__(*super_args)
         self.target_mod = target_mod

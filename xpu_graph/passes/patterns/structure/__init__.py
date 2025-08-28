@@ -30,6 +30,8 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat._opt_level <= config.opt_level
             ):
                 if pat.__name__ in structure_preplacements:
-                    patterns[pat._pattern_group].append(pat(**structure_preplacements[pat.__name__]))
+                    patterns[pat._pattern_group].append(
+                        pat(**structure_preplacements[pat.__name__])
+                    )
 
     return patterns

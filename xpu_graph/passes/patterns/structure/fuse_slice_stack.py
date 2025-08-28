@@ -25,7 +25,11 @@ class MergeCatReplacement(nn.Module):
     def forward(self, input_tensor_list, cat_axis=0):
         return torch.cat(
             [
-                (input_tensor if len(input_tensor.shape) == 3 else input_tensor.unsqueeze(0))
+                (
+                    input_tensor
+                    if len(input_tensor.shape) == 3
+                    else input_tensor.unsqueeze(0)
+                )
                 for input_tensor in input_tensor_list
             ],
             axis=0,
@@ -64,7 +68,9 @@ def check_sum_enable(gm, node):
     if dim != [0]:
         return False
     with gm.graph.inserting_before(sum_node):
-        new_sum_node = gm.graph.call_function(torch.ops.aten.sum.dim_IntList, args=(sum_node.args[0], [1]))
+        new_sum_node = gm.graph.call_function(
+            torch.ops.aten.sum.dim_IntList, args=(sum_node.args[0], [1])
+        )
         sum_node.replace_all_uses_with(new_sum_node)
         gm.graph.erase_node(sum_node)
     return True
@@ -76,7 +82,9 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
         if not check_stack_op(node):
             continue
         ori_cat_input = node.args[0]
-        start, end = match_sub_list(ori_cat_input, lambda val: check_slice_op(val) and check_meta_2d(val))
+        start, end = match_sub_list(
+            ori_cat_input, lambda val: check_slice_op(val) and check_meta_2d(val)
+        )
         n_list = node.args[0][start : end + 1]
         is_slice, src_node, slice_param = validate_slice_operation(n_list)
         if not is_slice:
@@ -97,7 +105,11 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
                 args=(slice_node, (batch_node, len(slice_param), -1)),
             )
             # skip trans is the next node is sum, and change sum dim
-            if (start == 0) and (end + 1 == len(ori_cat_input)) and check_sum_enable(graph_module, node):
+            if (
+                (start == 0)
+                and (end + 1 == len(ori_cat_input))
+                and check_sum_enable(graph_module, node)
+            ):
                 new_cat_input.append(reshape_node)
             else:
                 transpose_node = graph_module.graph.call_function(
@@ -117,7 +129,9 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
                 )
         else:
             with graph_module.graph.inserting_before(node):
-                cat_node = graph_module.graph.call_module("reshape_cat_module", args=(new_cat_input, -1))
+                cat_node = graph_module.graph.call_module(
+                    "reshape_cat_module", args=(new_cat_input, -1)
+                )
         node.replace_all_uses_with(cat_node)
         slice_nodes = node.args[0]
         for slice_node in slice_nodes:
@@ -131,6 +145,7 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
 
 class FusedSliceStackSum(Pattern):
     _opt_level = OptLevel.level2
+    _pattern_group = PatternGroup.GROUP1
     """
     slice + stack -> fuse_slice_cat + reshape + trans
     trans + sum -> sum

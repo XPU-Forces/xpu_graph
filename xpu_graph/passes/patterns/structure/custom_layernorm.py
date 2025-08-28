@@ -20,12 +20,16 @@ class CustomLayerNorm(Pattern):
         if not hasattr(graph_module, "custom_layer_norm"):
             graph_module.add_submodule("custom_layer_norm", self.target_mod())
         for node in graph_module.graph.nodes:
-            if node.op == "call_module" and isinstance(getattr(graph_module, node.target), DefaultLayerNorm):
+            if node.op == "call_module" and isinstance(
+                getattr(graph_module, node.target), DefaultLayerNorm
+            ):
                 inputs, weight, bias, eps = node.args
                 if weight is None or bias is None:
                     continue
                 with graph_module.graph.inserting_before(node):
-                    custom_layernorm = graph_module.graph.call_module("custom_layer_norm", (inputs, weight, bias, eps))
+                    custom_layernorm = graph_module.graph.call_module(
+                        "custom_layer_norm", (inputs, weight, bias, eps)
+                    )
                 node.replace_all_uses_with(custom_layernorm, propagate_meta=True)
                 is_modified = True
         return is_modified
