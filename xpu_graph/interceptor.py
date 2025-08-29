@@ -92,7 +92,7 @@ def compare_tensor_list(base_list, trgt_list, **check_configs):
 
 class FunctionInterceptor:
     def __init__(self, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
-        # Note: The monitor is used for training.
+        # Note: The monitor is used for inference.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
         self.mark = mark
