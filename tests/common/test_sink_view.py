@@ -6,11 +6,7 @@ import torch.nn.functional as F
 
 from xpu_graph import XpuGraph, XpuGraphConfig
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "cpu"
 data_type = torch.float32
@@ -44,7 +40,7 @@ def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act):
     res = func(input, bias, bin_op, act)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(input, bias, bin_op, act)
-    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, allow_inf=True, use_MSE=True, use_RAE=True)
+    is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestSinkView:

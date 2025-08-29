@@ -1,12 +1,9 @@
-from typing import Optional
-
 import torch
-from torch import fx, nn
+from torch import fx
 
 from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.utils import logger
 
 from ..utils.check_ops import check_add_op, check_bmm_op
 
@@ -27,25 +24,35 @@ def _is_baddbmm(
             return False, ()
     if len(bmm_node.users) != 1:
         return False, ()
-    if isinstance(bias_node, float) or isinstance(bias_node, int):
+    if node.meta["val"].shape != bmm_node.meta["val"].shape:
         return False, ()
+
     return True, (bias_node, input_node, weight_node)
 
 
-class FusedBAddBmm(Pattern):
+class FusedBAddBMM(Pattern):
     _opt_level = OptLevel.level2
-    _support_stages = [FxStage.forward, FxStage.pregrad]
+    _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         for node in reversed(graph_module.graph.nodes):
             is_match, bmm_inputs = _is_baddbmm(node)
             if is_match:
+                bias_node, input_node, weight_node = bmm_inputs
                 with graph_module.graph.inserting_before(node):
+                    if isinstance(bias_node, float) or isinstance(bias_node, int):
+                        bias_node = graph_module.graph.create_node(
+                            op="call_function",
+                            target=torch.ops.aten.scalar_tensor.default,
+                            args=(bias_node,),
+                            kwargs={"dtype": weight_node.meta["val"].dtype, "device": weight_node.meta["val"].device},
+                            name="bias_constant",
+                        )
                     addbmm_node = graph_module.graph.create_node(
                         op="call_function",
                         target=torch.ops.aten.baddbmm.default,
-                        args=(bmm_inputs),
+                        args=(bias_node, input_node, weight_node),
                         name="baddbmm_replacement",
                     )
                 node.replace_all_uses_with(addbmm_node)

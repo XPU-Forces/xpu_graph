@@ -77,6 +77,6 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         name: npu-codecov
-        fail_ci_if_error: false
+        fail_ci_if_error: true
         use_pypi: true
         verbose: true

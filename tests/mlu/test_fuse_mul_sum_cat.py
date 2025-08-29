@@ -5,11 +5,7 @@ import torch
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 
 def fn0(x1, x2, x3, x4):
@@ -53,7 +49,7 @@ def mul_sum_cat_test(xpu_graph_backend, func):
     else:
         res1 = func(a, b, c, d, e, f, g, h)
         res = compiled(a, b, c, d, e, f, g, h)
-    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.001, use_MSE=True, use_RAE=True)
+    is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestMulSumCat:

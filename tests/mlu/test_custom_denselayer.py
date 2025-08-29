@@ -5,11 +5,7 @@ import torch_mlu
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "mlu:0"
 data_type = torch.float32
@@ -139,7 +135,7 @@ def matmul_test(xpu_graph_backend, func):
     res = func(inputs, weight, bias)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, weight, bias)
-    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True)
+    is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestMatMul:
@@ -175,17 +171,17 @@ class TestMatMul:
     def test_matmul_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             matmul_test(self.xpu_graph_backend, pattern_func)
-        if pattern_func in [fn0, fn1, fn2, fn3]:
-            assert "Pattern.FusedMatMul changed graph" in caplog.text
-        elif pattern_func in [fn4, fn5, fn6, fn7, fn8, fn9, fn10, fn11, fn18]:
-            assert "Pattern.FusedMatMulAdd changed graph" in caplog.text
+        if pattern_func in [fn4, fn5, fn6, fn7, fn8, fn9, fn10, fn11, fn13, fn14, fn15, fn16, fn17, fn20]:
+            assert "Pattern.FusedAddMM changed graph" in caplog.text
         else:
-            assert "Pattern.FusedMatMulAct changed graph" in caplog.text
+            assert "Pattern.FusedAddMM changed graph" not in caplog.text
+        assert "Pattern.CustomDenseLayer changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
     matmul_test(xpu_graph_backend, fn1)
+    matmul_test(xpu_graph_backend, fn6)
     matmul_test(xpu_graph_backend, fn9)
     matmul_test(xpu_graph_backend, fn20)
     matmul_test(xpu_graph_backend, fn17)

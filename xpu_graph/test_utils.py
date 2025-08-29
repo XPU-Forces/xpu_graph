@@ -1,12 +1,12 @@
 import logging
 import time
+from contextlib import contextmanager
 
 import torch
 from torch.testing._internal.common_utils import TestCase
 
 from .cache import XpuGraphCache
 from .compiler import XpuGraph
-from .utils import logger
 
 
 def is_similar(result, expected, rtol=0.01, atol=0.01):
@@ -101,36 +101,32 @@ def assertTensorsEqual(
             tc.assertLessEqual(max_err, prec, message)
 
 
-class need_xpu_graph_logs:
-    def __init__(self):
-        xpugraph_logger = logging.getLogger("xpu_graph")
-        self.original_propagate = xpugraph_logger.propagate
-        self.original_level = xpugraph_logger.level
+@contextmanager
+def need_xpu_graph_logs():
+    xpugraph_logger = logging.getLogger("xpu_graph")
+    original_propagate = xpugraph_logger.propagate
+    original_level = xpugraph_logger.level
 
-    def __enter__(self):
-        xpugraph_logger = logging.getLogger("xpu_graph")
+    try:
         xpugraph_logger.propagate = True
         xpugraph_logger.setLevel(logging.DEBUG)
+        yield
+    finally:
+        xpugraph_logger.propagate = original_propagate
+        xpugraph_logger.setLevel(original_level)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        xpugraph_logger = logging.getLogger("xpu_graph")
-        xpugraph_logger.propagate = self.original_propagate
-        xpugraph_logger.setLevel(self.original_level)
 
+@contextmanager
+def skip_xpu_graph_cache(xpu_graph_backend: XpuGraph):
+    cache = xpu_graph_backend._cache
 
-class skip_xpu_graph_cache:
-    def __init__(self, xpu_graph_backend: XpuGraph):
-        self.backend = xpu_graph_backend
-        self.cache = xpu_graph_backend._cache
-
-    def __enter__(self):
+    try:
         # Use base cache to skip save/load
         torch._dynamo.reset_code_caches()
-        self.backend._cache = XpuGraphCache()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.backend._cache = self.cache
+        xpu_graph_backend._cache = XpuGraphCache()
+        yield
+    finally:
+        xpu_graph_backend._cache = cache
 
 
 def timeit(func, *args, **kwargs):

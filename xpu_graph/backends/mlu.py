@@ -9,7 +9,10 @@ from xpu_graph.utils import logger
 
 def mlu_compile(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
     logger.info("Decompose gm for mlu_inductor")
-    module = decompose_for_inductor(module, example_inputs)
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
+        module = decompose_for_inductor(module, example_inputs)
     logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
 
     mode = config_dict.get("mode", "reduce-overhead")

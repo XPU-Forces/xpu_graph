@@ -1,9 +1,9 @@
 import pytest
 import torch
-import torch_mlu
+
 import xpu_graph
-from xpu_graph.test_utils import assertTensorsEqual
 from xpu_graph.config import OptLevel
+from xpu_graph.test_utils import is_similar
 
 
 def naive(q, k, v, bias, causal, sm_scale, has_bias):
@@ -48,9 +48,7 @@ def linear_attention_test(xpu_graph, func):
         compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
         res = compiled(q, k, v, bias)
         res1 = func(q, k, v, bias)
-    assertTensorsEqual(
-        res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True
-    )
+    is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestLinearAttention:

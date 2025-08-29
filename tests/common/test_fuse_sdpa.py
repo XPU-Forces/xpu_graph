@@ -3,11 +3,11 @@ import math
 import pytest
 import torch
 
-import xpu_graph
+from xpu_graph import XpuGraph, XpuGraphConfig
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
-DEVICE = "mlu"
+DEVICE = "cpu"
 dtype = torch.half
 
 B = 1
@@ -567,12 +567,14 @@ def fa_test(xpu_graph_backend, pattern):
 
 class TestFA:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False,
-            freeze=False,
-            constant_folding=True,
-            folding_freezed_params=False,
-            opt_level=OptLevel.level2,
+        self.xpu_graph_backend = XpuGraph(
+            XpuGraphConfig(
+                is_training=False,
+                freeze=False,
+                constant_folding=True,
+                folding_freezed_params=False,
+                opt_level=OptLevel.level2,
+            )
         )
 
     @pytest.mark.parametrize(
@@ -610,12 +612,14 @@ class TestFA:
 
 class TestFAWithTAOScale:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False,
-            freeze=False,
-            constant_folding=True,
-            folding_freezed_params=False,
-            opt_level=OptLevel.level3,
+        self.xpu_graph_backend = XpuGraph(
+            XpuGraphConfig(
+                is_training=False,
+                freeze=False,
+                constant_folding=True,
+                folding_freezed_params=False,
+                opt_level=OptLevel.level3,
+            )
         )
 
     @pytest.mark.parametrize(
@@ -632,13 +636,15 @@ class TestFAWithTAOScale:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False,
-        freeze=False,
-        constant_folding=True,
-        folding_freezed_params=False,
-        opt_level=OptLevel.level2,
-        debug=True,
+    xpu_graph_backend = XpuGraph(
+        XpuGraphConfig(
+            is_training=False,
+            freeze=False,
+            constant_folding=True,
+            folding_freezed_params=False,
+            opt_level=OptLevel.level2,
+            debug=True,
+        )
     )
     fa_test(xpu_graph_backend, _sdpa_pattern_tensor_scale)
     fa_test(xpu_graph_backend, _sdpa_pattern_1)
