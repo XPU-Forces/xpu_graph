@@ -61,6 +61,10 @@ class TestMatMul:
             (torch.float32, torch.float32, torch.float32),
             (torch.float32, torch.float32, float),
             (torch.float32, torch.float32, None),
+            (torch.bfloat16, torch.bfloat16, torch.bfloat16),
+            (torch.float16, torch.float16, torch.float16),
+            (torch.bfloat16, torch.bfloat16, torch.float32),
+            (torch.float16, torch.float16, torch.bfloat16),
         ],
     )
     def test_matmul_patterns(self, caplog, pattern_func, is_training, inputs_dtype, weight_dtype, bias_dtype):

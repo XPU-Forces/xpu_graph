@@ -46,16 +46,40 @@ class FusedBAddBMM(Pattern):
                             op="call_function",
                             target=torch.ops.aten.scalar_tensor.default,
                             args=(bias_node,),
-                            kwargs={"dtype": weight_node.meta["val"].dtype, "device": weight_node.meta["val"].device},
+                            kwargs={"dtype": input_node.meta["val"].dtype, "device": input_node.meta["val"].device},
                             name="bias_constant",
                         )
-                    addbmm_node = graph_module.graph.create_node(
+                    elif bias_node.meta["val"].dtype != input_node.meta["val"].dtype:
+                        bias_node = graph_module.graph.create_node(
+                            op="call_function",
+                            target=(
+                                torch.ops.aten.to.dtype
+                                if self._current_stage == FxStage.pregrad
+                                else torch.ops.aten._to_copy.default
+                            ),
+                            args=(bias_node,),
+                            kwargs={"dtype": input_node.meta["val"].dtype},
+                            name="bias_cast",
+                        )
+                    baddbmm_node = graph_module.graph.create_node(
                         op="call_function",
                         target=torch.ops.aten.baddbmm.default,
                         args=(bias_node, input_node, weight_node),
                         name="baddbmm_replacement",
                     )
-                node.replace_all_uses_with(addbmm_node)
+                    if input_node.meta["val"].dtype != node.meta["val"].dtype:
+                        baddbmm_node = graph_module.graph.create_node(
+                            op="call_function",
+                            target=(
+                                torch.ops.aten.to.dtype
+                                if self._current_stage == FxStage.pregrad
+                                else torch.ops.aten._to_copy.default
+                            ),
+                            args=(baddbmm_node,),
+                            kwargs={"dtype": node.meta["val"].dtype},
+                            name="input_cast",
+                        )
+                node.replace_all_uses_with(baddbmm_node)
                 graph_module.graph.erase_node(node)
                 is_modified = True
 
