@@ -187,6 +187,7 @@ class __XPU_GRAPH_ENVS__:
     debug = "XPUGRAPH_DEBUG"
     opt_level = "XPUGRAPH_OPT_LEVEL"
     vendor_compiler_mode = "VENDOR_COMPILER_MODE"
+    enable_interceptor = "XPUGRAPH_INTERCEPTOR"
     logs = "XPUGRAPH_LOGS"
 
 
