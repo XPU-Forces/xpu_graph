@@ -2,11 +2,19 @@ import torch
 import torch.fx as fx
 import torch_mlu
 
+from ..triton_kernel.fused_serial_mm_2dot import fuse_serial_mm_2dot
+from ..triton_kernel.fused_serial_mm_3dot import fuse_serial_mm_3dot
 from ..triton_kernel.fused_slice import fused_slice_low
 from ..triton_kernel.fused_slice_cat import fused_slice_cat
 from ..triton_kernel.fused_slice_v2 import fused_slice_low_v2
 from ..triton_kernel.fused_sum_3d import fused_sum_3d_input
 from ..triton_kernel.get_mlu_devinfo import get_device_properties
+from .dense_layer_modules import (
+    BatchDenseLayerModule,
+    DenseLayerModule,
+    can_fuse_custom_batch_denselayer,
+    can_fuse_custom_denselayer,
+)
 from .norm_modules import LayerNormModule, RMSNormModule
 
 
@@ -166,4 +174,6 @@ def get_structure_replacements(config):
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
+        "CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
+        "CustomBatchDenseLayer": (BatchDenseLayerModule, can_fuse_custom_batch_denselayer),
     }

@@ -85,7 +85,7 @@ class DropoutModel(nn.Module):
 all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, DropoutModel]
 
 
-def compare_inference(device, data_type, ModCls, backend, bsz=8, input_dim=16):
+def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16):
     torch._dynamo.reset()
     golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()

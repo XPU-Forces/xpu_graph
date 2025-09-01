@@ -76,6 +76,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         name: mlu-codecov
-        fail_ci_if_error: false
+        fail_ci_if_error: true
+        binary: /usr/local/bin/codecovcli # We have v11.0.3 installed whose binary is still codecovcli and it is called codecov-cli since v11.2.0
         use_pypi: true
         verbose: true

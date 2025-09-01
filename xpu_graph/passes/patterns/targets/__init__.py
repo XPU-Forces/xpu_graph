@@ -4,9 +4,10 @@ import importlib
 def get_all_patterns(config) -> dict:
     try:
         target_mod = importlib.import_module(f".{config.target.value}", __package__)
-        return target_mod.get_all_patterns(config)
     except ImportError:
         return {}
+
+    return target_mod.get_all_patterns(config)
 
 
 def get_structure_replacements(config) -> dict:

@@ -365,3 +365,14 @@ def get_disable_fake_mode():
             unset_fake_temporarily as disable_fake_mode,
         )
     return disable_fake_mode
+
+
+def _get_wrapped_constant(node: fx.Node):
+    if node.op == "call_function" and node.target == torch.ops.aten.scalar_tensor.default:
+        return node.args[0]
+    elif node.op == "get_attr":
+        with get_disable_fake_mode()():
+            node = getattr(node.graph.owning_module, node.target)
+            return node.item()
+    else:
+        assert False, "Cannot fetch wrapped constant from node: {}".format(node)

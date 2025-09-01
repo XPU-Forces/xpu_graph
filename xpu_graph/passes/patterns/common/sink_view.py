@@ -61,9 +61,10 @@ class SinkView(Pattern):
                 result_shape = user.meta["val"].shape
                 view_shape = node.meta["val"].shape
                 orig_shape = node.args[0].meta["val"].shape
+                no_broadcast_dims = min(len(other_shape), len(orig_shape))
                 # Only if the result shape is the same as the view shape, and the bias-ed part get unchanged
                 if result_shape == view_shape and (
-                    len(other_shape) == 0 or orig_shape[-len(other_shape) :] == view_shape[-len(other_shape) :]
+                    len(other_shape) == 0 or orig_shape[-no_broadcast_dims:] == view_shape[-no_broadcast_dims:]
                 ):
                     with graph_module.graph.inserting_before(user):
                         new_add = graph_module.graph.create_node(
