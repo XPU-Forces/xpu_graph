@@ -1,12 +1,11 @@
 import os
-import tempfile
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from .utils import __XPU_GRAPH_ENVS__, logger
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
 
 class Target(Enum):
@@ -65,6 +64,9 @@ class XpuGraphConfig:
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
     vendor_compiler_config: Optional[Dict[str, Any]] = None
 
+    # Users can enable interceptor to monitor the results of compiled graph
+    enable_interceptor: Optional[str] = None
+
     def _reset_config_with_env(self):
         import os
 
@@ -98,6 +100,9 @@ class XpuGraphConfig:
                     warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
                 else:
                     self.vendor_compiler_config = {"mode": vendor_compiler_mode}
+
+        if os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor) is not None:
+            self.enable_interceptor = os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor)
 
 
 def get_cache_dir():

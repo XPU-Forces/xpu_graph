@@ -4,16 +4,21 @@ import torch
 import xpu_graph
 from tests.common.test_models import all_models, compare_training
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
-device = "cpu"
+device = "mlu"
 data_type = torch.float32
 
 
 class TestTraining:
     def setup_class(self):
-        train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level1, freeze=False)
-        self.train_backend = xpu_graph.XpuGraph(train_config)
+        self.train_backend = xpu_graph.mlu_compiler(
+            is_training=True,
+            opt_level=OptLevel.level1,
+            freeze=False,
+            vendor_compiler_config=None,  # FIXME: inductor has some bug with index_put
+            cache=xpu_graph.cache.no_cache(),
+        )
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -25,10 +30,14 @@ class TestTraining:
 
 class TestTrainingWithInterceptor:
     def setup_class(self):
-        train_config = xpu_graph.XpuGraphConfig(
-            is_training=True, opt_level=OptLevel.level1, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
+        self.train_backend = xpu_graph.mlu_compiler(
+            is_training=True,
+            opt_level=OptLevel.level1,
+            freeze=False,
+            enable_interceptor="rtol=1e-6,atol=1e-5",
+            vendor_compiler_config=None,  # FIXME: inductor has some bug with index_put
+            cache=xpu_graph.cache.no_cache(),
         )
-        self.train_backend = xpu_graph.XpuGraph(train_config)
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -43,9 +52,8 @@ class TestTrainingWithInterceptor:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.XpuGraphConfig(
+    xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=True, opt_level=OptLevel.level1, freeze=False, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_training(device, data_type, ModCls, xpu_graph_backend)

@@ -6,14 +6,13 @@ from tests.common.test_models import all_models, compare_inference
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
-device = "cpu"
+device = "mlu"
 data_type = torch.float32
 
 
 class TestInference:
     def setup_class(self):
-        infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=False)
-        self.infer_backend = xpu_graph.XpuGraph(infer_config)
+        self.infer_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=False)
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -26,9 +25,8 @@ class TestInference:
 
 class TestFreezeInference:
     def setup_class(self):
-        freeze_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, freeze=True)
+        self.freeze_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=True)
         # Warning: DO NOT create both freeze and non-freeze in the same test case,
-        self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -41,10 +39,9 @@ class TestFreezeInference:
 
 class TestInferenceWithInterceptor:
     def setup_class(self):
-        infer_config = xpu_graph.XpuGraphConfig(
+        self.infer_backend = xpu_graph.mlu_compiler(
             is_training=False, opt_level=OptLevel.level2, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
-        self.infer_backend = xpu_graph.XpuGraph(infer_config)
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -59,11 +56,10 @@ class TestInferenceWithInterceptor:
 
 class TestFreezeInferenceWithInterceptor:
     def setup_class(self):
-        freeze_config = xpu_graph.XpuGraphConfig(
+        self.freeze_backend = xpu_graph.mlu_compiler(
             is_training=False, opt_level=OptLevel.level2, freeze=True, enable_interceptor="rtol=1e-6,atol=1e-5"
         )
         # Warning: DO NOT create both freeze and non-freeze in the same test case,
-        self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
 
     @pytest.mark.parametrize(
         "ReproCls",
@@ -77,16 +73,14 @@ class TestFreezeInferenceWithInterceptor:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.XpuGraphConfig(
+    xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(device, data_type, ModCls, xpu_graph_backend)
 
-    config = xpu_graph.XpuGraphConfig(
+    xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(device, data_type, ModCls, xpu_graph_backend)
