@@ -1,5 +1,6 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import is_one_like
@@ -20,11 +21,7 @@ class FoldDiv1(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
         div_tup = (torch.ops.aten.div.Tensor, torch.ops.aten.div.Scalar)
-        candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in div_tup
-        ]
+        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in div_tup]
 
         for div in candidates:
             inp0 = div.args[0]
@@ -36,6 +33,9 @@ class FoldDiv1(Pattern):
                 target_val = inp0
 
             if is_match:
+                if any([isinstance(s, torch.SymInt) for s in div.meta["val"].shape]):
+                    # FIXME: use shape env to get the real shape
+                    continue
                 changed = True
                 with gm.graph.inserting_before(div):
                     from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
