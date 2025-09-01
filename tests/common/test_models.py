@@ -30,6 +30,7 @@ class InplaceModel(nn.Module):
 
     def forward(self, x):
         x = self.fc(x)
+        x = torch.abs(x) + 1
         y = x.clone()
         x.add_(1)
         z = x * y
