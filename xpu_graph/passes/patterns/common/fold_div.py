@@ -33,17 +33,16 @@ class FoldDiv1(Pattern):
                 target_val = inp0
 
             if is_match:
-                if any([isinstance(s, torch.SymInt) for s in div.meta["val"].shape]):
-                    # FIXME: use shape env to get the real shape
-                    continue
-                changed = True
                 with gm.graph.inserting_before(div):
                     from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
                         get_binary_fold_result,
                     )
 
                     fold_res = get_binary_fold_result(gm, target_val, div.meta)
-                div.replace_all_uses_with(fold_res)
-                gm.graph.erase_node(div)
+
+                if fold_res is not None:
+                    div.replace_all_uses_with(fold_res)
+                    gm.graph.erase_node(div)
+                    changed = True
 
         return changed

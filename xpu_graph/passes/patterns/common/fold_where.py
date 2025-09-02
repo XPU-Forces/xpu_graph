@@ -31,14 +31,12 @@ class FoldWhere(Pattern):
                 or (is_one_like(inp) and is_one_like(other))
                 or (is_zero_like(inp) and is_zero_like(other))
             ):
-                if any([isinstance(s, torch.SymInt) for s in where.meta["val"].shape]):
-                    # FIXME: use shape env to get the real shape
-                    continue
                 with gm.graph.inserting_before(where):
                     res = get_binary_fold_result(gm, inp, where.meta)
+
+                if res is not None:
                     where.replace_all_uses_with(res)
                     gm.graph.erase_node(where)
                     changed = True
-                    continue
 
         return changed

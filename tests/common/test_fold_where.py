@@ -36,7 +36,7 @@ class TestFoldWhereDynamic:
     def test_can_fold_case(self, caplog):
         with need_xpu_graph_logs():
             can_fold_test(self.xpu_graph, dynamic=True)
-            assert "Pattern.FoldWhere changed graph" not in caplog.text
+            assert "Pattern.FoldWhere changed graph" in caplog.text
 
 
 if __name__ == "__main__":

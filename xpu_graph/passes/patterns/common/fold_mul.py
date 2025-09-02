@@ -39,17 +39,16 @@ class FoldMul1(Pattern):
                 target_val = inp0
 
             if is_match:
-                if any([isinstance(s, torch.SymInt) for s in mul.meta["val"].shape]):
-                    # FIXME: use shape env to get the real shape
-                    continue
-                changed = True
                 with gm.graph.inserting_before(mul):
                     from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
                         get_binary_fold_result,
                     )
 
                     fold_res = get_binary_fold_result(gm, target_val, mul.meta)
-                mul.replace_all_uses_with(fold_res)
-                gm.graph.erase_node(mul)
+
+                if fold_res is not None:
+                    mul.replace_all_uses_with(fold_res)
+                    gm.graph.erase_node(mul)
+                    changed = True
 
         return changed
