@@ -9,6 +9,8 @@ from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
 
+from triton.runtime import fast_libentry
+
 @triton.jit
 def single_mul_sum_cat(
     mul0,
@@ -84,7 +86,7 @@ def single_mul_sum_cat(
     tl.store(output_block_ptr, value, boundary_check=(0,))
 
 
-@libentry.libentry()
+@fast_libentry()
 @libentry.libtuner(
     configs=[
         triton.Config(

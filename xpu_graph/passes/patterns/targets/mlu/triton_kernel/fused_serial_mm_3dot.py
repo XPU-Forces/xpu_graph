@@ -9,7 +9,7 @@ import triton.language as tl
 
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
-
+from triton.runtime import fast_libentry
 _devprop = get_device_properties()
 TOTAL_CORE_NUM = _devprop.max_cores
 
@@ -44,7 +44,7 @@ def relu(x):
     return tl.maximum(x, zero)
 
 
-@libentry.libentry()
+@fast_libentry()
 @libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},
@@ -187,7 +187,7 @@ configs1 = [
 ]
 
 
-@libentry.libentry()
+@fast_libentry()
 @libentry.libtuner(
     configs=configs1,
     key=["M", "K1", "N1", "N2", "N3"],

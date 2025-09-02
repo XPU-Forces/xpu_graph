@@ -100,6 +100,7 @@ class FusedMulSumCat(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
+        return changed
         graph_module.add_submodule("mlu_triton_mul_sum_cat_replacement", FusedMulSumCatReplacement())
 
         for node in graph_module.graph.nodes:

@@ -168,11 +168,11 @@ def get_structure_replacements(config):
     return {
         "CustomRMSNorm": RMSNormModule,
         "CustomLayerNorm": LayerNormModule,
-        "FusedSlice": FuseSliceModule,
-        "FusedCatSlice": FuseSliceCatSameInputModule,
-        "FusedSliceStackSum": FuseSliceCatSameInputModule,
-        "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
+        #"FusedSlice": FuseSliceModule,
+        #"FusedCatSlice": FuseSliceCatSameInputModule,
+        #"FusedSliceStackSum": FuseSliceCatSameInputModule,
+        #"FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
         "ComboSum3dInp": ComboSumModule,
-        "CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
+        #"CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
         "CustomBatchDenseLayer": (BatchDenseLayerModule, can_fuse_custom_batch_denselayer),
     }
