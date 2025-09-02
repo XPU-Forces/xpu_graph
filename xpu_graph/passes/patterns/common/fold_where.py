@@ -1,11 +1,12 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.check_ops import is_one_like, is_zero_like
 from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
     get_binary_fold_result,
 )
-from xpu_graph.passes.patterns.utils.check_ops import is_one_like, is_zero_like
 
 
 class FoldWhere(Pattern):
@@ -19,9 +20,7 @@ class FoldWhere(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target == torch.ops.aten.where.self
+            node for node in gm.graph.nodes if node.op == "call_function" and node.target == torch.ops.aten.where.self
         ]
 
         for where in candidates:
@@ -34,9 +33,10 @@ class FoldWhere(Pattern):
             ):
                 with gm.graph.inserting_before(where):
                     res = get_binary_fold_result(gm, inp, where.meta)
+
+                if res is not None:
                     where.replace_all_uses_with(res)
                     gm.graph.erase_node(where)
                     changed = True
-                    continue
 
         return changed

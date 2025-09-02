@@ -10,6 +10,7 @@ from typing import Callable, Optional, Union
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch._dynamo.device_interface import get_interface_for_device
+from torch._guards import TracingContext
 from torch._inductor.utils import BoxedBool
 from torch.utils._python_dispatch import _disable_current_modes
 
@@ -29,7 +30,6 @@ from collections.abc import Callable
 
 from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
-from torch.utils._python_dispatch import _disable_current_modes
 
 from .config import XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
@@ -181,7 +181,7 @@ class XpuGraphCache:
 
     def cache_key(
         self,
-        gm: torch.fx.GraphModule,
+        gm: GraphModule,
         fake_inputs,
         config: XpuGraphConfig,
         stage: FxStage,
@@ -219,7 +219,7 @@ class XpuGraphLocalCache(XpuGraphCache):
     def save_gm(self, key, value: SerializeWrapper, expire=None) -> SerializeWrapper:
         artifact_path = self._graph_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
-        with compile_lock, _disable_current_modes():
+        with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
             with open(artifact_path, "wb+") as f:
                 pickle.dump(value, f)
             with open(artifact_path, "rb") as f:
@@ -229,7 +229,7 @@ class XpuGraphLocalCache(XpuGraphCache):
     def load_gm(self, key) -> Optional[SerializeWrapper]:
         artifact_path = self._graph_path(key)
         if os.path.isfile(artifact_path):
-            with compile_lock, _disable_current_modes():
+            with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
                 logger.info(f"Use cache in location: {artifact_path}")
                 with open(artifact_path, "rb") as f:
                     cached_graph = pickle.load(f)

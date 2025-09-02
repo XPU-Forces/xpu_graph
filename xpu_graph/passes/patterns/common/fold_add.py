@@ -1,8 +1,8 @@
 import torch
 import torch.fx as fx
 
-from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.fx_utils import FxStage
+from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import is_zero_like
 
 
@@ -24,11 +24,7 @@ class FoldAdd0(Pattern):
             torch.ops.aten.add.Tensor,
             torch.ops.aten.add.Scalar,
         )
-        candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in add_tup
-        ]
+        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in add_tup]
 
         for add in candidates:
             inp0 = add.args[0]
@@ -43,14 +39,16 @@ class FoldAdd0(Pattern):
                 target_val = inp0
 
             if is_match:
-                changed = True
                 with gm.graph.inserting_before(add):
                     from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
                         get_binary_fold_result,
                     )
 
                     fold_res = get_binary_fold_result(gm, target_val, add.meta)
-                add.replace_all_uses_with(fold_res)
-                gm.graph.erase_node(add)
+
+                if fold_res is not None:
+                    add.replace_all_uses_with(fold_res)
+                    gm.graph.erase_node(add)
+                    changed = True
 
         return changed
