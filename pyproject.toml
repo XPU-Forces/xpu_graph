@@ -35,8 +35,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
 ]
-# license = ""
-# license-files = ["LICEN[CS]E*"]
+license = "Apache-2.0"
+license-files = ["LICENSE.txt"]
 [project.optional-dependencies]
 dev = [
     "pytest >= 7.0.0",
