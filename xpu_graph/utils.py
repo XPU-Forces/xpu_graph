@@ -189,6 +189,7 @@ class __XPU_GRAPH_ENVS__:
     vendor_compiler_mode = "VENDOR_COMPILER_MODE"
     enable_interceptor = "XPUGRAPH_INTERCEPTOR"
     logs = "XPUGRAPH_LOGS"
+    skip_patterns = "XPUGRAPH_SKIPS"
 
 
 def get_bool_env_var(name, default_value: bool):
