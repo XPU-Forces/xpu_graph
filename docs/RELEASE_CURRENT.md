@@ -9,6 +9,7 @@
 
 ## 重大变动
 - 新增运行时精度监控 (#272)，可以在运行时将编译产物的前反向精度与优化前的fx graph进行对比，帮助用户定位精度问题
+- 补充 Apache 2.0 协议 (#379)
 
 ## 主要特性与改进
 - 优化 slicelike folding pattern：#366
@@ -20,3 +21,4 @@
   - 优化 densetower structure pattern，支持后端特化的多层 FFN 融合
 
 ## Bug修复与其他改动
+- 修复 mlu inductor 的 cpp_wrapper 设置，并避免默认值覆盖 TORCHINDUCTOR_CPP_WRAPPER 环境变量
