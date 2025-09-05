@@ -21,7 +21,8 @@
   - 优化 densetower structure pattern，支持后端特化的多层 FFN 融合
 
 ## Bug修复与其他改动
-- 修复 mlu inductor 的 cpp_wrapper 设置，并避免默认值覆盖 TORCHINDUCTOR_CPP_WRAPPER 环境变量
+- 修复 mlu inductor 的 cpp_wrapper 设置，并避免默认值覆盖 TORCHINDUCTOR_CPP_WRAPPER 环境变量 （#367，#381）
+- 修复了 reduce(dim=None) 编译失败的问题 （#365）
 
 ---
 
