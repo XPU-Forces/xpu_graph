@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
@@ -66,6 +66,7 @@ class XpuGraphConfig:
 
     # Users can enable interceptor to monitor the results of compiled graph
     enable_interceptor: Optional[str] = None
+    skip_patterns: List[str] = field(default_factory=list)
 
     def _reset_config_with_env(self):
         import os
@@ -103,6 +104,9 @@ class XpuGraphConfig:
 
         if os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor) is not None:
             self.enable_interceptor = os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor)
+
+        if os.getenv(__XPU_GRAPH_ENVS__.skip_patterns) is not None:
+            self.skip_patterns = os.getenv(__XPU_GRAPH_ENVS__.skip_patterns).split(",")
 
 
 def get_cache_dir():
