@@ -8,7 +8,7 @@ from torch.fx import subgraph_rewriter, symbolic_trace
 from torch.utils import _pytree as pytree
 
 from xpu_graph.config import Target
-from xpu_graph.fx_utils import FxStage, dispatch_graph
+from xpu_graph.fx_utils import FxStage, dispatch_graph, get_disable_fake_mode
 from xpu_graph.utils import logger
 
 from .pattern import Pattern
@@ -48,7 +48,7 @@ class PluginPattern(Pattern):
         logger.debug(
             "Pattern %s-%s : %s\n with Replacement %s",
             eager_func.__module__,
-            eager_func.__name__,
+            get_name(eager_func),
             self._eager_pattern.graph,
             self._replacement.graph,
         )
@@ -90,9 +90,11 @@ class PluginPattern(Pattern):
         return self._filter_list
 
     def process(self, gm: fx.GraphModule):
-        matched = subgraph_rewriter.replace_pattern_with_filters(
-            gm, self._eager_pattern, self._replacement, self._filter_list, ignore_literals=self.ignore_literal
-        )
+        # NOTE(liuyuan): we're under fake tensor mode for now, such that tensor.clone get a fake tensor when rewrite with module that owns tensor.
+        with get_disable_fake_mode()():
+            matched = subgraph_rewriter.replace_pattern_with_filters(
+                gm, self._eager_pattern, self._replacement, self._filter_list, ignore_literals=self.ignore_literal
+            )
         return len(matched) > 0
 
     def __str__(self):
@@ -108,6 +110,15 @@ __LAST_PATTERN_INFO__ = None
 __CONTEXTUAL_PATTERN_RECORDER__ = None
 
 
+def get_name(obj):
+    try:
+        return obj.__qualname__
+    except AttributeError:
+        return obj.__class__.__qualname__
+    except Exception as e:
+        raise e
+
+
 def register_plugin_pattern(
     eager_func: Callable,
     example_inputs,
@@ -118,14 +129,15 @@ def register_plugin_pattern(
     postfix=None,
     ignore_literal=False,
 ):
-    func_name = f"{eager_func.__module__}-{eager_func.__name__}"
+    func_name = f"{eager_func.__module__}-{get_name(eager_func)}"
     sign = inspect.signature(eager_func)
 
-    assert len(example_inputs) == len(
-        sign.parameters
-    ), f"You should provide the same number of example inputs as the number of parameters in the function {func_name}"
+    if all(v.kind != v.VAR_POSITIONAL and v.kind != v.VAR_KEYWORD for v in sign.parameters.values()):
+        assert len(example_inputs) == len(
+            sign.parameters
+        ), f"You should provide the same number of example inputs as the number of parameters in the function {func_name}"
     assert inspect.signature(replacement) == sign, (
-        f"The signature of the replacement function {replacement.__name__} "
+        f"The signature of the replacement function {get_name(replacement)} "
         f"should be the same as the signature of the function {func_name}."
     )
 
@@ -177,8 +189,8 @@ def register_this_as_plugin_pattern(
         __META_FUNC_STR__ = "def new_func{sign}: new_args, new_kwargs = {args_generator}{sign};return {original_func}(*new_args, **new_kwargs)"
         sign = inspect.signature(argument_elimination)
         assert len(sign.parameters) <= len(inspect.signature(func).parameters), (
-            f"The number of parameters in the argument elimination function {argument_elimination.__name__} "
-            f"should be less than or equal to the number of parameters in the function {func.__name__}."
+            f"The number of parameters in the argument elimination function {get_name(argument_elimination)} "
+            f"should be less than or equal to the number of parameters in the function {get_name(func)}."
         )
         local_vars = {}
         global_vars = {"argument_elimination": argument_elimination, "func": func}
@@ -189,7 +201,7 @@ def register_this_as_plugin_pattern(
             local_vars,
         )
         new_func = local_vars["new_func"]
-        new_func.__name__ = func.__name__
+        new_func.__qualname__ = get_name(func)
         new_func.__module__ = func.__module__
         new_func.__signature__ = sign
         return new_func
@@ -243,14 +255,14 @@ def register_this_as_pattern_constraint(func):
 
     for pattern in pattern_list:
         pattern.filter_list.append(param_check)
-    logger.debug("Register constraint %s for %s successfully.", func.__name__, func_name)
+    logger.debug("Register constraint %s for %s successfully.", get_name(func), func_name)
     return func
 
 
 # WARNING(liuyuan): MUST be Union instead of '|' because npu-ci is under python3.9 which does not support '|' in type hint.
 def deregister_plugin_patterns(func_or_func_name: Union[Callable, AnyStr], target=None):
     if isinstance(func_or_func_name, Callable):
-        func_name = f"{func_or_func_name.__module__}-{func_or_func_name.__name__}"
+        func_name = f"{func_or_func_name.__module__}-{get_name(func_or_func_name)}"
     elif isinstance(func_or_func_name, str):
         func_name = func_or_func_name
     else:

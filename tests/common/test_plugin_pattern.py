@@ -13,6 +13,7 @@ from xpu_graph import (
     register_this_as_plugin_pattern,
 )
 from xpu_graph.config import Target, XpuGraphConfig
+from xpu_graph.passes.patterns.plugin_pattern import get_name
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 
@@ -27,7 +28,7 @@ def x():
 
 @cache
 def pattern_fmt(x, postfix=None):
-    return f"{x.__module__}-{x.__name__}{f'-{postfix}' if postfix else ''}"
+    return f"{x.__module__}-{get_name(x)}{f'-{postfix}' if postfix else ''}"
 
 
 def pattern_reg_success_log(x, postfix=None):
@@ -43,7 +44,7 @@ def pattern_changed_success_log(x, postfix=None):
 
 
 def constraint_reg_success_log(x, y, postfix=None):
-    return f"Register constraint {x.__name__} for {pattern_fmt(y, postfix)} successfully."
+    return f"Register constraint {get_name(x)} for {pattern_fmt(y, postfix)} successfully."
 
 
 class TestPluginPattern:
@@ -236,90 +237,138 @@ class TestPluginPattern:
                 assert pattern_dereg_success_log(p) in caplog.text
 
     def test_shape_op_with_fake_literal(self, caplog):
-        with enable_plugin_patterns():
+        with need_xpu_graph_logs():
+            with enable_plugin_patterns():
 
-            def replace(x):
-                return x * 2
+                def replace(x):
+                    return x * 2
 
-            @register_this_as_plugin_pattern((torch.empty(10, 10),), replace, Target.none, ignore_literal=True)
-            def pattern(x):
-                x = x.view(-1, 1)  # NOTE(liuyuan): Fake literal, best to be 1.
-                return (x,)
+                @register_this_as_plugin_pattern((torch.empty(10, 10),), replace, Target.none, ignore_literal=True)
+                def pattern(x):
+                    x = x.view(-1, 1)  # NOTE(liuyuan): Fake literal, best to be 1.
+                    return (x,)
 
-            def true_func(x):
-                x = x.view(-1, x.shape[-1])
-                return (x,)
+                def true_func(x):
+                    x = x.view(-1, x.shape[-1])
+                    return (x,)
 
-            def true_func_2(x):
-                x = x.view(-1, x.shape[-1], x.shape[0])
-                return (x,)
+                def true_func_2(x):
+                    x = x.view(-1, x.shape[-1], x.shape[0])
+                    return (x,)
 
-            config = XpuGraphConfig(is_training=False, debug=True)
-            xpu_graph = XpuGraph(config)
-            # NOTE(liuyuan): expectedly, the pattern will be matched.
-            compiled = torch.compile(true_func, backend=xpu_graph, dynamic=False)
-            # NOTE(liuyuan): expectedly, the pattern will be MISmatched.
-            compiled_2 = torch.compile(true_func_2, backend=xpu_graph, dynamic=False)
+                config = XpuGraphConfig(is_training=False, debug=True)
+                xpu_graph = XpuGraph(config)
+                # NOTE(liuyuan): expectedly, the pattern will be matched.
+                compiled = torch.compile(true_func, backend=xpu_graph, dynamic=False)
+                # NOTE(liuyuan): expectedly, the pattern will be MISmatched.
+                compiled_2 = torch.compile(true_func_2, backend=xpu_graph, dynamic=False)
 
-            input_tensor = torch.rand(1024, 1024 * 1024)
-            assert is_similar(compiled(input_tensor)[0], replace(input_tensor))
-            assert is_similar(compiled_2(input_tensor)[0], replace(input_tensor)) == False
+                input_tensor = torch.rand(1024, 1024 * 1024)
+                assert is_similar(compiled(input_tensor)[0], replace(input_tensor))
+                assert pattern_changed_success_log(pattern) in caplog.text
+                assert is_similar(compiled_2(input_tensor)[0], replace(input_tensor)) == False
 
     def test_literal_rewrite_basic(self, caplog):
-        with enable_plugin_patterns():
+        with need_xpu_graph_logs():
+            with enable_plugin_patterns():
 
-            def replace(x, y):
-                return x * y
+                def replace(x, y):
+                    return x * y
 
-            @register_this_as_plugin_pattern((torch.empty(10, 10), 3), replace, Target.none)
-            def pattern(x, y):
-                return (x + y,)
+                @register_this_as_plugin_pattern((torch.empty(10, 10), 3), replace, Target.none)
+                def pattern(x, y):
+                    return (x + y,)
 
-            def test_func(x):
-                return x + 100
+                def test_func(x):
+                    return x + 100
 
-            config = XpuGraphConfig(is_training=False, debug=True)
-            xpu_graph = XpuGraph(config)
-            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+                config = XpuGraphConfig(is_training=False, debug=True)
+                xpu_graph = XpuGraph(config)
+                compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
-            input_tensor = torch.rand(1024, 1024)
-            assert is_similar(compiled(input_tensor), replace(input_tensor, 100))
+                input_tensor = torch.rand(1024, 1024)
+                assert is_similar(compiled(input_tensor), replace(input_tensor, 100))
+                assert pattern_changed_success_log(pattern) in caplog.text
 
     def test_literal_rewrite_complex(self, caplog):
-        with enable_plugin_patterns():
+        with need_xpu_graph_logs():
+            with enable_plugin_patterns():
 
-            def replace(x, y, z):
-                return x * y * z
+                def replace(x, y, z):
+                    return x * y * z
 
-            # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the wrong literal rewrite !!!!
-            @register_this_as_plugin_pattern((torch.empty(1, 1024), 1024, 300), replace, Target.none)
-            def pattern(x, y, z):
-                return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
+                # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the wrong literal rewrite !!!!
+                @register_this_as_plugin_pattern((torch.empty(1, 1024), 1024, 300), replace, Target.none)
+                def pattern(x, y, z):
+                    return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
 
-            def test_func(x):
-                return (x.view(-1, 1024)[0][0] * (x - 100)).add(100, alpha=3)
+                def test_func(x):
+                    return (x.view(-1, 1024)[0][0] * (x - 100)).add(100, alpha=3)
 
-            config = XpuGraphConfig(is_training=False, debug=True, enable_cache=False)
-            xpu_graph = XpuGraph(config)
-            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+                config = XpuGraphConfig(is_training=False, debug=True, enable_cache=False)
+                xpu_graph = XpuGraph(config)
+                compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
-            input_tensor = torch.rand(1024, 2048)
+                input_tensor = torch.rand(1024, 2048)
 
-            # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the slice op with literal rewrite !!!!
-            assert is_similar(compiled(input_tensor), replace(input_tensor, 100, 3)) is False
+                # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the slice op with literal rewrite !!!!
+                assert is_similar(compiled(input_tensor), replace(input_tensor, 100, 3)) is False
+                assert pattern_changed_success_log(pattern) not in caplog.text
 
-        with enable_plugin_patterns():
-            # NOTE(liuyuan): This is a good case compared to the one before.
-            @register_this_as_plugin_pattern((torch.empty(1, 1024), 3, 300), replace, Target.none)
-            def pattern(x, y, z):
-                return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
+            with enable_plugin_patterns():
+                # NOTE(liuyuan): This is a good case compared to the one before.
+                @register_this_as_plugin_pattern((torch.empty(1, 1024), 3, 300), replace, Target.none)
+                def pattern(x, y, z):
+                    return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
 
-            def test_func(x):
-                return (x.view(-1, 1024)[0][0] * (x - 100)).add(200, alpha=300000)
+                def test_func(x):
+                    return (x.view(-1, 1024)[0][0] * (x - 100)).add(200, alpha=300000)
 
-            xpu_graph = XpuGraph(config)
-            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+                xpu_graph = XpuGraph(config)
+                compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
-            input_tensor = torch.rand(1024, 2048)
+                input_tensor = torch.rand(1024, 2048)
 
-            assert is_similar(compiled(input_tensor), replace(input_tensor, 100, 300000)) is True
+                assert is_similar(compiled(input_tensor), replace(input_tensor, 100, 300000)) is True
+                assert pattern_changed_success_log(pattern) in caplog.text
+
+    def test_nn_module_rewrite(self, caplog):
+        with need_xpu_graph_logs():
+            with enable_plugin_patterns():
+
+                class TestModule(torch.nn.Module):
+                    def __init__(self, *args, **kwargs):
+                        super().__init__(*args, **kwargs)
+                        self.w = torch.nn.Parameter(torch.rand(1024, 1024))
+                        self.bias = torch.Tensor(1024)
+
+                    def forward(self, x):
+                        return (x @ self.w + self.bias,)
+
+                class AnotherModule(torch.nn.Module):
+                    def __init__(self, weight, *args, **kwargs):
+                        super().__init__(*args, **kwargs)
+                        self.w = torch.nn.Parameter(weight)
+
+                    def forward(self, x):
+                        return x + self.w
+
+                weight = torch.rand(1024, 1024)
+                register_plugin_pattern(
+                    TestModule(), (torch.empty(1024, 1024),), AnotherModule(weight), target=Target.none
+                )
+                config = XpuGraphConfig(
+                    is_training=False,
+                    target=Target.none,
+                    vendor_compiler_config={},
+                    debug=True,
+                    enable_cache=False,
+                    freeze=True,
+                )
+                compiler = XpuGraph(config)
+
+                input_tensor = torch.rand(1024, 1024)
+                with torch.inference_mode():
+                    compiled = torch.compile(TestModule(), fullgraph=True, dynamic=False, backend=compiler)
+                    assert is_similar(compiled(input_tensor)[0], AnotherModule(weight)(input_tensor)) is True
+                    assert pattern_changed_success_log(TestModule) in caplog.text
