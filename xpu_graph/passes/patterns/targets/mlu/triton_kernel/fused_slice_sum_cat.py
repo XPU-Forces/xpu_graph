@@ -9,6 +9,8 @@ import triton.language as tl
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
+from triton.runtime import fast_libentry
+
 dtype_dict = {
     torch.bfloat16: 1,
     torch.float16: 2,
@@ -16,7 +18,7 @@ dtype_dict = {
 }
 
 
-@libentry.libentry()
+@fast_libentry()
 @triton.jit
 def mlu_triton_slice_sum_cat_kernel(
     output_ptr,
@@ -69,7 +71,7 @@ def mlu_triton_slice_sum_cat_kernel(
             tl.store(output_offset + i * col + offset_col, sum_value)
 
 
-@libentry.libentry()
+@fast_libentry()
 @triton.jit
 def mlu_triton_slice_sum_cat_kernel_opt(
     output_ptr,

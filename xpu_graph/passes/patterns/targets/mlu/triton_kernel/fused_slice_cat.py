@@ -6,8 +6,9 @@ import triton.language as tl
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
+from triton.runtime import fast_libentry
 
-@libentry.libentry()
+@fast_libentry()
 @triton.jit
 def mlu_triton_slice_cat_kernel(
     data_ptr,

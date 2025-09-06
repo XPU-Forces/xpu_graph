@@ -7,7 +7,7 @@ import triton
 import triton.language as tl
 
 from . import libentry
-
+from triton.runtime import fast_libentry
 
 def do_config_prune(configs, named_args, **kwargs):
     M = named_args["M"]
@@ -39,7 +39,7 @@ def relu(x):
     return tl.maximum(x, zero)
 
 
-@libentry.libentry()
+@fast_libentry()
 @libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},

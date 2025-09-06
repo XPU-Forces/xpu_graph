@@ -7,7 +7,7 @@ import triton.language as tl
 
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
-
+from triton.runtime import fast_libentry
 
 @triton.jit
 def mlu_triton_sum_3d_input_dim_1_kernel(
@@ -81,7 +81,7 @@ def mlu_triton_sum_3d_input_dim_2_kernel(
         tl.store(output_ptr_, data, boundary_check=(1, 0))
 
 
-@libentry.libentry()
+@fast_libentry()
 @triton.jit
 def mlu_triton_sum_3d_input_kernel(
     input_ptrs,
