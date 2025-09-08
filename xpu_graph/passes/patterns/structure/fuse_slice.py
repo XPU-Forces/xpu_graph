@@ -75,6 +75,8 @@ def find_slice_nodes(graph_module):
 
 # one src node slice to multi dst nodes
 class FusedSlice(Pattern):
+    # Note: this pattern must be applied after FuseSliceCat and FuseSliceSumCat
+    # as this two patterns require original slice target
     _pattern_group = PatternGroup.GROUP1
 
     def __init__(self, target_mod: torch.nn.Module, *super_args):

@@ -10,57 +10,58 @@ from .get_mlu_devinfo import get_device_properties
 
 
 @triton.jit
-def single_mul_sum_cat(
-    mul0,
-    mul1,
+def single_dot_cat(
+    x,
+    y,
     output,
-    mul_stride0,
-    mul_stride1,
+    x_stride,
+    y_stride,
     output_stride,
-    input0_row,
-    input1_row,
+    x_row,
+    y_row,
+    output_row,
     slice_len,
     row_start_idx,
     output_start_offset,
-    is_input0_multi_dim: tl.constexpr,
-    is_input1_multi_dim: tl.constexpr,
+    is_x_multi_dim: tl.constexpr,
+    is_y_multi_dim: tl.constexpr,
     BLOCK_SIZE_R: tl.constexpr = 16,
     BLOCK_SIZE_C: tl.constexpr = 16,
     BLOCK_SIZE_S1: tl.constexpr = 128,
     BLOCK_SIZE_S2: tl.constexpr = 128,
 ):
-    if is_input0_multi_dim:
+    if is_x_multi_dim:
         input_block_ptr0 = tl.make_block_ptr(
-            base=mul0,
-            shape=(input0_row, slice_len),
-            strides=(mul_stride0, 1),
+            base=x,
+            shape=(x_row, slice_len),
+            strides=(x_stride, 1),
             offsets=(row_start_idx, 0),
             block_shape=(BLOCK_SIZE_R, BLOCK_SIZE_C),
             order=(1, 0),
         )
     else:
         input_block_ptr0 = tl.make_block_ptr(
-            base=mul0,
-            shape=(input0_row, slice_len),
-            strides=(mul_stride0, 1),
+            base=x,
+            shape=(x_row, slice_len),
+            strides=(x_stride, 1),
             offsets=(0, 0),
             block_shape=(1, BLOCK_SIZE_C),
             order=(1, 0),
         )
-    if is_input1_multi_dim:
+    if is_y_multi_dim:
         input_block_ptr1 = tl.make_block_ptr(
-            base=mul1,
-            shape=(input1_row, slice_len),
-            strides=(mul_stride1, 1),
+            base=y,
+            shape=(y_row, slice_len),
+            strides=(y_stride, 1),
             offsets=(row_start_idx, 0),
             block_shape=(BLOCK_SIZE_R, BLOCK_SIZE_C),
             order=(1, 0),
         )
     else:
         input_block_ptr1 = tl.make_block_ptr(
-            base=mul1,
-            shape=(input1_row, slice_len),
-            strides=(mul_stride1, 1),
+            base=y,
+            shape=(y_row, slice_len),
+            strides=(y_stride, 1),
             offsets=(0, 0),
             block_shape=(1, BLOCK_SIZE_C),
             order=(1, 0),
@@ -75,7 +76,7 @@ def single_mul_sum_cat(
         value[i : i + 1, :] = tl.sum(value0[i : i + 1, :, :], axis=1)
     output_block_ptr = tl.make_block_ptr(
         base=output,
-        shape=(input1_row, BLOCK_SIZE_S2 * 2),
+        shape=(output_row, BLOCK_SIZE_S2 * 2),
         strides=(output_stride, 1),
         offsets=(row_start_idx, output_start_offset),
         block_shape=(BLOCK_SIZE_R, BLOCK_SIZE_S2),
@@ -107,27 +108,27 @@ def single_mul_sum_cat(
     ],
 )
 @triton.jit
-def mlu_triton_mul_sum_cat_kernel(
-    mul0,
-    mul1,
-    mul2,
-    mul3,
+def mlu_triton_dot_cat_kernel(
+    x0,
+    y0,
+    x1,
+    y1,
     output,
-    mul_stride0,
-    mul_stride1,
-    mul_stride2,
-    mul_stride3,
+    x0_stride,
+    y0_stride,
+    x1_stride,
+    y1_stride,
     output_stride,
     total_jobs,
-    input0_row,
-    input1_row,
-    input2_row,
-    input3_row,
+    x0_row,
+    y0_row,
+    x1_row,
+    y1_row,
     slice_len,
-    is_input0_multi_dim: tl.constexpr,
-    is_input1_multi_dim: tl.constexpr,
-    is_input2_multi_dim: tl.constexpr,
-    is_input3_multi_dim: tl.constexpr,
+    is_x0_multi_dim: tl.constexpr,
+    is_y0_multi_dim: tl.constexpr,
+    is_x1_multi_dim: tl.constexpr,
+    is_y1_multi_dim: tl.constexpr,
     BLOCK_SIZE_R: tl.constexpr = 16,
     BLOCK_SIZE_C: tl.constexpr = 16,
     BLOCK_SIZE_S1: tl.constexpr = 128,
@@ -146,42 +147,45 @@ def mlu_triton_mul_sum_cat_kernel(
         offset = remainder * (block_jobs + 1) + (program_id - remainder) * block_jobs
 
     loop = (block_jobs_r + BLOCK_SIZE_R - 1) // BLOCK_SIZE_R
+    output_row = total_jobs
 
     for l in range(loop):
         row_start_idx = offset + l * BLOCK_SIZE_R
-        single_mul_sum_cat(
-            mul0,
-            mul1,
+        single_dot_cat(
+            x0,
+            y0,
             output,
-            mul_stride0,
-            mul_stride1,
+            x0_stride,
+            y0_stride,
             output_stride,
-            input0_row,
-            input1_row,
+            x0_row,
+            y0_row,
+            output_row,
             slice_len,
             row_start_idx,
             0,
-            is_input0_multi_dim,
-            is_input1_multi_dim,
+            is_x0_multi_dim,
+            is_y0_multi_dim,
             BLOCK_SIZE_R,
             BLOCK_SIZE_C,
             BLOCK_SIZE_S1,
             BLOCK_SIZE_S2,
         )
-        single_mul_sum_cat(
-            mul2,
-            mul3,
+        single_dot_cat(
+            x1,
+            y1,
             output,
-            mul_stride2,
-            mul_stride3,
+            x1_stride,
+            y1_stride,
             output_stride,
-            input2_row,
-            input3_row,
+            x1_row,
+            y1_row,
+            output_row,
             slice_len,
             row_start_idx,
             BLOCK_SIZE_S2,
-            is_input2_multi_dim,
-            is_input3_multi_dim,
+            is_x1_multi_dim,
+            is_y1_multi_dim,
             BLOCK_SIZE_R,
             BLOCK_SIZE_C,
             BLOCK_SIZE_S1,
@@ -189,29 +193,29 @@ def mlu_triton_mul_sum_cat_kernel(
         )
 
 
-@torch.library.custom_op("torch_mlu_triton::fused_mul_sum_cat", mutates_args=())
-def fused_mul_sum_cat_2inp(
-    mul0: torch.Tensor,
-    mul1: torch.Tensor,
-    mul2: torch.Tensor,
-    mul3: torch.Tensor,
+@torch.library.custom_op("torch_mlu_triton::fused_dot_cat", mutates_args=())
+def fused_dot_cat_2inp(
+    x0: torch.Tensor,
+    y0: torch.Tensor,
+    x1: torch.Tensor,
+    y1: torch.Tensor,
 ) -> torch.Tensor:
     props = get_device_properties()
-    input_row = max(mul0.shape[0], mul1.shape[0])
-    _, s1, s2 = mul0.shape
+    input_row = max(x0.shape[0], y0.shape[0])
+    _, s1, s2 = x0.shape
     output_tensors = torch.empty(
         (input_row, s2 * 2),
-        device=mul1.device,
-        dtype=mul1.dtype,
+        device=x0.device,
+        dtype=x0.dtype,
     )
     slice_len = s1 * s2
 
     grid = (props.total_cores, 1, 1)
-    mlu_triton_mul_sum_cat_kernel[grid](
-        mul0,
-        mul1,
-        mul2,
-        mul3,
+    mlu_triton_dot_cat_kernel[grid](
+        x0,
+        y0,
+        x1,
+        y1,
         output_tensors,
         slice_len,
         slice_len,
@@ -219,15 +223,15 @@ def fused_mul_sum_cat_2inp(
         slice_len,
         s2 * 2,
         input_row,
-        mul0.shape[0],
-        mul1.shape[0],
-        mul2.shape[0],
-        mul3.shape[0],
+        x0.shape[0],
+        y0.shape[0],
+        x1.shape[0],
+        y1.shape[0],
         slice_len,
-        1 if mul0.shape[0] > 1 else 0,
-        1 if mul1.shape[0] > 1 else 0,
-        1 if mul2.shape[0] > 1 else 0,
-        1 if mul3.shape[0] > 1 else 0,
+        1 if x0.shape[0] > 1 else 0,
+        1 if y0.shape[0] > 1 else 0,
+        1 if x1.shape[0] > 1 else 0,
+        1 if y1.shape[0] > 1 else 0,
         BLOCK_SIZE_C=s1 * s2,
         BLOCK_SIZE_S1=s1,
         BLOCK_SIZE_S2=s2,
@@ -236,17 +240,17 @@ def fused_mul_sum_cat_2inp(
     return output_tensors
 
 
-@fused_mul_sum_cat_2inp.register_fake
-def fused_mul_sum_cat_2inp_fake(
-    mul0: torch.Tensor,
-    mul1: torch.Tensor,
-    mul2: torch.Tensor,
-    mul3: torch.Tensor,
+@fused_dot_cat_2inp.register_fake
+def fused_dot_cat_2inp_fake(
+    x0: torch.Tensor,
+    y0: torch.Tensor,
+    x1: torch.Tensor,
+    y1: torch.Tensor,
 ) -> torch.Tensor:
-    input_row = max(mul0.shape[0], mul1.shape[0])
+    input_row = max(x0.shape[0], y0.shape[0])
     output_tensors = torch.zeros(
-        (input_row, mul0.shape[2] * 2),
-        device=mul1.device,
-        dtype=mul1.dtype,
+        (input_row, x0.shape[2] * 2),
+        device=x0.device,
+        dtype=x0.dtype,
     )
     return output_tensors

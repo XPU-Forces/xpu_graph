@@ -2,11 +2,13 @@ import torch
 import torch.fx as fx
 import torch_mlu
 
+from ..triton_kernel.fused_dot_cat import fused_dot_cat_2inp
 from ..triton_kernel.fused_serial_mm_2dot import fuse_serial_mm_2dot
 from ..triton_kernel.fused_serial_mm_3dot import fuse_serial_mm_3dot
 from ..triton_kernel.fused_slice import fused_slice_low
 from ..triton_kernel.fused_slice_cat import fused_slice_cat
 from ..triton_kernel.fused_slice_v2 import fused_slice_low_v2
+from ..triton_kernel.fused_slice_sum_cat import fuse_slice_sum_cat
 from ..triton_kernel.fused_sum_3d import fused_sum_3d_input
 from ..triton_kernel.get_mlu_devinfo import get_device_properties
 from .dense_layer_modules import (
@@ -144,6 +146,76 @@ class FuseSliceCatSameInputModule_v2(torch.nn.Module):
             )
 
 
+class FusedDotCatModule(torch.nn.Module):
+    def forward(self, x_list, y_list):
+        group_size = len(x_list)
+        if group_size == 2:
+            x0, x1 = x_list
+            y0, y1 = y_list
+            x0 = x0.contiguous()
+            y0 = y0.contiguous()
+            x1 = x1.contiguous()
+            y1 = y1.contiguous()
+            return fused_dot_cat_2inp(
+                x0,
+                y0,
+                x1,
+                y1,
+            )
+
+        batch_size = max(x_list[0].shape[0], y_list[0].shape[0])
+        s1, s2 = x_list[0].shape[1:]
+        xy_list = [x.expand(batch_size, s1, s2) for x in x_list + y_list]
+        xy = torch.stack(xy_list).view(2, group_size, batch_size, s1, s2)
+        tmp = xy[0] * xy[1]  # [group, batch, s1, s2]
+        output = torch.sum(tmp, dim=2).transpose(0, 1).reshape(batch_size, -1)
+        return output
+
+
+class SliceSumCatOperation(torch.nn.Module):
+    def __init__(self, slice_param):
+        """
+        Args:
+            slice_param (list of tuples): A list of slice indices, where each tuple
+                                          contains (start_idx, end_idx) for slicing.
+        """
+        super().__init__()
+        device = torch.mlu.current_device()
+
+        slice_ = []
+        for param in slice_param:
+            slice_ += [param[0], param[1]]
+        self.slice_tensor = torch.tensor(slice_, dtype=torch.int32, device="mlu:" + str(device))
+
+        self.output_num = len(slice_param)
+        self.start = min([s[0] for s in slice_param])
+        self.end = max([s[1] for s in slice_param])
+        self.slice_param_list = slice_param
+
+    def forward(self, input):
+        """
+        Forward pass for the SliceSumCatOperation.
+
+        Args:
+            input (torch.Tensor): The input tensor of shape (batch, row, col).
+
+        Returns:
+            torch.Tensor: The output tensor of shape (batch, len(slice_param) * col). The processed tensor after slice -> sum -> cat operations.
+        """
+        batch, row, col = input.shape
+
+        return fuse_slice_sum_cat(input, self.slice_tensor, self.output_num, self.end)
+
+
+def can_fuse_slice_sum_cat(input, slice_param):
+    print(slice_param)
+    start = min([s[0] for s in slice_param])
+    end = max([s[1] for s in slice_param])
+    # Ensure the slicing range does not exceed 1024 for computational efficiency
+    # as the slice->sum operation is changed to masked-sum in optimized kernel
+    return end - start <= 1024
+
+
 class ComboSumModule(torch.nn.Module):
     def forward(self, input_list, dim):
         fused_inputs = []
@@ -170,9 +242,11 @@ def get_structure_replacements(config):
         "CustomRMSNorm": RMSNormModule,
         "CustomLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
-        "FusedCatSlice": FuseSliceCatSameInputModule,
-        "FusedSliceStackSum": FuseSliceCatSameInputModule,
+        "FusedSliceCat": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
+        "FusedSliceSumCat": (SliceSumCatOperation, can_fuse_slice_sum_cat),
+        "FusedDotCat": FusedDotCatModule,
+        "FusedSliceSumCat": (SliceSumCatOperation, can_fuse_slice_sum_cat),
         "ComboSum3dInp": ComboSumModule,
         "CustomDenseLayer": (DenseLayerModule, can_fuse_custom_denselayer),
         "CustomBatchDenseLayer": (BatchDenseLayerModule, can_fuse_custom_batch_denselayer),

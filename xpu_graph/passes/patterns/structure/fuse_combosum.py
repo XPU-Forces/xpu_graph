@@ -7,22 +7,14 @@ from torch import fx, nn
 from xpu_graph import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
-from ..utils.check_ops import (
-    check_cat_op,
-    check_getitem_op,
-    check_meta_2d,
-    check_slice_op,
-    check_stack_op,
-    check_sum_op,
-    get_actual_node,
-)
-from ..utils.match_sub_list import match_sub_list
+from ..utils.check_ops import check_getitem_op, check_meta_2d, get_actual_node
 
 
 def find_slice_cat(node):
-    for name in ["fuse_slice_cat", "fuse_slice_cat_v2"]:
-        if name in node.name:
-            return True
+    if node.op == "call_module":
+        for name in ["fuse_slice_cat", "fuse_slice_cat_v2"]:
+            if node.target.startswith(name):
+                return True
     return False
 
 

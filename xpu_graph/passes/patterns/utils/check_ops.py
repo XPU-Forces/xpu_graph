@@ -195,9 +195,15 @@ def check_mm_op(
 
 
 def check_view(node):
-    if (not check_op(node, aten._unsafe_view.default)) and (not check_op(node, aten.view.default)):
-        return False
-    return True
+    for view_like_op in [
+        aten._unsafe_view.default,
+        aten.view.default,
+        aten.flatten.using_ints,
+        aten.unflatten.int,
+    ]:
+        if check_op(node, view_like_op):
+            return True
+    return False
 
 
 def check_softmax_op(node: fx.Node) -> bool:
