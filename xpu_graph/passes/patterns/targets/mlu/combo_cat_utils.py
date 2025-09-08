@@ -5,14 +5,13 @@ from torch import fx, nn
 from ...utils.check_ops import get_shape
 
 
-def find_longest_same_shape_sequence(inputs, start, end, mini_len, compare_input=False):
+def find_longest_same_shape_sequence(inputs, start, end, compare_input=False):
     """
     在[start, end]范围内找到shape相同的最长连续子序列
     Args:
         inputs: 输入序列
         start: 搜索起始位置
         end: 搜索结束位置
-        mini_len: 最小长度要求
     Returns:
         (best_start, best_end): 最长相同shape子序列的起始和结束位置
     """
@@ -51,7 +50,7 @@ def find_longest_same_shape_sequence(inputs, start, end, mini_len, compare_input
     return best_start, best_end
 
 
-def find_longest_same_param(inputs, start, end, mini_len):
+def find_longest_same_param(inputs, start, end):
     best_start = start
     best_end = start
     best_length = 1
@@ -79,7 +78,7 @@ def find_longest_same_param(inputs, start, end, mini_len):
     return best_start, best_end
 
 
-def find_longest_same_input(inputs, start, end, mini_len):
+def find_longest_same_input(inputs, start, end):
     best_start = start
     best_end = start
     best_length = 1
