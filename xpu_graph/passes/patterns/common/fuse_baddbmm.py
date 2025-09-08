@@ -37,6 +37,7 @@ class FusedBAddBMM(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return False
         for node in reversed(graph_module.graph.nodes):
             is_match, bmm_inputs = _is_baddbmm(node)
             if is_match:
