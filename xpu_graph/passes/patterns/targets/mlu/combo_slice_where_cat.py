@@ -52,6 +52,7 @@ class ComboSliceWhereCat(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
 
+        return False
         candidates = [
             node
             for node in graph_module.graph.nodes
