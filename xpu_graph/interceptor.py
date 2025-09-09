@@ -68,9 +68,9 @@ def reset_intercept_ctx(ctx_str: Optional[str] = None, **kwargs):
         ctx = InterceptorCtx(**kwargs)
     else:
         ctx = replace(_parse_intercept_config_str(ctx_str), **kwargs)
-    CUR_INTERCEPT_CTX = ctx
     try:
-        logger.info(f"enable interceptor_ctx: {CUR_INTERCEPT_CTX}")
+        CUR_INTERCEPT_CTX = ctx
+        logger.debug(f"enable interceptor_ctx: {CUR_INTERCEPT_CTX}")
         yield
     finally:
         CUR_INTERCEPT_CTX = old_ctx
@@ -467,3 +467,44 @@ class OpInterceptor(TorchDispatchMode):
                 )
             return actual_outputs
         return func(*args, **(kwargs or {}))
+
+
+class TryCompileMode(Enum):
+    TRY = "try"
+    FALLBACK = "fallback"
+
+
+CURRENT_TRY_COMPILE_MODE = TryCompileMode.TRY
+ORIG_COMPILE_FUNC = None
+
+
+def set_try_compile_mode(do_compile: bool):
+    global CURRENT_TRY_COMPILE_MODE
+    logger.info(
+        f"Set try compile mode from {CURRENT_TRY_COMPILE_MODE} to {TryCompileMode.TRY if do_compile else TryCompileMode.FALLBACK}"
+    )
+    CURRENT_TRY_COMPILE_MODE = TryCompileMode.TRY if do_compile else TryCompileMode.FALLBACK
+
+
+def try_compile(fn, **kwargs):
+    compiled_fn = ORIG_COMPILE_FUNC(fn, **kwargs)
+
+    def try_compiled(*args, **kwargs):
+        if CURRENT_TRY_COMPILE_MODE == TryCompileMode.TRY:
+            return compiled_fn(*args, **kwargs)
+        elif CURRENT_TRY_COMPILE_MODE == TryCompileMode.FALLBACK:
+            return fn(*args, **kwargs)
+
+    return try_compiled
+
+
+@contextmanager
+def patching_try_compile():
+    global ORIG_COMPILE_FUNC
+    ORIG_COMPILE_FUNC = torch.compile
+    try:
+        set_try_compile_mode(True)
+        torch.compile = try_compile
+        yield
+    finally:
+        torch.compile = ORIG_COMPILE_FUNC
