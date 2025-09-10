@@ -19,6 +19,8 @@ STACKABLE_POI_OP_IDX = [
     (aten.mul.Tensor, 1),
     (aten.add.Tensor, 0),
     (aten.add.Tensor, 1),
+    (aten.where.self, 1),
+    (aten.where.self, 2),
 ]
 
 
@@ -41,9 +43,10 @@ def try_add_stackable_lists(result_node, stacked_idx, shared_to_stacklists):
 
     def is_stackable(val, example_val):
         return (
-            val.shape == example_val.shape
+            val.device == example_val.device
             and val.dtype == example_val.dtype
             and val.requires_grad == example_val.requires_grad
+            and val.shape == example_val.shape
         )
 
     if other_args_kwargs in shared_to_stacklists:

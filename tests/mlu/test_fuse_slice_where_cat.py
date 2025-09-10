@@ -53,7 +53,6 @@ class TestFuseSliceWhereCat:
     def test_slice_where_cat_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             where_to_mul_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.ConvertWhereMaskToMul changed graph" in caplog.text
         assert "Pattern.CombinePointwiseSameShape changed graph" in caplog.text
 
 
