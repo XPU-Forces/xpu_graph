@@ -190,6 +190,7 @@ class __XPU_GRAPH_ENVS__:
     enable_interceptor = "XPUGRAPH_INTERCEPTOR"
     logs = "XPUGRAPH_LOGS"
     skip_patterns = "XPUGRAPH_DEBUG_SKIP_PATTERNS"
+    pointwise_combine_width = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_WIDTH"
 
 
 def get_bool_env_var(name, default_value: bool):

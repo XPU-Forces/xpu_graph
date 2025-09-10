@@ -2,7 +2,6 @@ import random
 
 import pytest
 import torch
-import torch_mlu
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -41,7 +40,7 @@ def where_to_mul_test(xpu_graph_backend, func):
         assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
 
 
-class TestWhereToMul:
+class TestFuseSliceWhereCat:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
 
@@ -51,11 +50,11 @@ class TestWhereToMul:
             fn0,
         ],
     )
-    def test_where_cat_patterns(self, caplog, pattern_func):
+    def test_slice_where_cat_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             where_to_mul_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.ConvertWhereMaskToMul changed graph" in caplog.text
-        assert "Pattern.CombinePointwiseCat changed graph" in caplog.text
+        assert "Pattern.CombinePointwiseSameShape changed graph" in caplog.text
 
 
 if __name__ == "__main__":

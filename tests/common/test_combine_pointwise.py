@@ -70,7 +70,7 @@ def fn1(inputs, slice_, batch):
     return stack, slice_1
 
 
-def combine_where_cat_test(xpu_graph_backend, func):
+def combine_pointwise_same_shape_test(xpu_graph_backend, func):
     batch = 512
     inputs = torch.randn(batch, device=device, dtype=data_type).unsqueeze(-1).bool()
     slice_ = torch.randn(batch, 35149, device=device, dtype=data_type)
@@ -82,7 +82,7 @@ def combine_where_cat_test(xpu_graph_backend, func):
         assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
 
 
-class TestCombineWhereCat:
+class TestCombinePointwiseSameShape:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
@@ -98,13 +98,13 @@ class TestCombineWhereCat:
             fn1,
         ],
     )
-    def test_where_cat_patterns(self, caplog, pattern_func):
+    def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            combine_where_cat_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.CombinePointwiseCat changed graph" in caplog.text
+            combine_pointwise_same_shape_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.CombinePointwiseSameShape changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level1, debug=True))
-    combine_where_cat_test(xpu_graph_backend, fn0)
-    combine_where_cat_test(xpu_graph_backend, fn1)
+    combine_pointwise_same_shape_test(xpu_graph_backend, fn0)
+    combine_pointwise_same_shape_test(xpu_graph_backend, fn1)
