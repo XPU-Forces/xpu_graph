@@ -27,7 +27,52 @@ def fn0(inputs, slice_, batch):
     return output, slice_1
 
 
-def where_to_mul_test(xpu_graph_backend, func):
+def fn1(inputs, slice_, batch):
+    zeros = torch.zeros([batch, 4], device=device, dtype=data_type)
+    slice_1 = slice_[:, 0:4]
+    slice_2 = slice_[:, 11984:11988]
+    slice_3 = slice_[:, 11562:11566]
+    slice_4 = slice_[:, 9782:9786]
+    slice_5 = slice_[:, 9727:9731]
+    slice_6 = slice_[:, 9745:9749]
+    slice_7 = slice_[:, 9763:9767]
+    slice_8 = slice_[:, 9773:9777]
+    slice_9 = slice_[:, 9805:9809]
+    slice_10 = slice_[:, 9822:9826]
+    slice_11 = slice_[:, 10283:10287]
+    slice_12 = slice_[:, 10736:10740]
+    where_0 = torch.where(inputs, zeros, slice_2)
+    where_1 = torch.where(inputs, zeros, slice_3)
+    where_2 = torch.where(inputs, zeros, slice_4)
+    where_3 = torch.where(inputs, zeros, slice_5)
+    where_4 = torch.where(inputs, zeros, slice_6)
+    where_5 = torch.where(inputs, zeros, slice_7)
+    where_6 = torch.where(inputs, zeros, slice_8)
+    where_7 = torch.where(inputs, zeros, slice_9)
+    where_8 = torch.where(inputs, zeros, slice_10)
+    where_9 = torch.where(inputs, zeros, slice_11)
+    where_10 = torch.where(inputs, zeros, slice_12)
+    stack = torch.stack(
+        [
+            slice_1,
+            where_0,
+            where_1,
+            where_2,
+            where_3,
+            where_4,
+            where_5,
+            where_6,
+            where_7,
+            where_8,
+            where_9,
+            where_10,
+        ],
+        dim=0,
+    )
+    return stack, slice_1
+
+
+def slice_where_cat_test(xpu_graph_backend, func):
     batch = 512
     random_list = random.choices([0, 1], k=batch)
     inputs = torch.tensor(random_list, device=device, dtype=data_type).unsqueeze(-1).bool()
@@ -40,7 +85,7 @@ def where_to_mul_test(xpu_graph_backend, func):
         assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
 
 
-class TestFuseSliceWhereCat:
+class TestSliceWhereCat:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
 
@@ -48,14 +93,16 @@ class TestFuseSliceWhereCat:
         "pattern_func",
         [
             fn0,
+            fn1,
         ],
     )
     def test_slice_where_cat_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            where_to_mul_test(self.xpu_graph_backend, pattern_func)
+            slice_where_cat_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.CombinePointwiseSameShape changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False, debug=True)
-    where_to_mul_test(xpu_graph_backend, fn0)
+    slice_where_cat_test(xpu_graph_backend, fn0)
+    slice_where_cat_test(xpu_graph_backend, fn1)
