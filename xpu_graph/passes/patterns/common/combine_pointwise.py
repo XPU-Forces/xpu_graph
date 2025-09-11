@@ -8,7 +8,7 @@ from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
-from ..utils.check_ops import check_op, is_exclusively_used
+from ..utils.check_ops import check_op
 
 aten = torch.ops.aten
 import operator
@@ -121,7 +121,7 @@ class CombinePointwiseSameShape(Pattern):
                 for stacked_argidx in stackable_argidxs:
                     shared_to_stacklists = {}
                     for arg in node.args[0]:
-                        if isinstance(arg, fx.Node) and is_exclusively_used(arg, node) and check_op(arg, poi_op):
+                        if isinstance(arg, fx.Node) and check_op(arg, poi_op):
                             try_add_stackable_lists(arg, stacked_argidx, shared_to_stacklists)
 
                     stackable_results, shared_args_kwargs = find_max_stackable_list(shared_to_stacklists)
