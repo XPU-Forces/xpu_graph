@@ -1,3 +1,4 @@
+import functools
 import os
 
 import torch
@@ -5,23 +6,40 @@ from torch import fx
 
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.utils import __XPU_GRAPH_ENVS__
+from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
 from ..utils.check_ops import check_op, is_exclusively_used
 
 aten = torch.ops.aten
 import operator
 
-COMBINE_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, "3")), 2)
+DEFAULT_COMBINE_WIDTH = "3"
+DEFAULT_STACKABLE_POI_OP_IDX = "aten.mul.Tensor:0,1;aten.add.Tensor:0,1;aten.where.self:1,2;"
 
-STACKABLE_POI_OP_IDX = [
-    (aten.mul.Tensor, 0),
-    (aten.mul.Tensor, 1),
-    (aten.add.Tensor, 0),
-    (aten.add.Tensor, 1),
-    (aten.where.self, 1),
-    (aten.where.self, 2),
-]
+
+def _fetch_extra_stackable_ops_idx(config_str):
+    extra_stackable_ops_idx = []
+    for combine_op_idx in config_str.split(";"):
+        if combine_op_idx == "":
+            continue
+        combine_op, combine_idxs = combine_op_idx.split(":")
+        try:
+            attrs = combine_op.split(".")
+            target = torch.ops
+            for attr in attrs:
+                target = getattr(target, attr)
+        except:
+            logger.warning(f"Unsupported call_function: {combine_op}")
+            continue
+        combine_idxs = [int(idx) for idx in combine_idxs.split(",")]
+        extra_stackable_ops_idx.append((target, combine_idxs))
+    return extra_stackable_ops_idx
+
+
+COMBINE_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, DEFAULT_COMBINE_WIDTH)), 2)
+STACKABLE_POI_OP_IDX = _fetch_extra_stackable_ops_idx(
+    DEFAULT_STACKABLE_POI_OP_IDX + os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_ops_idx, "")
+)
 
 
 def try_add_stackable_lists(result_node, stacked_idx, shared_to_stacklists):
@@ -77,13 +95,13 @@ class CombinePointwiseSameShape(Pattern):
     """
     input_1 -> poi_1 ----\
     input_2 -> poi_2 ------> cat/stack/output -> output
-    input_3 -> poi_3 ----/
+    input_3 -> poi_3 ----/  /
     other   ---------------/
     ---->
     input_1 ----\
-    input_2 -----> cat -> poi -> cat -> output
-    input_3 ----/              /
-    other   ------------------/
+    input_2 -----> stack -> poi -> unbind-> cat/stack/output -> output
+    input_3 ----/                          /
+    other   ------------------------------/
 
     The mask should be same
     The other arg should be const
@@ -99,30 +117,39 @@ class CombinePointwiseSameShape(Pattern):
             else:
                 continue
 
-            for poi_op, stacked_argidx in STACKABLE_POI_OP_IDX:
-                shared_to_stacklists = {}
-                for arg in node.args[0]:
-                    if isinstance(arg, fx.Node) and is_exclusively_used(arg, node) and check_op(arg, poi_op):
-                        try_add_stackable_lists(arg, stacked_argidx, shared_to_stacklists)
+            for poi_op, stackable_argidxs in STACKABLE_POI_OP_IDX:
+                for stacked_argidx in stackable_argidxs:
+                    shared_to_stacklists = {}
+                    for arg in node.args[0]:
+                        if isinstance(arg, fx.Node) and is_exclusively_used(arg, node) and check_op(arg, poi_op):
+                            try_add_stackable_lists(arg, stacked_argidx, shared_to_stacklists)
 
-                stackable_results, shared_args_kwargs = find_max_stackable_list(shared_to_stacklists)
-                if len(stackable_results) >= COMBINE_WIDTH and shared_args_kwargs is not None:
-                    changed = True
-                    stackable_args = [stackable_result.args[stacked_argidx] for stackable_result in stackable_results]
-                    with graph_module.graph.inserting_before(node):
-                        stacked_arg = graph_module.graph.call_function(
-                            aten.stack.default, args=(stackable_args,), kwargs={"dim": 0}
-                        )
-                        shared_args, shared_kwargs = shared_args_kwargs
-                        shared_args = (
-                            tuple(shared_args[:stacked_argidx]) + (stacked_arg,) + tuple(shared_args[stacked_argidx:])
-                        )
-                        stacked_poi = graph_module.graph.call_function(poi_op, args=shared_args, kwargs=shared_kwargs)
-                        split_results = graph_module.graph.call_function(
-                            aten.unbind.int, args=(stacked_poi,), kwargs={"dim": 0}
-                        )
-                        for idx, stackable_result in enumerate(stackable_results):
-                            split_result = graph_module.graph.call_function(operator.getitem, args=(split_results, idx))
-                            stackable_result.replace_all_uses_with(split_result)
-                            graph_module.graph.erase_node(stackable_result)
+                    stackable_results, shared_args_kwargs = find_max_stackable_list(shared_to_stacklists)
+                    if len(stackable_results) >= COMBINE_WIDTH and shared_args_kwargs is not None:
+                        changed = True
+                        stackable_args = [
+                            stackable_result.args[stacked_argidx] for stackable_result in stackable_results
+                        ]
+                        with graph_module.graph.inserting_before(node):
+                            stacked_arg = graph_module.graph.call_function(
+                                aten.stack.default, args=(stackable_args,), kwargs={"dim": 0}
+                            )
+                            shared_args, shared_kwargs = shared_args_kwargs
+                            shared_args = (
+                                tuple(shared_args[:stacked_argidx])
+                                + (stacked_arg,)
+                                + tuple(shared_args[stacked_argidx:])
+                            )
+                            stacked_poi = graph_module.graph.call_function(
+                                poi_op, args=shared_args, kwargs=shared_kwargs
+                            )
+                            split_results = graph_module.graph.call_function(
+                                aten.unbind.int, args=(stacked_poi,), kwargs={"dim": 0}
+                            )
+                            for idx, stackable_result in enumerate(stackable_results):
+                                split_result = graph_module.graph.call_function(
+                                    operator.getitem, args=(split_results, idx)
+                                )
+                                stackable_result.replace_all_uses_with(split_result)
+                                graph_module.graph.erase_node(stackable_result)
         return changed
