@@ -380,5 +380,9 @@ def is_type_cast(node: Any) -> bool:
     return False
 
 
-def is_exclusively_used(used, user):
+def is_exclusively_used(used: fx.Node, user: fx.Node):
     return all(cand is user for cand in used.users)
+
+
+def is_firstly_used(used: fx.Node, user: fx.Node) -> bool:
+    return all(cand >= user for cand in used.users)
