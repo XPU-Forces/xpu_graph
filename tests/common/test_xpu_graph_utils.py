@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from xpu_graph.utils import get_bool_env_var, recursive_set_dict
+from xpu_graph.utils import get_bool_env_var, recursive_set_obj
 
 
 @pytest.mark.parametrize(
@@ -23,7 +23,7 @@ def test_get_bool_env_var(val, expect):
     assert get_bool_env_var(env_name, not expect) == expect
 
 
-class TestRecursiveSetDict:
+class TestRecursiveSetObj:
     class Dummy:
         def __init__(self):
             self.a = None
@@ -48,8 +48,8 @@ class TestRecursiveSetDict:
             ),
         ),
     )
-    def test_recursive_set_dict(self, src_dict, assertion):
+    def test_recursive_set_obj(self, src_dict, assertion):
         tgt_obj = self.Dummy()
-        recursive_set_dict(src_dict, tgt_obj.__dict__)
+        recursive_set_obj(src_dict, tgt_obj)
         assert assertion(tgt_obj)
         ...

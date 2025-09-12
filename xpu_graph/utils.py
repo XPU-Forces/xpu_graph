@@ -206,16 +206,22 @@ def get_bool_env_var(name, default_value: bool):
         return val
 
 
-def recursive_set_dict(src_dict, tgt_dict):
+def recursive_set_obj(src_dict: dict, tgt_obj):
+    is_obj = True
+    if isinstance(tgt_obj, dict):
+        tgt_dict = tgt_obj
+        is_obj = False
+    elif hasattr(tgt_obj, "__dict__"):
+        tgt_dict = tgt_obj.__dict__
+    else:
+        raise TypeError(f"{type(tgt_obj)} is not dict or has no __dict__.")
+
     for k, v in src_dict.items():
         if k in tgt_dict:
             if isinstance(v, dict):
-                if isinstance(tgt_dict[k], dict):
-                    recursive_set_dict(v, tgt_dict[k])
-                # WARNING(liuyuan): This is for instance members rather than class members.
-                elif hasattr(tgt_dict[k], "__dict__"):
-                    recursive_set_dict(v, tgt_dict[k].__dict__)
-                else:
-                    raise RuntimeError(f"{type(tgt_dict[k])=} is not dict or has no __dict__.")
+                recursive_set_obj(v, tgt_dict[k])
             else:
-                tgt_dict[k] = v
+                if is_obj:
+                    setattr(tgt_obj, k, v)
+                else:
+                    tgt_obj[k] = v
