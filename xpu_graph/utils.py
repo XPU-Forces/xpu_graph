@@ -204,3 +204,18 @@ def get_bool_env_var(name, default_value: bool):
             raise ValueError(f"Invalid value for {name}: {val}")
     else:
         return val
+
+
+def recursive_set_dict(src_dict, tgt_dict):
+    for k, v in src_dict.items():
+        if k in tgt_dict:
+            if isinstance(v, dict):
+                if isinstance(tgt_dict[k], dict):
+                    recursive_set_dict(v, tgt_dict[k])
+                # WARNING(liuyuan): This is for instance members rather than class members.
+                elif hasattr(tgt_dict[k], "__dict__"):
+                    recursive_set_dict(v, tgt_dict[k].__dict__)
+                else:
+                    raise RuntimeError(f"{type(tgt_dict[k])=} is not dict or has no __dict__.")
+            else:
+                tgt_dict[k] = v

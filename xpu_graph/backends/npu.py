@@ -2,7 +2,7 @@ from typing import Dict
 
 import torch
 
-from xpu_graph.utils import logger
+from xpu_graph.utils import logger, recursive_set_dict
 
 
 def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
@@ -16,6 +16,7 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
     from torchair.configs.compiler_config import CompilerConfig
 
     config = CompilerConfig()
+    recursive_set_dict(config_dict, config.__dict__)
     if config_dict.get("mode", None) == "reduce-overhead":
         config.mode = config_dict["mode"]
         from torch import SymInt
@@ -32,6 +33,7 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
         """
         config.experimental_config.keep_inference_input_mutations = True
         config.experimental_config.frozen_parameter = True
+
     npu_backend = tng.get_npu_backend(compiler_config=config)
     compiled_module = npu_backend(module, example_inputs)
 
