@@ -99,7 +99,7 @@ class TestSliceWhereCat:
     def test_slice_where_cat_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             slice_where_cat_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.CombinePointwiseSameShape changed graph" in caplog.text
+        assert "Pattern.CombinePointwise changed graph" in caplog.text
 
 
 if __name__ == "__main__":

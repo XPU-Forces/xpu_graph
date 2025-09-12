@@ -13,9 +13,9 @@ batch = 512
 
 def fn0(inputs, slice_):
     slice_1 = slice_[:, 0:32]
-    slice_2 = slice_[:, 10118:10150]
+    slice_2 = slice_[:, 10118:10182]
     slice_4 = slice_[:, 10579:10611]
-    slice_5 = slice_[:, 11032:11064]
+    slice_5 = slice_[:, 11032:11096]
     slice_6 = slice_[:, 11445:11477]
     where_0 = inputs * slice_2
     where_1 = inputs * slice_4
@@ -201,7 +201,7 @@ def combine_pointwise_same_shape_test(xpu_graph_backend, func):
         assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
 
 
-class TestCombinePointwiseSameShape:
+class TestCombinePointwise:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
@@ -218,9 +218,9 @@ class TestCombinePointwiseSameShape:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             combine_pointwise_same_shape_test(self.xpu_graph_backend, pattern_func)
         if pattern_func in [fn4_xfail]:
-            assert "Pattern.CombinePointwiseSameShape changed graph" not in caplog.text
+            assert "Pattern.CombinePointwise changed graph" not in caplog.text
         else:
-            assert "Pattern.CombinePointwiseSameShape changed graph" in caplog.text
+            assert "Pattern.CombinePointwise changed graph" in caplog.text
 
 
 if __name__ == "__main__":
