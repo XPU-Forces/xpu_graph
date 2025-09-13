@@ -32,6 +32,12 @@ def fn4(a):
     return output
 
 
+def fn4_xfail(a):
+    outputs = a.unbind(dim=1)
+    output = torch.stack(outputs[:4], dim=0)
+    return output
+
+
 def stack_test(xpu_graph, func):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
     a = torch.randn(128, 64)
@@ -54,19 +60,23 @@ class TestStack:
             fn2,
             fn3,
             fn4,
+            fn4_xfail,
         ],
     )
     def test_stack_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
             stack_test(self.xpu_graph, pattern_func)
-        assert "Pattern.FoldStack changed graph" in caplog.text
+        if "xfail" in pattern_func.__name__:
+            assert "Pattern.FoldStack changed graph" not in caplog.text
+        else:
+            assert "Pattern.FoldStack changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     config = xpu_graph.config.XpuGraphConfig(is_training=False, debug=True)
     xpu_graph = xpu_graph.compiler.XpuGraph(config)
     stack_test(xpu_graph, fn0)
-    # stack_test(xpu_graph, fn1)
-    # stack_test(xpu_graph, fn2)
+    stack_test(xpu_graph, fn1)
+    stack_test(xpu_graph, fn2)
     stack_test(xpu_graph, fn3)
     stack_test(xpu_graph, fn4)

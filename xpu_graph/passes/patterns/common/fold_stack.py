@@ -4,27 +4,10 @@ import torch.fx as fx
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import (
-    check_getitem_op,
-    check_op,
+    find_common_src,
     get_input_kw_node,
     get_input_node,
 )
-
-
-def find_common_unbind(nodes):
-    unbind_src = None
-    for idx, node in enumerate(nodes):
-        if check_getitem_op(node) and node.args[1] == idx:
-            if idx == 0:
-                if check_op(node.args[0], torch.ops.aten.unbind.int):
-                    unbind_src = node.args[0]
-                else:
-                    return None
-            elif node.args[0] != unbind_src:
-                return None
-        else:
-            return None
-    return unbind_src
 
 
 class FoldStack(Pattern):
@@ -49,11 +32,15 @@ class FoldStack(Pattern):
             unbind_dim = unbind_node.args[1]
         elif "dim" in unbind_node.kwargs:
             unbind_dim = unbind_node.kwargs["dim"]
+        if unbind_dim < 0:
+            unbind_dim += unbind_node.meta["val"].dim()
         stack_dim = 0
         if len(stack_node.args) == 2:
             stack_dim = stack_node.args[1]
         elif "dim" in stack_node.kwargs:
             stack_dim = stack_node.kwargs["dim"]
+        if stack_dim < 0:
+            stack_dim += stack_node.meta["val"].dim()
 
         if unbind_dim == stack_dim:
             return gm.graph.call_function(
@@ -85,14 +72,12 @@ class FoldStack(Pattern):
                     stack.replace_all_uses_with(fold_res)
                     gm.graph.erase_node(stack)
             else:
-                unbind_src = find_common_unbind(inps)
+                unbind_src = find_common_src(inps, torch.ops.aten.unbind.int)
                 if unbind_src is not None:
-                    # we only handle no-slice cases
-                    if len(unbind_src.meta["val"]) == len(inps):
-                        changed = True
-                        with gm.graph.inserting_before(stack):
-                            fold_res = self._get_fold_unbind_stack_result(gm, unbind_src, stack)
-                            stack.replace_all_uses_with(fold_res)
-                            gm.graph.erase_node(stack)
+                    changed = True
+                    with gm.graph.inserting_before(stack):
+                        fold_res = self._get_fold_unbind_stack_result(gm, unbind_src, stack)
+                        stack.replace_all_uses_with(fold_res)
+                        gm.graph.erase_node(stack)
 
         return changed

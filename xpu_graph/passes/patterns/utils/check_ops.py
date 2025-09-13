@@ -386,3 +386,21 @@ def is_exclusively_used(used: fx.Node, user: fx.Node):
 
 def is_firstly_used(used: fx.Node, user: fx.Node) -> bool:
     return all(cand >= user for cand in used.users)
+
+
+def find_common_src(nodes, multi_out_op):
+    multi_src = None
+    for idx, node in enumerate(nodes):
+        if check_getitem_op(node) and node.args[1] == idx:
+            if idx == 0:
+                if check_op(node.args[0], multi_out_op):
+                    multi_src = node.args[0]
+                else:
+                    return None
+            elif node.args[0] != multi_src:
+                return None
+        else:
+            return None
+    if len(multi_src.meta["val"]) == len(nodes):
+        return multi_src
+    return None
