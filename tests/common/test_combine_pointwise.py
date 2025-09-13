@@ -11,7 +11,7 @@ aten = torch.ops.aten
 batch = 512
 
 
-def fn0(inputs, slice_):
+def fn0_concat_varlen(inputs, slice_):
     slice_1 = slice_[:, 0:32]
     slice_2 = slice_[:, 10118:10182]
     slice_4 = slice_[:, 10579:10611]
@@ -69,20 +69,25 @@ def fn1(inputs, slice_):
     return stack, slice_1
 
 
-def fn2(inputs, slice_):
+def fn2_concat_varlen(inputs, slice_):
     batch = inputs.size(0)
     inputs = inputs > 0
     zeros = torch.zeros([batch, 32], device=device, dtype=data_type)
+    zeros2 = torch.zeros([batch, 64], device=device, dtype=data_type)
     slice_1 = slice_[:, 0:32]
-    slice_2 = slice_[:, 10118:10150]
-    slice_4 = slice_[:, 10579:10611]
-    slice_5 = slice_[:, 11032:11064]
-    slice_6 = slice_[:, 11445:11477]
-    where_0 = torch.where(inputs, zeros, slice_2)
+    slice_2 = slice_[:, 10118 : (10118 + 64)]
+    slice_4 = slice_[:, 10579 : (10579 + 32)]
+    slice_5 = slice_[:, 11032 : (11032 + 64)]
+    slice_6 = slice_[:, 11445 : (11445 + 32)]
+    slice_7 = slice_[:, 11477 : (11477 + 32)]
+    slice_8 = slice_[:, 11519 : (11519 + 64)]
+    where_0 = torch.where(inputs, zeros2, slice_2)
     where_1 = torch.where(inputs, zeros, slice_4)
-    where_2 = torch.where(inputs, zeros, slice_5)
+    where_2 = torch.where(inputs, zeros2, slice_5)
     where_3 = torch.where(inputs, zeros, slice_6)
-    output = torch.cat([slice_1, where_0, where_1, where_2, where_3], dim=-1)
+    where_4 = torch.where(inputs, zeros, slice_7)
+    where_5 = torch.where(inputs, zeros2, slice_8)
+    output = torch.cat([slice_1, where_0, where_1, where_2, where_3, where_4, where_5], dim=-1)
     return output, slice_1
 
 
@@ -212,19 +217,22 @@ class TestCombinePointwise:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0, fn1, fn2, fn3, fn4, fn4_xfail],
+        [fn0_concat_varlen, fn1, fn2_concat_varlen, fn3, fn4, fn4_xfail],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             combine_pointwise_same_shape_test(self.xpu_graph_backend, pattern_func)
-        if pattern_func in [fn4_xfail]:
+        if "xfail" in pattern_func.__name__:
             assert "Pattern.CombinePointwise changed graph" not in caplog.text
         else:
             assert "Pattern.CombinePointwise changed graph" in caplog.text
+        if "concat_varlen" in pattern_func.__name__:
+            assert "aten.stack.default" not in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level1, debug=True))
     # combine_pointwise_same_shape_test(xpu_graph_backend, fn0)
     # combine_pointwise_same_shape_test(xpu_graph_backend, fn1)
-    combine_pointwise_same_shape_test(xpu_graph_backend, fn4)
+    combine_pointwise_same_shape_test(xpu_graph_backend, fn2)
+    # combine_pointwise_same_shape_test(xpu_graph_backend, fn4)

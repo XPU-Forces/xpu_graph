@@ -4,7 +4,8 @@ import torch
 from torch import fx
 
 from xpu_graph.config import OptLevel
-from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import FxStage
+from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
 from ..utils.check_ops import check_op, is_firstly_used
@@ -81,6 +82,9 @@ def try_add_parallel_lists(result_node, combined_idx, shared_to_combinelists, co
 
 class CombinePointwise(Pattern):
     _opt_level = OptLevel.level1
+    _pattern_group = PatternGroup.GROUP1  # Note: This pattern should be applied after folding patterns
+    _support_stages = [FxStage.inference, FxStage.pregrad]
+
     """
     input_1 -> poi_1 ----\
     input_2 -> poi_2 ------> stack/cat -> output
