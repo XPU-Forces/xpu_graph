@@ -207,21 +207,15 @@ def get_bool_env_var(name, default_value: bool):
 
 
 def recursive_set_obj(src_dict: dict, tgt_obj):
-    is_obj = True
-    if isinstance(tgt_obj, dict):
-        tgt_dict = tgt_obj
-        is_obj = False
-    elif hasattr(tgt_obj, "__dict__"):
-        tgt_dict = tgt_obj.__dict__
-    else:
-        raise TypeError(f"{type(tgt_obj)} is not dict or has no __dict__.")
-
+    # NOTE(liuyuan): If performance should be considered, sperate the following statements into two loops. Otherwise, let it be pythonic.
     for k, v in src_dict.items():
-        if k in tgt_dict:
+        if hasattr(tgt_obj, k) or (isinstance(tgt_obj, dict) and k in tgt_obj):
             if isinstance(v, dict):
-                recursive_set_obj(v, tgt_dict[k])
+                recursive_set_obj(v, getattr(tgt_obj, k) or tgt_obj[k])
             else:
-                if is_obj:
-                    setattr(tgt_obj, k, v)
-                else:
+                try:
                     tgt_obj[k] = v
+                except TypeError:
+                    setattr(tgt_obj, k, v)
+                except Exception as e:
+                    raise e

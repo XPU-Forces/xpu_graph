@@ -24,6 +24,19 @@ def test_get_bool_env_var(val, expect):
 
 
 class TestRecursiveSetObj:
+    class CustomSetterType:
+        def __init__(self):
+            self.__invisible_attr = "0"
+
+        @property
+        def invisible_attr(self):
+            return self.__invisible_attr
+
+        @invisible_attr.setter
+        def invisible_attr(self, val):
+            assert isinstance(val, int)
+            self.__invisible_attr = str(val + 2)
+
     class Dummy:
         def __init__(self):
             self.a = None
@@ -34,6 +47,7 @@ class TestRecursiveSetObj:
                 y: str = None
 
             self.c = Dummy()
+            self.d = TestRecursiveSetObj.CustomSetterType()
 
     @pytest.mark.parametrize(
         "src_dict, assertion",
@@ -46,10 +60,13 @@ class TestRecursiveSetObj:
                 {"c": {"y": 123}, "b": {"x": 456}},
                 lambda obj: obj.c.y == 123 and obj.b["x"] == 456,
             ),
+            (
+                {"d": {"invisible_attr": 10}, "e": {"xxx", "bieshulimianchangk"}},
+                lambda obj: isinstance(obj.d.invisible_attr, str) and obj.d.invisible_attr == "12",
+            ),
         ),
     )
     def test_recursive_set_obj(self, src_dict, assertion):
         tgt_obj = self.Dummy()
         recursive_set_obj(src_dict, tgt_obj)
         assert assertion(tgt_obj)
-        ...
