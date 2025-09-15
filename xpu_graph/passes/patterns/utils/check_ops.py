@@ -346,6 +346,10 @@ def check_expand_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.expand.default)
 
 
+def check_split_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.split.Tensor)
+
+
 def check_rsub_scalar_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.rsub.Scalar)
 
