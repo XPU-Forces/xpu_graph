@@ -18,6 +18,126 @@ bsz = 8
 data_type = torch.float32
 
 
+def gen_buggy_compiler(raise_in_forward=False, raise_in_backward=False):
+    def fw_compiler(gm, example_inputs):
+        if raise_in_forward:
+
+            def buggy_compiled(*args, **kwargs):
+                raise RuntimeError("buggy compiler fw")
+
+            return buggy_compiled
+        return gm
+
+    def bw_compiler(gm, example_inputs):
+        if raise_in_backward:
+
+            def buggy_compiled(*args, **kwargs):
+                raise RuntimeError("buggy compiler bw")
+
+            return buggy_compiled
+        return gm
+
+    from torch._dynamo.backends.common import aot_autograd
+
+    return aot_autograd(fw_compiler=fw_compiler, bw_compiler=bw_compiler)
+
+
+class MyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(10, 10)
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+ORIG_COMPILE_FUNC = torch.compile
+
+
+class TestTryCompile:
+    def test_temp_wrap_compile_with_try(self):
+        torch.compile = ORIG_COMPILE_FUNC
+
+        set_try_compile_mode(True)
+        with patching_try_compile():
+            assert torch.compile != ORIG_COMPILE_FUNC
+        assert torch.compile == ORIG_COMPILE_FUNC
+
+    def test_wrap_compile_with_try(self):
+        torch.compile = ORIG_COMPILE_FUNC
+        torch._dynamo.reset()
+        set_try_compile_mode(True)
+        with patching_try_compile():
+            module = MyModel()
+            module.forward = torch.compile(module.forward, backend=gen_buggy_compiler())
+            assert hasattr(module.forward, "_wrapped_with_try_compile")
+
+    def test_wrap_compile_with_try_compile_idempotent(self):
+        torch.compile = ORIG_COMPILE_FUNC
+        torch._dynamo.reset()
+        set_try_compile_mode(True)
+        with patching_try_compile():
+            module = MyModel()
+            module.forward = torch.compile(module.forward, backend=gen_buggy_compiler())
+            compiled_twice_forward = torch.compile(module.forward, backend=gen_buggy_compiler())
+            assert compiled_twice_forward == module.forward
+
+    def test_wrap_compile_with_try_compile_raise_in_fw(self):
+        torch.compile = ORIG_COMPILE_FUNC
+        torch._dynamo.reset()
+        set_try_compile_mode(True)
+        with patching_try_compile():
+            module = MyModel()
+            module.forward = torch.compile(module.forward, backend=gen_buggy_compiler(raise_in_forward=True))
+            assert hasattr(module.forward, "_wrapped_with_try_compile")
+            input = torch.randn(1, 10)
+            with pytest.raises(RuntimeError, match="buggy compiler fw"):
+                out = module.forward(input)
+                out.sum(-1).pow(2).mean().backward()
+
+    def test_wrap_compile_with_try_compile_raise_in_bw(self):
+        torch.compile = ORIG_COMPILE_FUNC
+        torch._dynamo.reset()
+        set_try_compile_mode(True)
+        with patching_try_compile():
+            module = MyModel()
+            module.forward = torch.compile(module.forward, backend=gen_buggy_compiler(raise_in_backward=True))
+            assert hasattr(module.forward, "_wrapped_with_try_compile")
+            input = torch.randn(1, 10)
+            with pytest.raises(RuntimeError, match="buggy compiler bw"):
+                out = module.forward(input)
+                out.sum(-1).pow(2).mean().backward()
+
+    def test_wrap_compile_with_try_compile_fallback_again(self):
+        torch.compile = ORIG_COMPILE_FUNC
+        torch._dynamo.reset()
+        set_try_compile_mode(True)
+        with patching_try_compile():
+            module = MyModel()
+
+            input = torch.randn(1, 10)
+
+            golden_out = module.forward(input)
+            golden_out.sum(-1).pow(2).mean().backward()
+            golden_grad = module.linear.weight.grad.clone()
+            module.zero_grad()
+
+            module.forward = torch.compile(module.forward, backend=gen_buggy_compiler(raise_in_backward=True))
+
+            assert hasattr(module.forward, "_wrapped_with_try_compile")
+
+            try:
+                with pytest.raises(RuntimeError, match="buggy compiler bw"):
+                    out = module.forward(input)
+                    out.sum(-1).pow(2).mean().backward()
+            except RuntimeError:
+                set_try_compile_mode(False)
+                module.zero_grad()
+                out = module.forward(input)
+                out.sum(-1).pow(2).mean().backward()
+                assert torch.allclose(module.linear.weight.grad, golden_grad)
+
+
 class FaultyPattern(Pattern):
     def process(self, gm: torch.fx.GraphModule) -> bool:
         changed = False
@@ -28,7 +148,7 @@ class FaultyPattern(Pattern):
         return changed
 
 
-class TestTryCompile:
+class TestTryCompileWithInterceptor:
     @pytest.mark.parametrize(
         "ReproCls",
         [InplaceModel],

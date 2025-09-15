@@ -487,6 +487,10 @@ def set_try_compile_mode(do_compile: bool):
 
 
 def try_compile(fn, **kwargs):
+    # add custom mark in case of duplicated torch.compile calls
+    if hasattr(fn, "_wrapped_with_try_compile"):
+        return fn
+
     compiled_fn = ORIG_COMPILE_FUNC(fn, **kwargs)
 
     def try_compiled(*args, **kwargs):
@@ -494,6 +498,8 @@ def try_compile(fn, **kwargs):
             return compiled_fn(*args, **kwargs)
         elif CURRENT_TRY_COMPILE_MODE == TryCompileMode.FALLBACK:
             return fn(*args, **kwargs)
+
+    setattr(try_compiled, "_wrapped_with_try_compile", True)
 
     return try_compiled
 
@@ -503,7 +509,6 @@ def patching_try_compile():
     global ORIG_COMPILE_FUNC
     ORIG_COMPILE_FUNC = torch.compile
     try:
-        set_try_compile_mode(True)
         torch.compile = try_compile
         yield
     finally:
