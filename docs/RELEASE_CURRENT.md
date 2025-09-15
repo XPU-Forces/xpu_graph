@@ -8,17 +8,24 @@
 - [triton-x] 3.2.0 或者更高
 
 ## 重大变动
-- 新增运行时精度监控 (#272)，可以在运行时将编译产物的前反向精度与优化前的fx graph进行对比，帮助用户定位精度问题
-- 补充 Apache 2.0 协议 (#379)
+-
 
 ## 主要特性与改进
-- 优化 slicelike folding pattern：#366
-  - 消除 noop-slice（Pattern: y = slice(x, dim, 0, len(x)(or inf)) -> Becomes: y = x）
-  - 消除 noop-slicescatter（Pattern: y = slice_scatter(base, view, ...) -> Becomes: y = view）
-- 优化 dense 类 pattern: #279
-  - 增加 addmm, baddbmm, SDP attention 融合（ common pattern ）
-  - 优化 denselayer structure pattern，支持后端特化的 matmul/bmm + add + activation 后融合
-  - 优化 densetower structure pattern，支持后端特化的多层 FFN 融合
+- 现在你可以通过结构化字典的方式，将npu compiler的选项设置透传到过去，例如：
+  - ```
+    vendor_cfg = {'mode': 'reduce-overhead', 'aclgraph_config': {'use_custom_pool': mem_pool_handl}}
+    xpu_cfg =  XpuGraphConfig(
+                is_training=False,
+                target=Target.npu,
+                vendor_compiler_config=vendor_cfg)
+    # This also works for now and will be deprecated after THREE versions.
+    vendor_cfg = {'mode': 'reduce-overhead', 'use_custom_pool': mem_pool_handl}
+    xpu_cfg =  XpuGraphConfig(
+                is_training=False,
+                target=Target.npu,
+                vendor_compiler_config=vendor_cfg)
 
+    ```
+  目前我们仍然兼容原来的选项写法，但接下来三个版本后，我们将废弃原有的`use_custom_pool`字段，并不再新增npu compiler选项字段，请参考官方的选项用法。 #399
 ## Bug修复与其他改动
-- 修复 mlu inductor 的 cpp_wrapper 设置，并避免默认值覆盖 TORCHINDUCTOR_CPP_WRAPPER 环境变量
+-
