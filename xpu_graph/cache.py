@@ -1,3 +1,4 @@
+import contextlib
 import copy
 import hashlib
 import importlib
@@ -219,7 +220,11 @@ class XpuGraphLocalCache(XpuGraphCache):
     def save_gm(self, key, value: SerializeWrapper, expire=None) -> SerializeWrapper:
         artifact_path = self._graph_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
-        with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
+        if TracingContext.try_get():
+            patched_ctx = TracingContext.patch(fake_mode=None)
+        else:
+            patched_ctx = contextlib.nullcontext()
+        with compile_lock, _disable_current_modes(), patched_ctx:
             with open(artifact_path, "wb+") as f:
                 pickle.dump(value, f)
             with open(artifact_path, "rb") as f:
@@ -229,7 +234,11 @@ class XpuGraphLocalCache(XpuGraphCache):
     def load_gm(self, key) -> Optional[SerializeWrapper]:
         artifact_path = self._graph_path(key)
         if os.path.isfile(artifact_path):
-            with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
+            if TracingContext.try_get():
+                patched_ctx = TracingContext.patch(fake_mode=None)
+            else:
+                patched_ctx = contextlib.nullcontext()
+            with compile_lock, _disable_current_modes(), patched_ctx:
                 logger.info(f"Use cache in location: {artifact_path}")
                 with open(artifact_path, "rb") as f:
                     cached_graph = pickle.load(f)
