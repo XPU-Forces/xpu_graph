@@ -39,8 +39,8 @@ class ChangeTensorLike(Pattern):
                     new_args.append(fill_value_arg)
 
                 new_kwargs = {
-                    "dtype": template_node.meta["val"].dtype,
-                    "device": template_node.meta["val"].device,
+                    "dtype": like_node.kwargs.get("dtype", template_node.meta["val"].dtype),
+                    "device": like_node.kwargs.get("device", template_node.meta["val"].device),
                 }
                 if "pin_memory" in like_node.kwargs:
                     new_kwargs["pin_memory"] = like_node.kwargs["pin_memory"]
