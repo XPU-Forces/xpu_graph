@@ -39,7 +39,7 @@ class FoldReduce(Pattern):
         changed = False
         candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in reduce_tup]
 
-        for reduce in candidates:
+        for reduce in reversed(candidates):
             inp = get_input_node(reduce, 0)
             shape = inp.meta["val"].shape
             dims = get_input_kw_node(reduce, "dim") or list(range(len(shape)))

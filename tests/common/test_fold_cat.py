@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
@@ -24,6 +25,10 @@ def cat_cat_test(xpu_graph, func):
 
 def fn1(input):
     return torch.cat([input], dim=1)
+
+
+def fn2(input):
+    return torch.cat([torch.cat([input], dim=1)])
 
 
 def cat_test(xpu_graph, func):
@@ -54,6 +59,7 @@ class TestFoldCat:
         "pattern_func",
         [
             fn1,
+            fn2,
         ],
     )
     def test_cat_patterns(self, caplog, pattern_func):

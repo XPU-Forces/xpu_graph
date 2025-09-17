@@ -35,6 +35,12 @@ def fn5(a):
     return output
 
 
+def fn6(a):
+    a = torch.sum(a, dim=1, keepdim=True)
+    a = torch.sum(a, dim=2, keepdim=True)
+    return a
+
+
 def reduce_test(xpu_graph, func):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
     a = torch.randn(128, 1, 64, 1)
@@ -57,6 +63,7 @@ class TestReduce:
             fn2,
             fn3,
             fn4,
+            fn6,
         ],
     )
     def test_reduce_patterns(self, caplog, pattern_func):
