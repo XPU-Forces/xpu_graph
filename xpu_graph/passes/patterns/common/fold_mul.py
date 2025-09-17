@@ -3,7 +3,7 @@ import torch.fx as fx
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.check_ops import is_one_like
+from xpu_graph.passes.patterns.utils.check_ops import check_op, is_one_like
 
 
 class FoldMul1(Pattern):
@@ -20,13 +20,9 @@ class FoldMul1(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        mul_tup = (
-            torch.ops.aten.mul.Tensor,
-            torch.ops.aten.mul.Scalar,
-        )
-        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in mul_tup]
-
-        for mul in candidates:
+        for mul in reversed(gm.graph.nodes):
+            if not check_op(mul, torch.ops.aten.mul.Tensor) and not check_op(mul, torch.ops.aten.mul.Scalar):
+                continue
             inp0 = mul.args[0]
             inp1 = mul.args[1]
             target_val = None

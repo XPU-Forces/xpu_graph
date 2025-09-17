@@ -3,7 +3,7 @@ import torch.fx as fx
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.check_ops import is_one_like
+from xpu_graph.passes.patterns.utils.check_ops import check_op, is_one_like
 
 
 class FoldDiv1(Pattern):
@@ -20,10 +20,9 @@ class FoldDiv1(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        div_tup = (torch.ops.aten.div.Tensor, torch.ops.aten.div.Scalar)
-        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in div_tup]
-
-        for div in candidates:
+        for div in reversed(gm.graph.nodes):
+            if not check_op(div, torch.ops.aten.div.Tensor) and not check_op(div, torch.ops.aten.div.Scalar):
+                continue
             inp0 = div.args[0]
             inp1 = div.args[1]
             target_val = None

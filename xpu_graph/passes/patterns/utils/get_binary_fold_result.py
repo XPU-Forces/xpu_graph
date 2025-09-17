@@ -39,7 +39,7 @@ def get_binary_fold_result(
                     target_meta["val"].shape,
                 ),
             )
-        if expand.meta["val"].dtype != target_meta["val"].dtype:
+        if inp.meta["val"].dtype != target_meta["val"].dtype:
             copy = gm.graph.call_function(
                 torch.ops.aten._to_copy.default,
                 args=(expand,),
