@@ -202,7 +202,7 @@ class XpuGraph:
         example_kwargs = example_kwargs or {}
 
         logger.info("export module start...")
-        exported_prog = torch.export.export(mod, example_args, example_kwargs)
+        exported_prog = torch.export.export(mod, example_args, example_kwargs, strict=False)
         logger.info("export module complete")
 
         flat_inputs = exported_prog._graph_module_flat_inputs(*exported_prog.example_inputs)
