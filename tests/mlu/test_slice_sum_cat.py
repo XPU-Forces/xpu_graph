@@ -66,7 +66,7 @@ def fn4(inputs, slice_param, other_tensor):
     return output
 
 
-def sumcat_test(xpu_graph_backend, func):
+def sumcat_test(xpu_graph_backend, func, dynamic=True):
     batch_size_list = [86, 32, 64, 128, 256, 512]
     for batch in batch_size_list:
         slice_723 = torch.rand(batch, 32, 32).to("mlu:0").to(torch.float16)
@@ -78,7 +78,8 @@ def sumcat_test(xpu_graph_backend, func):
         elif func in [fn3, fn4]:
             other_tensor = torch.rand(batch, 32, 32).to("mlu:0").to(torch.float16)
             args += (other_tensor,)
-        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+        torch._dynamo.reset()
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res1 = func(*args)
         res = compiled(*args)
         is_similar(res1.cpu().float(), res.cpu().float())
@@ -89,13 +90,20 @@ class TestSliceSumCat:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
-        "pattern_func",
-        [fn0, fn1, fn2, fn3, fn4],
+        "pattern_func,dynamic",
+        [
+            (fn0, True),
+            (fn1, False),
+            (fn2, True),
+            (fn3, False),
+            (fn4, True),
+        ],
     )
-    def test_slice_patterns(self, caplog, pattern_func):
+    def test_slice_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            sumcat_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedCatSum changed graph" in caplog.text
+            sumcat_test(self.xpu_graph_backend, pattern_func, dynamic)
+        if not dynamic:
+            assert "Pattern.FusedCatSum changed graph" in caplog.text
 
 
 if __name__ == "__main__":

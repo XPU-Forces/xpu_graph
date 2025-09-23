@@ -30,7 +30,8 @@ def bmm_test(xpu_graph_backend, func, inputs_dtype, weight_dtype, bias_dtype):
     else:
         bias = torch.randn((16), device=device, dtype=bias_dtype, requires_grad=is_training)
     res = func(inputs, weight, bias)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+    torch._dynamo.reset()
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=is_training)
     res1 = compiled(inputs, weight, bias)
     is_similar(res.cpu().float(), res1.cpu().float())
 

@@ -44,13 +44,14 @@ class LayerNorm2(torch.nn.Module):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
-def layernorm_test(xpu_graph, ModCls, input_dtype, param_dtype):
+def layernorm_test(xpu_graph, ModCls, dynamic, input_dtype, param_dtype):
     mod = ModCls(10).mlu().to(param_dtype)
     mod_compiled = ModCls(10).mlu().to(param_dtype)
     mod_compiled.load_state_dict(mod.state_dict())
     with torch.inference_mode():
-        a = torch.randn(1, 10).to(input_dtype).mlu()
-        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=xpu_graph, dynamic=False)
+        a = torch.randn(2, 10).to(input_dtype).mlu()
+        torch._dynamo.reset()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=xpu_graph, dynamic=dynamic)
         norm = mod_compiled.forward(a)
         norm1 = mod.forward(a)
     assert is_similar(norm1.cpu().float(), norm.cpu().float())
@@ -61,18 +62,18 @@ class TestLayerNorm:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
-        "pattern_mod,input_dtype,param_dtype",
+        "pattern_mod,dynamic,input_dtype,param_dtype",
         [
-            (LayerNorm1, torch.float32, torch.float32),
-            (LayerNorm2, torch.float16, torch.float16),
-            (LayerNorm1, torch.float32, torch.float16),
-            (LayerNorm2, torch.float16, torch.float32),
-            (LayerNorm1, torch.float32, torch.bfloat16),
+            (LayerNorm1, True, torch.float32, torch.float32),
+            (LayerNorm2, True, torch.float16, torch.float16),
+            (LayerNorm1, False, torch.float32, torch.float16),
+            (LayerNorm2, False, torch.float16, torch.float32),
+            (LayerNorm1, True, torch.float32, torch.bfloat16),
         ],
     )
-    def test_layernorm_patterns(self, caplog, pattern_mod, input_dtype, param_dtype):
+    def test_layernorm_patterns(self, caplog, pattern_mod, dynamic, input_dtype, param_dtype):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            layernorm_test(self.xpu_graph_backend, pattern_mod, input_dtype, param_dtype)
+            layernorm_test(self.xpu_graph_backend, pattern_mod, dynamic, input_dtype, param_dtype)
         assert "Pattern.FusedLayerNorm changed graph" in caplog.text
         if input_dtype != torch.float32:
             assert "Pattern.RemoveLayerNormCast" in caplog.text
@@ -82,7 +83,7 @@ class TestLayerNorm:
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
     layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.float32)
-    layernorm_test(xpu_graph_backend, LayerNorm2, torch.float16, torch.float16)
-    layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.float16)
-    layernorm_test(xpu_graph_backend, LayerNorm2, torch.float16, torch.float32)
-    layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.bfloat16)
+    # layernorm_test(xpu_graph_backend, LayerNorm2, torch.float16, torch.float16)
+    # layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.float16)
+    # layernorm_test(xpu_graph_backend, LayerNorm2, torch.float16, torch.float32)
+    # layernorm_test(xpu_graph_backend, LayerNorm1, torch.float32, torch.bfloat16)

@@ -87,10 +87,10 @@ all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, Dr
 
 
 def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16):
-    torch._dynamo.reset()
     golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
-    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
+    torch._dynamo.reset()
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=True)
     compiled.load_state_dict(golden.state_dict())
     compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
     golden_input = compiled_input.clone()
@@ -110,10 +110,10 @@ def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16):
 
 
 def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input_dim=16):
-    torch._dynamo.reset()
     golden = ModCls(input_dim).to(device=device, dtype=data_type).train()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).train()
-    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
+    torch._dynamo.reset()
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=True)
     compiled.load_state_dict(golden.state_dict())
     compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
     golden_input = compiled_input.clone()

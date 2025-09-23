@@ -1,9 +1,7 @@
 import torch
+
 from xpu_graph import XpuGraph, XpuGraphConfig
-from xpu_graph.test_utils import (
-    need_xpu_graph_logs,
-    is_similar,
-)
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 
 def test_cse(caplog):
@@ -38,6 +36,24 @@ def test_cse(caplog):
         expect = can_cse_case_2(torch.randn(10))
 
     assert "Optimizer.Cse changed graph" in caplog.text
+
+    def can_cse_dyn_case_1(x, y):
+        z = x + y
+        zz = x + y
+        return z + zz
+
+    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, enable_cache=False))
+    with need_xpu_graph_logs():
+        compiled_func = torch.compile(
+            can_cse_dyn_case_1,
+            backend=xpu_graph_backend,
+            dynamic=True,
+        )
+        in1, in2 = torch.randn(10), torch.randn(10)
+        res = compiled_func(in1, in2)
+        expect = can_cse_dyn_case_1(in1, in2)
+
+    assert is_similar(res, expect) and "Optimizer.Cse changed graph" in caplog.text
 
     # https://github.com/pytorch/pytorch/issues/88813
     def not_cse_case_1(val: torch.Tensor):

@@ -58,12 +58,13 @@ def fn3(hidden_states):
     return output, input_
 
 
-def rmsnorm_test(xpu_graph, func):
+def rmsnorm_test(xpu_graph, func, dynamic):
     with torch.no_grad():
         a = torch.randn(1, 10).mlu()
         if func == fn1:
             a = a.half()
-        compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+        torch._dynamo.reset()
+        compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
         if func != fn3:
             norm = compiled(a)
             norm1 = func(a)
@@ -80,17 +81,17 @@ class TestRMSNorm:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
-        "pattern_func",
+        "pattern_func,dynamic",
         [
-            fn0,
-            fn1,
-            fn2,
-            fn3,
+            (fn0, False),
+            (fn1, True),
+            (fn2, False),
+            (fn3, True),
         ],
     )
-    def test_rmsnorm_patterns(self, caplog, pattern_func):
+    def test_rmsnorm_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            rmsnorm_test(self.xpu_graph_backend, pattern_func)
+            rmsnorm_test(self.xpu_graph_backend, pattern_func, dynamic)
         assert "Pattern.FusedRMSNorm changed graph" in caplog.text
         if pattern_func in [fn1]:
             assert "Pattern.RemoveRMSNormCast" in caplog.text

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch_mlu
+
 import xpu_graph
 
 device = "mlu:0"
@@ -21,9 +22,8 @@ def compare_test(xpugraph_backend):
     orig = NumpyScaleModule(input_dim)
     compiled = NumpyScaleModule(input_dim)
 
-    compiled.forward = torch.compile(
-        compiled.forward, backend=xpugraph_backend, dynamic=False
-    )
+    torch._dynamo.reset()
+    compiled.forward = torch.compile(compiled.forward, backend=xpugraph_backend, dynamic=False)
 
     orig_output = orig(input_tensor)
     compiled_output = compiled(input_tensor)

@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
@@ -9,8 +10,14 @@ def fn0(a):
     return output
 
 
-def expand_test(xpu_graph, func):
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+def fn1(a):
+    output = a.expand(a.size(0), a.size(1))
+    return output
+
+
+def expand_test(xpu_graph, func, dynamic):
+    torch._dynamo.reset()
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     res = func(a)
     res1 = compiled(a)
@@ -27,11 +34,19 @@ class TestExpand:
         "pattern_func",
         [
             fn0,
+            fn1,
         ],
     )
-    def test_expand_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize(
+        "dynamic",
+        [
+            True,
+            False,
+        ],
+    )
+    def test_expand_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            expand_test(self.xpu_graph, pattern_func)
+            expand_test(self.xpu_graph, pattern_func, dynamic)
         assert "Pattern.FoldExpand changed graph" in caplog.text
 
 

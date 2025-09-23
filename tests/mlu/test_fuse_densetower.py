@@ -34,7 +34,7 @@ def fn0(ffn_input, ffn_weight1, ffn_weight2, ffn_weight3, bias1, bias2, bias3, a
     return output
 
 
-def serial_mm_test(xpu_graph_backend, func):
+def serial_mm_test(xpu_graph_backend, func, dynamic):
     with torch.no_grad():
         batch = 16
         input_size = 20
@@ -67,7 +67,8 @@ def serial_mm_test(xpu_graph_backend, func):
             act3,
         ]
 
-        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+        torch._dynamo.reset()
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res1 = func(*args)
         res = compiled(*args)
 
@@ -82,9 +83,10 @@ class TestSerialMM:
         "pattern_func",
         [fn0],
     )
-    def test_serial_mm_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize("dynamic", [True, False])
+    def test_serial_mm_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            serial_mm_test(self.xpu_graph_backend, pattern_func)
+            serial_mm_test(self.xpu_graph_backend, pattern_func, dynamic)
         assert "Pattern.FusedDenseTower2 changed graph" in caplog.text
         assert "Pattern.FusedDenseTower3 changed graph" in caplog.text
 

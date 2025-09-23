@@ -92,6 +92,7 @@ class TestPluginPattern:
                 # WARNING(liuyuan): MUST construct compiler just in time.
                 config = XpuGraphConfig(is_training=False, debug=True)
                 xpu_graph = XpuGraph(config)
+                torch._dynamo.reset()
                 compiled = torch.compile(another_one, backend=xpu_graph, dynamic=False)
 
                 # NOTE(liuyuan): DO NOT match with cosntraint0
@@ -167,7 +168,7 @@ class TestPluginPattern:
                 # WARNING(liuyuan): MUST construct compiler just in time.
                 config = XpuGraphConfig(is_training=False, debug=True)
                 xpu_graph = XpuGraph(config)
-
+                torch._dynamo.reset()
                 compiled = torch.compile(pattern, backend=xpu_graph, dynamic=False)
 
                 input_tensor = torch.randn(1024, 1024)
@@ -194,7 +195,7 @@ class TestPluginPattern:
 
                 config = XpuGraphConfig(is_training=False, debug=True)
                 xpu_graph = XpuGraph(config)
-
+                torch._dynamo.reset()
                 compiled = torch.compile(pattern, backend=xpu_graph, dynamic=False)
                 input_tensor = torch.randn(1024, 1024)
                 assert (
@@ -220,7 +221,7 @@ class TestPluginPattern:
 
                 config = XpuGraphConfig(is_training=False, debug=True)
                 xpu_graph = XpuGraph(config)
-
+                torch._dynamo.reset()
                 compiled = torch.compile(pattern2, backend=xpu_graph, dynamic=False)
                 assert (
                     is_similar(
@@ -256,6 +257,7 @@ class TestPluginPattern:
 
             config = XpuGraphConfig(is_training=False, debug=True)
             xpu_graph = XpuGraph(config)
+            torch._dynamo.reset()
             # NOTE(liuyuan): expectedly, the pattern will be matched.
             compiled = torch.compile(true_func, backend=xpu_graph, dynamic=False)
             # NOTE(liuyuan): expectedly, the pattern will be MISmatched.
@@ -280,6 +282,7 @@ class TestPluginPattern:
 
             config = XpuGraphConfig(is_training=False, debug=True)
             xpu_graph = XpuGraph(config)
+            torch._dynamo.reset()
             compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
             input_tensor = torch.rand(1024, 1024)
@@ -301,6 +304,7 @@ class TestPluginPattern:
 
             config = XpuGraphConfig(is_training=False, debug=True, enable_cache=False)
             xpu_graph = XpuGraph(config)
+            torch._dynamo.reset()
             compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
             input_tensor = torch.rand(1024, 2048)
@@ -318,6 +322,7 @@ class TestPluginPattern:
                 return (x.view(-1, 1024)[0][0] * (x - 100)).add(200, alpha=300000)
 
             xpu_graph = XpuGraph(config)
+            torch._dynamo.reset()
             compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
 
             input_tensor = torch.rand(1024, 2048)

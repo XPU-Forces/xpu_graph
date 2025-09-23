@@ -95,8 +95,9 @@ def fn8(a):
     return squeeze8, squeeze6
 
 
-def squeeze_test(xpu_graph, func):
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+def squeeze_test(xpu_graph, func, dynamic):
+    torch._dynamo.reset()
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     if func in [fn2]:
         a = torch.randn(128, 1, 64, 1)
@@ -127,9 +128,10 @@ class TestSqueeze:
             fn8,
         ],
     )
-    def test_squeeze_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_squeeze_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            squeeze_test(self.xpu_graph, pattern_func)
+            squeeze_test(self.xpu_graph, pattern_func, dynamic)
         if pattern_func in [fn4, fn5, fn6, fn7, fn8]:
             assert "Pattern.FoldSqueeze0 changed graph" in caplog.text
         elif pattern_func in [fn5]:

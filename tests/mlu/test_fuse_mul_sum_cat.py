@@ -30,7 +30,7 @@ def fn1(x1, x2, x3, x4, x5, x6, x7, x8):
     return out
 
 
-def mul_sum_cat_test(xpu_graph_backend, func):
+def mul_sum_cat_test(xpu_graph_backend, func, dynamic):
     batch = 1024
     dtype = torch.half
     a = torch.rand(batch, 80, 32, dtype=dtype, device="mlu")
@@ -42,7 +42,8 @@ def mul_sum_cat_test(xpu_graph_backend, func):
     g = torch.rand(batch, 80, 32, dtype=dtype, device="mlu")
     h = torch.rand(batch, 80, 32, dtype=dtype, device="mlu")
 
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+    torch._dynamo.reset()
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     if func == fn0:
         res1 = func(a, b, c, d)
         res = compiled(a, b, c, d)
@@ -57,15 +58,15 @@ class TestMulSumCat:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False)
 
     @pytest.mark.parametrize(
-        "pattern_func",
+        "pattern_func,dynamic",
         [
-            fn0,
-            fn1,
+            (fn0, True),
+            (fn1, False),
         ],
     )
-    def test_mul_sum_cat_patterns(self, caplog, pattern_func):
+    def test_mul_sum_cat_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            mul_sum_cat_test(self.xpu_graph_backend, pattern_func)
+            mul_sum_cat_test(self.xpu_graph_backend, pattern_func, dynamic)
         assert "Pattern.FusedMulSumCat changed graph" in caplog.text
 
 

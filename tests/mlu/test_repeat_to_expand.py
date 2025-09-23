@@ -1,14 +1,11 @@
 import math
+
 import pytest
-
 import torch
-import xpu_graph
 
+import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
+from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
 
 def fn0(input, input_num, bs, in_dim):
@@ -24,7 +21,8 @@ def gather_test(xpu_graph_backend, func):
     dtype = torch.half
     input = torch.randn(batch, 496, in_dim, dtype=dtype, device="mlu")
     res1 = func(input, 46, batch, in_dim)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+    torch._dynamo.reset()
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=True)
     res = compiled(input, 46, batch, in_dim)
 
     assert torch.equal(res.cpu().float(), res1.cpu().float())
@@ -32,9 +30,7 @@ def gather_test(xpu_graph_backend, func):
 
 class TestGather:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, debug=True, opt_level=OptLevel.level1
-        )
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, debug=True, opt_level=OptLevel.level1)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -47,7 +43,5 @@ class TestGather:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, debug=True, opt_level=OptLevel.level1
-    )
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, debug=True, opt_level=OptLevel.level1)
     gather_test(xpu_graph_backend, fn0)

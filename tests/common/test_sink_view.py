@@ -26,8 +26,7 @@ def func(input, bias, bin_op, act):
     return y
 
 
-def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act):
-    torch._dynamo.reset()
+def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act, dynamic=True):
     input = torch.randn(input_shape, device=device, dtype=data_type)
     if bias_shape is None:
         bias = None
@@ -38,7 +37,8 @@ def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act):
     else:
         bias = torch.randn(bias_shape, device=device, dtype=data_type)
     res = func(input, bias, bin_op, act)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+    torch._dynamo.reset()
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(input, bias, bin_op, act)
     is_similar(res.cpu().float(), res1.cpu().float())
 
@@ -62,9 +62,10 @@ class TestSinkView:
             ((8, 6, 4), "int", torch.sub, "relu"),
         ],
     )
-    def test_sink_view_patterns(self, caplog, input_shape, bias_shape, bin_op, act):
+    @pytest.mark.parametrize("dynamic", [True, False])
+    def test_sink_view_patterns(self, caplog, input_shape, bias_shape, bin_op, act, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            sinkview_test(self.xpu_graph_backend, input_shape, bias_shape, bin_op, act)
+            sinkview_test(self.xpu_graph_backend, input_shape, bias_shape, bin_op, act, dynamic)
         assert "Pattern.SinkView changed graph" in caplog.text
 
     @pytest.mark.parametrize(
@@ -76,9 +77,10 @@ class TestSinkView:
             ((4, 6, 8), (1, 6, 1), torch.sub, "none"),
         ],
     )
-    def test_sink_view_xfail_patterns(self, caplog, input_shape, bias_shape, bin_op, act):
+    @pytest.mark.parametrize("dynamic", [True, False])
+    def test_sink_view_xfail_patterns(self, caplog, input_shape, bias_shape, bin_op, act, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            sinkview_test(self.xpu_graph_backend, input_shape, bias_shape, bin_op, act)
+            sinkview_test(self.xpu_graph_backend, input_shape, bias_shape, bin_op, act, dynamic)
         assert "Pattern.SinkView changed graph" not in caplog.text
 
 
