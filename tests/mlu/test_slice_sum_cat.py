@@ -100,6 +100,11 @@ class TestSliceSumCat:
         ],
     )
     def test_slice_patterns(self, caplog, pattern_func, dynamic):
+        from packaging import version
+
+        torch_version = version.parse(torch.__version__[:5])
+        if dynamic and torch_version < version.parse("2.7.0"):
+            pytest.skip("Torch<=2.7 with dynamic shape for Pattern.FusedCatSum is not guaranteed")
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             sumcat_test(self.xpu_graph_backend, pattern_func, dynamic)
         if not dynamic:

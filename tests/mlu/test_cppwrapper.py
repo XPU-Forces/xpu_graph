@@ -37,10 +37,19 @@ class TestMatMul:
         )
 
     @pytest.mark.parametrize(
-        "pattern_func,dynamic",
-        [(fn0, False), (fn1, True)],
+        "pattern_func",
+        [fn0, fn1],
+    )
+    @pytest.mark.parametrize(
+        "dynamic",
+        [False, True],
     )
     def test_matmul_patterns(self, caplog, pattern_func, dynamic):
+        from packaging import version
+
+        torch_version = version.parse(torch.__version__[:5])
+        if dynamic and torch_version < version.parse("2.7.0"):
+            pytest.skip("Torch<=2.7 with dynamic shape for cpp_wrapper is not guaranteed")
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             matmul_test(self.xpu_graph_backend, pattern_func, dynamic)
         if pattern_func in [fn0]:
