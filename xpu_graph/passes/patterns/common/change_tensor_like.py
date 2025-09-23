@@ -38,9 +38,14 @@ class ChangeTensorLike(Pattern):
                 if fill_value_arg is not None:
                     new_args.append(fill_value_arg)
 
+                # according to https://docs.pytorch.org/docs/stable/generated/torch.full_like.html#torch-full-like
+                # torch.full_like(input, fill_value) is equivalent to
+                # torch.full(input.size(), fill_value, dtype=input.dtype, layout=input.layout, device=input.device)
+                # currently we do not handle "memory_format"
                 new_kwargs = {
-                    "dtype": template_node.meta["val"].dtype,
-                    "device": template_node.meta["val"].device,
+                    "dtype": like_node.kwargs.get("dtype", template_node.meta["val"].dtype),
+                    "device": like_node.kwargs.get("device", template_node.meta["val"].device),
+                    "layout": like_node.kwargs.get("layout", template_node.meta["val"].layout),
                 }
                 if "pin_memory" in like_node.kwargs:
                     new_kwargs["pin_memory"] = like_node.kwargs["pin_memory"]

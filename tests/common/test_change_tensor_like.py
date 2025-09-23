@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
@@ -15,7 +16,17 @@ def fn1(a):
 
 
 def fn2(a):
-    output = torch.ones_like(a)
+    output = torch.full_like(a, 42)
+    return output
+
+
+def fn2_dtype(a):
+    output = torch.full_like(a, 42, dtype=torch.int32)
+    return output
+
+
+def fn2_device(a):
+    output = torch.full_like(a, 42, device=torch._utils._get_available_device_type())
     return output
 
 
@@ -56,6 +67,8 @@ class TestTensorLike:
             fn0,
             fn1,
             fn2,
+            fn2_device,
+            fn2_dtype,
             fn3,
         ],
     )
