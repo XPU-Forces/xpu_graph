@@ -33,7 +33,7 @@ class FoldableSliceScatter(torch.nn.Module):
 
 class TestFoldSlice:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig(is_training=False)
+        config = xpu_graph.config.XpuGraphConfig(is_training=False, vendor_compiler_config=None)
         self.xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
 
     input_tensor = torch.rand(128)
@@ -61,6 +61,16 @@ class TestFoldSlice:
 
         with need_xpu_graph_logs():
             compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=False)
+            result = compiled_mod(self.input_tensor)
+
+        assert is_similar(expect, result)
+        assert "Pattern.FoldSliceLike changed graph" not in caplog.text
+
+    def test_dynamic_slice(self, caplog):
+        expect = noop_slice_1(self.input_tensor)
+
+        with need_xpu_graph_logs():
+            compiled_mod = torch.compile(noop_slice_1, backend=self.xpu_graph_backend, dynamic=True)
             result = compiled_mod(self.input_tensor)
 
         assert is_similar(expect, result)
