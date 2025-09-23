@@ -1,5 +1,6 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 
@@ -22,15 +23,11 @@ class FoldView0(Pattern):
             torch.ops.aten.view.default,
             torch.ops.aten._unsafe_view.default,
         )
-        candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in view_tup
-        ]
+        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in view_tup]
 
         for view in candidates:
             inp = view.args[0]
-            target_shape = view.args[1]
+            target_shape = list(view.meta["val"].shape)
             if target_shape == list(inp.meta["val"].shape):
                 changed = True
 
@@ -63,19 +60,11 @@ class FoldView1(Pattern):
             torch.ops.aten.view.default,
             torch.ops.aten._unsafe_view.default,
         )
-        candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in view_tup
-        ]
+        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in view_tup]
 
         for view in candidates:
             inp = view.args[0]
-            if (
-                isinstance(inp, fx.Node)
-                and inp.op == "call_function"
-                and inp.target in _view_like_ops
-            ):
+            if isinstance(inp, fx.Node) and inp.op == "call_function" and inp.target in _view_like_ops:
                 changed = True
                 view.replace_input_with(inp, inp.args[0])
 

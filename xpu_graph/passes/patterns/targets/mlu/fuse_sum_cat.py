@@ -1,22 +1,20 @@
 import torch
-from torch import nn, fx
 import torch_mlu
-from xpu_graph.passes.patterns.pattern import Pattern
+from torch import fx, nn
+
 from xpu_graph.config import OptLevel
+from xpu_graph.passes.patterns.pattern import Pattern
+
 from ...utils.check_ops import (
     check_cat_op,
-    check_sum_op,
-    check_stack_op,
-    check_slice_op,
     check_meta_2d,
+    check_slice_op,
+    check_stack_op,
+    check_sum_op,
 )
 from ...utils.submodule_manager import register_new_submodule
-from .triton_kernel.fused_sum_cat import (
-    fuse_sum_cat_2d,
-    fuse_sum_cat_3d,
-)
-
 from .triton_kernel.fused_slice_sum_cat import fuse_slice_sum_cat
+from .triton_kernel.fused_sum_cat import fuse_sum_cat_2d, fuse_sum_cat_3d
 
 
 class ConcatenateSumOperation2(nn.Module):
@@ -31,9 +29,7 @@ class ConcatenateSumOperation2(nn.Module):
         sequence_lengths = [tensor.shape[1] for tensor in inputs]
         max_sequence_length = max(sequence_lengths)
 
-        lengths_tensor = torch.tensor(
-            sequence_lengths, device=device, dtype=torch.int32
-        )
+        lengths_tensor = torch.tensor(sequence_lengths, device=device, dtype=torch.int32)
 
         return mlu_triton_fuse_sum_cat_3d(
             inputs,
@@ -86,9 +82,7 @@ class SliceSumCatOperation(nn.Module):
         slice_ = []
         for param in slice_param:
             slice_ += [param[0], param[1]]
-        self.slice_tensor = torch.tensor(
-            slice_, dtype=torch.int32, device="mlu:" + str(device)
-        )
+        self.slice_tensor = torch.tensor(slice_, dtype=torch.int32, device="mlu:" + str(device))
 
         self.output_num = len(slice_param)
         self.start = min([s[0] for s in slice_param])
@@ -115,9 +109,7 @@ class SliceSumCatOperation(nn.Module):
                 target_tensors.append(sum_tensor)
             return torch.cat(target_tensors, axis=-1)
         else:
-            return fuse_slice_sum_cat(
-                input, self.slice_tensor, self.output_num, self.end
-            )
+            return fuse_slice_sum_cat(input, self.slice_tensor, self.output_num, self.end)
 
 
 # This function identifies slice->sum patterns in a computation graph (gm).
@@ -209,10 +201,13 @@ def find_slice_sum_cat(gm: fx.GraphModule):
         if not is_cat:
             continue
         ori_cat_input = node.args[0]
-        is_match, range_, src_node, slice_params = match_slice_sum_cat_pattern(
-            ori_cat_input, slice_dict
-        )
+        is_match, range_, src_node, slice_params = match_slice_sum_cat_pattern(ori_cat_input, slice_dict)
         if not is_match:
+            continue
+        has_symint = False
+        for slice_param in slice_params:
+            has_symint = has_symint or not isinstance(slice_param[0], int) or not isinstance(slice_param[1], int)
+        if has_symint:
             continue
         with gm.graph.inserting_before(node):
             module_name = register_new_submodule(
@@ -225,9 +220,7 @@ def find_slice_sum_cat(gm: fx.GraphModule):
                 module_name,
                 args=(src_node,),
             )
-            new_cat_input = (
-                ori_cat_input[: range_[0]] + [new_node] + ori_cat_input[range_[1] + 1 :]
-            )
+            new_cat_input = ori_cat_input[: range_[0]] + [new_node] + ori_cat_input[range_[1] + 1 :]
             concat_node = gm.graph.create_node(
                 op="call_function",
                 target=torch.ops.aten.cat.default,

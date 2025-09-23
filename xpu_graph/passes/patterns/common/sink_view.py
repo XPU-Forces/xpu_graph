@@ -54,7 +54,9 @@ class SinkView(Pattern):
                     other_node = user.args[1]
                 else:
                     other_node = user.args[0]
-                if isinstance(other_node, float) or isinstance(other_node, int):
+                if isinstance(other_node, (float, int, float)) or (
+                    isinstance(other_node, fx.Node) and not isinstance(other_node.meta["val"], torch.Tensor)
+                ):
                     other_shape = []
                 else:
                     other_shape = other_node.meta["val"].shape

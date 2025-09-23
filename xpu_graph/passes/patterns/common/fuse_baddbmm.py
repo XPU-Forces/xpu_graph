@@ -41,7 +41,9 @@ class FusedBAddBMM(Pattern):
             if is_match:
                 bias_node, input_node, weight_node = bmm_inputs
                 with graph_module.graph.inserting_before(node):
-                    if isinstance(bias_node, float) or isinstance(bias_node, int):
+                    if isinstance(bias_node, (float, int)) or (
+                        isinstance(bias_node, fx.Node) and not isinstance(bias_node.meta["val"], torch.Tensor)
+                    ):
                         bias_node = graph_module.graph.create_node(
                             op="call_function",
                             target=torch.ops.aten.scalar_tensor.default,
