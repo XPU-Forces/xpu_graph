@@ -51,6 +51,8 @@ class FoldSliceLike(Pattern):
 
     def _fold_slice(self, node: fx.Node, gm: fx.GraphModule) -> bool:
         src_node, dim, start, end = node.args[0], node.args[1], node.args[2], node.args[3]
+        if not isinstance(start, int) or not isinstance(end, int):
+            return False
 
         if "val" not in src_node.meta:
             return False
@@ -76,6 +78,8 @@ class FoldSliceLike(Pattern):
         if len(node.args) < 5:
             return False
         base_node, view_node, dim, start, end = node.args[:5]
+        if not isinstance(start, int) or not isinstance(end, int):
+            return False
 
         if not all(isinstance(n, fx.Node) and "val" in n.meta for n in [base_node, view_node]):
             return False
