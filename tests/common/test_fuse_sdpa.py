@@ -550,19 +550,19 @@ class _sdpa_pattern_transformer_3:
         return (q, k, v, attention_mask)
 
 
-def fa_test(xpu_graph_backend, bsz, pattern, dynamic=False):
+def fa_test(xpu_graph_backend, pattern):
     func = pattern.fn
-    B = bsz
     Eqk, Ev = 64, 64
     Sq, Skv = 38, 38
     Hq, Hkv = 32, 32
-    args = pattern.gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev)
-    res1 = func(*args)
     torch._dynamo.reset()
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
-    res = compiled(*args)
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
+    for B in [1, 2, 4]:
+        args = pattern.gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev)
+        res = compiled(*args)
+        res1 = func(*args)
 
-    is_similar(res.cpu().float(), res1.cpu().float())
+        is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestFA:
@@ -578,33 +578,33 @@ class TestFA:
         )
 
     @pytest.mark.parametrize(
-        "bsz,pattern,dynamic",
+        "pattern",
         [
-            (1, _sdpa_pattern_tensor_scale, True),
-            (2, _sdpa_pattern_transformer_1, False),
-            (4, _sdpa_pattern_transformer_2, True),
-            (1, _sdpa_pattern_transformer_3, False),
-            (2, _sdpa_pattern_1, True),
-            (4, _sdpa_pattern_1_1, False),
-            (1, _sdpa_pattern_2, True),
-            (2, _sdpa_pattern_3, False),
-            (4, _sdpa_pattern_4, True),
-            (1, _sdpa_pattern_5, False),
-            (2, _sdpa_pattern_5_1, True),
-            (4, _sdpa_pattern_6, False),
-            (1, _sdpa_pattern_6_1, True),
-            (2, _sdpa_pattern_7, False),
-            (4, _sdpa_pattern_8, True),
-            (1, _sdpa_pattern_9, False),
-            (2, _sdpa_pattern_10, True),
-            (4, _sdpa_pattern_11, False),
-            (1, _sdpa_pattern_12, True),
-            (2, _sdpa_pattern_13, False),
+            _sdpa_pattern_tensor_scale,
+            _sdpa_pattern_transformer_1,
+            _sdpa_pattern_transformer_2,
+            _sdpa_pattern_transformer_3,
+            _sdpa_pattern_1,
+            _sdpa_pattern_1_1,
+            _sdpa_pattern_2,
+            _sdpa_pattern_3,
+            _sdpa_pattern_4,
+            _sdpa_pattern_5,
+            _sdpa_pattern_5_1,
+            _sdpa_pattern_6,
+            _sdpa_pattern_6_1,
+            _sdpa_pattern_7,
+            _sdpa_pattern_8,
+            _sdpa_pattern_9,
+            _sdpa_pattern_10,
+            _sdpa_pattern_11,
+            _sdpa_pattern_12,
+            _sdpa_pattern_13,
         ],
     )
-    def test_sdpa_patterns(self, caplog, bsz, pattern, dynamic):
+    def test_sdpa_patterns(self, caplog, pattern):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            fa_test(self.xpu_graph_backend, bsz, pattern, dynamic)
+            fa_test(self.xpu_graph_backend, pattern)
         assert "Pattern.FusedSDPA changed graph" in caplog.text
         if pattern in [_sdpa_pattern_tensor_scale]:
             assert "Unwrap scale " in caplog.text
@@ -630,7 +630,7 @@ class TestFAWithTAOScale:
     )
     def test_sdpa_patterns(self, caplog, pattern):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            fa_test(self.xpu_graph_backend, 2, pattern, dynamic=False)
+            fa_test(self.xpu_graph_backend, pattern)
         assert "Pattern.FusedSDPA changed graph" in caplog.text
         assert "Unwrap scale " not in caplog.text
 
@@ -646,23 +646,23 @@ if __name__ == "__main__":
             debug=True,
         )
     )
-    # fa_test(xpu_graph_backend, _sdpa_pattern_tensor_scale)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_1)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_1_1)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_2)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_3)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_4)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_5)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_6)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_7)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_8)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_9)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_10)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_11)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_12)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_13)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_5_1)
-    fa_test(xpu_graph_backend, _sdpa_pattern_transformer_1, True)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_transformer_2)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_transformer_3)
-    # fa_test(xpu_graph_backend, _sdpa_pattern_6_1)
+    fa_test(xpu_graph_backend, _sdpa_pattern_tensor_scale)
+    fa_test(xpu_graph_backend, _sdpa_pattern_1)
+    fa_test(xpu_graph_backend, _sdpa_pattern_1_1)
+    fa_test(xpu_graph_backend, _sdpa_pattern_2)
+    fa_test(xpu_graph_backend, _sdpa_pattern_3)
+    fa_test(xpu_graph_backend, _sdpa_pattern_4)
+    fa_test(xpu_graph_backend, _sdpa_pattern_5)
+    fa_test(xpu_graph_backend, _sdpa_pattern_6)
+    fa_test(xpu_graph_backend, _sdpa_pattern_7)
+    fa_test(xpu_graph_backend, _sdpa_pattern_8)
+    fa_test(xpu_graph_backend, _sdpa_pattern_9)
+    fa_test(xpu_graph_backend, _sdpa_pattern_10)
+    fa_test(xpu_graph_backend, _sdpa_pattern_11)
+    fa_test(xpu_graph_backend, _sdpa_pattern_12)
+    fa_test(xpu_graph_backend, _sdpa_pattern_13)
+    fa_test(xpu_graph_backend, _sdpa_pattern_5_1)
+    fa_test(xpu_graph_backend, _sdpa_pattern_transformer_1)
+    fa_test(xpu_graph_backend, _sdpa_pattern_transformer_2)
+    fa_test(xpu_graph_backend, _sdpa_pattern_transformer_3)
+    fa_test(xpu_graph_backend, _sdpa_pattern_6_1)

@@ -147,6 +147,8 @@ class FusedSDPA(Pattern):
 
             with graph_module.graph.inserting_before(node):
                 is_scale_wrapped = False
+
+                # FIXME: (chenyifan) take symints as FA scale will introduce extra guards, this may be a problem
                 if isinstance(scale, fx.Node) and isinstance(scale.meta["val"], torch.Tensor):
                     if self._opt_level > OptLevel.level2:
                         q = graph_module.graph.call_function(
