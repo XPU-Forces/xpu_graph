@@ -14,10 +14,7 @@ from xpu_graph.passes.patterns.utils.check_ops import (
     get_actual_node,
 )
 from xpu_graph.passes.patterns.utils.default_replacements import SDPAWrappedScale
-from xpu_graph.passes.patterns.utils.shape_utils import (
-    get_sym_shape_bindings,
-    rebind_shape,
-)
+from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
 from xpu_graph.utils import logger
 
 
@@ -127,7 +124,7 @@ class FusedSDPA(Pattern):
         modified = False
 
         # Note: this fuction should rerun every time needed, since graph may be changed elsewhere
-        sym_shape_to_node_map = get_sym_shape_bindings(graph_module.graph)
+        sym_shape_manager = SymShapeManager(graph_module.graph)
 
         for node in reversed(graph_module.graph.nodes):
             is_inference = self._current_stage == FxStage.inference
@@ -139,7 +136,7 @@ class FusedSDPA(Pattern):
 
             # Note: if the shape is non-atomic sympy expression, it must have been computed beforehand, thus it is okay to
             # use get_shape_val to get the actual value
-            rebind_attn_shape = rebind_shape(attn_shape, sym_shape_to_node_map)
+            rebind_attn_shape = sym_shape_manager.rebind_shape(attn_shape)
 
             if rebind_attn_shape is None:
                 continue
@@ -237,7 +234,7 @@ class FusedSDPA(Pattern):
                     )
                 view = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    args=(fused, tuple(rebind_shape(node.meta["val"].shape, sym_shape_to_node_map))),
+                    args=(fused, tuple(sym_shape_manager.rebind_shape(node.meta["val"].shape))),
                 )
             node.replace_all_uses_with(view)
             modified = True

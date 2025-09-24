@@ -4,10 +4,7 @@ from torch import SymInt
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.shape_utils import (
-    get_sym_shape_bindings,
-    rebind_shape,
-)
+from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
 
 
 class ChangeTensorLike(Pattern):
@@ -15,7 +12,7 @@ class ChangeTensorLike(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        shape_node_map = get_sym_shape_bindings(gm.graph)
+        sym_shape_manager = SymShapeManager(gm.graph)
 
         tensor_like_map = {
             torch.ops.aten.ones_like.default: torch.ops.aten.ones.default,
@@ -31,7 +28,7 @@ class ChangeTensorLike(Pattern):
             if "val" not in template_node.meta:
                 continue
 
-            template_shape = rebind_shape(template_node.meta["val"].shape, shape_node_map)
+            template_shape = sym_shape_manager.rebind_shape(template_node.meta["val"].shape)
             # do not change if target shape cannot be rebinded
             if template_shape is None:
                 continue
