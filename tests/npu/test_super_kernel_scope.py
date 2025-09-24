@@ -19,6 +19,7 @@ class TestSuperKernelScope:
                     vendor_compiler_config={"compiler": "ge", "mode": "reduce-overhead"},
                 )
             )
+            torch._dynamo.reset()
             compiled = torch.compile(dummy, backend=xpu_graph, fullgraph=True)
             compiled(torch.empty(1024, device="npu"))
             assert "Pattern.ScopedSuperKernel changed graph" not in caplog.text
@@ -42,6 +43,7 @@ class TestSuperKernelScope:
                     target=Target.npu,
                 )
             )
+            torch._dynamo.reset()
             compiled = torch.compile(dummy, backend=xpu_graph, fullgraph=True)
             compiled(torch.empty(1024, device="npu"))
             assert "Pattern.ScopedSuperKernel changed graph" in caplog.text

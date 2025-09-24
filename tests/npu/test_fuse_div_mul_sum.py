@@ -30,6 +30,7 @@ def permute_sum_test(xpu_graph, func):
     clamp_min = torch.randn((N0, N1, 1, N3, 1), dtype=DTYPE, device=DEV)
     clamp_min_1 = torch.randn((N0, 1, N2, N3, 1), dtype=DTYPE, device=DEV)
 
+    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
     res_tri = compiled(unsqueeze_2, clamp_min, unsqueeze_3, clamp_min_1)
     res_ref = func(unsqueeze_2, clamp_min, unsqueeze_3, clamp_min_1)

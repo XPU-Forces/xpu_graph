@@ -36,6 +36,7 @@ class TestMemPoolReuse:
         )
 
         with torch.inference_mode():
+            torch._dynamo.reset()
             compiled_model = torch.compile(self.model, backend=compiler, dynamic=False)
 
             for input_tensor in self.input_list:
@@ -59,6 +60,7 @@ class TestMemPoolReuse:
         )
 
         with torch.inference_mode():
+            torch._dynamo.reset()
             compiled_model = torch.compile(self.model, backend=compiler, dynamic=False)
 
             # NOTE(liuyuan): do the first graph capture and memory allocation.

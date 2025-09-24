@@ -68,6 +68,7 @@ def compare_add_rmsnorm_pattern(xpu_graph_backend):
     # init our graph
     model = NPU_RMSNormWithResidual(weight).npu()
     model_forward = model.forward
+    torch._dynamo.reset()
     compiled_model = torch.compile(model_forward, backend=xpu_graph_backend, dynamic=False)
 
     # get result
