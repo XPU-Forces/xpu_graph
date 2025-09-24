@@ -27,8 +27,8 @@ class FoldView0(Pattern):
 
         for view in candidates:
             inp = view.args[0]
-            target_shape = list(view.meta["val"].shape)
-            if target_shape == list(inp.meta["val"].shape):
+            # Use target node's shape is more straightforward
+            if list(view.meta["val"].shape) == list(inp.meta["val"].shape):
                 changed = True
 
                 view.replace_all_uses_with(inp)

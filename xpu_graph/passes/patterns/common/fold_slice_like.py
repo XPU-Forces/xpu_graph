@@ -59,6 +59,7 @@ class FoldSliceLike(Pattern):
 
         dim_length = src_shape[dim]
 
+        # start must be zero but end can be symint
         if isinstance(start, fx.Node):
             return False
         if isinstance(end, fx.Node):
@@ -100,6 +101,7 @@ class FoldSliceLike(Pattern):
 
         dim_length = view_shape[dim]
 
+        # start must be zero but end can be symint
         if isinstance(end, fx.Node):
             if "val" not in end.meta:
                 return False

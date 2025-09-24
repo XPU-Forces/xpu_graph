@@ -205,6 +205,7 @@ def find_slice_sum_cat(gm: fx.GraphModule):
         if not is_match:
             continue
         has_symint = False
+        # Note: currently we do not consider dynamic shapes
         for slice_param in slice_params:
             has_symint = has_symint or not isinstance(slice_param[0], int) or not isinstance(slice_param[1], int)
         if has_symint:

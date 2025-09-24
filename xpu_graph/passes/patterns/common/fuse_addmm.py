@@ -41,6 +41,7 @@ class FusedAddMM(Pattern):
             if is_match:
                 bias_node, input_node, weight_node = mm_inputs
                 with graph_module.graph.inserting_before(node):
+                    # sym vals can also be changed to tensor as well
                     if isinstance(bias_node, (float, int)) or (
                         isinstance(bias_node, fx.Node) and not isinstance(bias_node.meta["val"], torch.Tensor)
                     ):

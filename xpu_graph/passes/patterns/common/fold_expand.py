@@ -21,21 +21,10 @@ class FoldExpand(Pattern):
             if node.op == "call_function" and node.target == torch.ops.aten.expand.default
         ]
 
-        def _same_shape(org_shape, target_shape) -> bool:
-            if len(org_shape) != len(target_shape):
-                return False
-            for os, ts in zip(org_shape, target_shape):
-                if isinstance(ts, fx.Node):
-                    ts = ts.meta["val"]
-                if os != ts and ts != -1:
-                    return False
-            return True
-
         for expand in candidates:
             inp = expand.args[0]
-            target_shape = expand.args[1]
-            org_shape = list(inp.meta["val"].shape)
-            if _same_shape(org_shape, target_shape):
+            # use target node's shape is more straightforward
+            if list(expand.meta["val"].shape) == list(inp.meta["val"].shape):
                 changed = True
                 expand.replace_all_uses_with(inp)
                 gm.graph.erase_node(expand)

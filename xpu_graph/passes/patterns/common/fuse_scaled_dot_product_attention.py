@@ -195,6 +195,8 @@ class FusedSDPA(Pattern):
                     torch.ops.aten.view.default,
                     args=(v, (batch_size, num_heads, kv_len, v_dim)),
                 )
+
+                # Note: force contiguous for SDP-backend compatibility
                 q = graph_module.graph.call_function(
                     torch.ops.aten.clone.default,
                     args=(q,),
@@ -235,7 +237,7 @@ class FusedSDPA(Pattern):
                     )
                 view = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    args=(fused, (num_heads, -1, v_dim)),
+                    args=(fused, tuple(rebind_shape(node.meta["val"].shape, sym_shape_to_node_map))),
                 )
             node.replace_all_uses_with(view)
             modified = True

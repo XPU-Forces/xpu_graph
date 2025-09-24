@@ -32,12 +32,14 @@ class ChangeTensorLike(Pattern):
                 continue
 
             template_shape = rebind_shape(template_node.meta["val"].shape, shape_node_map)
+            # do not change if target shape cannot be rebinded
             if template_shape is None:
                 continue
 
             fill_value_arg = None
             if like_node.target == torch.ops.aten.full_like.default:
                 fill_value_arg = like_node.args[1]
+                # Note: symbolic fill_value does not matter actually
                 # if not isinstance(fill_value_arg, (int, float, bool)):
                 #     continue
 
