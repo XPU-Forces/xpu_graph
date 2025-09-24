@@ -74,5 +74,6 @@ class FakeTensorProp(torch.fx.Interpreter):
 
     def propagate_dont_convert_inputs(self, *args):
         # Note: without python dispatcher, aten.expand may fail with symbolid shapes
+        # ref: https://github.com/pytorch/pytorch/pull/135933/files#diff-e0cdb58c0f84f56f20c5433339b6d83c470dcde47847e2328effea6bedd4cd27
         with enable_python_dispatcher(), self._mode:
             return super().run(*args)
