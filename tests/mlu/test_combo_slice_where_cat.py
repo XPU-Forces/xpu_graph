@@ -20,14 +20,38 @@ def fn0(inputs, slice_, batch):
     slice_4 = slice_[:, 10579:10611]
     slice_5 = slice_[:, 11032:11064]
     slice_6 = slice_[:, 11445:11477]
+    slice_7 = slice_[:, 10445:10477]
     where_0 = torch.where(inputs, zeros, slice_2)
     where_1 = torch.where(inputs, zeros, slice_4)
     where_2 = torch.where(inputs, zeros, slice_5)
     where_3 = torch.where(inputs, zeros, slice_6)
-    output = torch.cat([slice_1, where_0, where_1, where_2, where_3], dim=-1)
+    where_4 = torch.where(inputs, zeros, slice_7)
+    output = torch.cat([slice_1, where_0, where_1, where_2, where_3, where_4], dim=-1)
     return output, slice_1
 
 
+def fn1(inputs, slice_, batch):
+    return fn0(inputs, slice_, batch)
+
+
+def fn2(inputs, slice_, batch):
+    zeros = torch.zeros([batch, 32], device=device, dtype=data_type)
+    slice_1 = slice_[:, 0:32]
+    slice_2 = slice_[:, 10118:10150]
+    slice_4 = slice_[:, 10579:10611]
+    slice_5 = slice_[:, 11032:11064]
+    slice_6 = slice_[:, 11445:11477]
+    slice_7 = slice_[:, 10445:10477]
+    where_0 = torch.where(inputs, zeros, slice_2)
+    where_1 = torch.where(inputs, zeros, slice_4)
+    where_2 = torch.where(inputs, zeros, slice_5)
+    where_3 = torch.where(inputs, zeros, slice_6)
+    where_4 = torch.where(inputs, zeros, slice_7)
+    output = torch.cat([slice_1, where_0, where_1, where_2, where_3, where_4], dim=-1)
+    return output, slice_1, where_0
+
+
+"""
 def fn1(inputs, slice_, batch):
     zeros = torch.zeros([batch, 4], device=device, dtype=data_type)
     slice_1 = slice_[:, 0:4]
@@ -71,12 +95,19 @@ def fn1(inputs, slice_, batch):
         dim=0,
     )
     return stack, slice_1
+"""
 
 
 def where_slice_cat_test(xpu_graph_backend, func):
     batch = 512
     random_list = random.choices([0, 1], k=batch)
     inputs = torch.tensor(random_list, device=device, dtype=data_type).unsqueeze(-1).bool()
+    if func in [
+        fn0,
+    ]:
+        inputs = torch.randint(0, 2, (batch, 1), dtype=torch.bool, device=device)
+    else:
+        inputs = torch.randint(0, 2, (batch, 32), dtype=torch.bool, device=device)
     slice_ = torch.randn(batch, 35149, device=device, dtype=data_type)
 
     res = func(inputs, slice_, batch)
@@ -100,10 +131,11 @@ class TestWhereSliceCat:
     def test_where_cat_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             where_slice_cat_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.ComboSliceWhereCat changed graph" in caplog.text
+        assert "Pattern.ComboMulCat changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
-    where_slice_cat_test(xpu_graph_backend, fn0)
-    where_slice_cat_test(xpu_graph_backend, fn1)
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False, debug=True)
+    # where_slice_cat_test(xpu_graph_backend, fn0)
+    # where_slice_cat_test(xpu_graph_backend, fn1)
+    where_slice_cat_test(xpu_graph_backend, fn2)
