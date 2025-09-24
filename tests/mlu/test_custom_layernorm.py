@@ -50,7 +50,7 @@ def layernorm_test(xpu_graph, ModCls, dynamic, input_dtype, param_dtype):
     mod_compiled.load_state_dict(mod.state_dict())
     with torch.inference_mode():
         a = torch.randn(2, 10).to(input_dtype).mlu()
-        torch._dynamo.reset()
+
         mod_compiled.forward = torch.compile(mod_compiled.forward, backend=xpu_graph, dynamic=dynamic)
         norm = mod_compiled.forward(a)
         norm1 = mod.forward(a)

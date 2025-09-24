@@ -327,7 +327,7 @@ def fn11(x):
 def slice_test(xpu_graph_backend, func, dynamic=True):
     for batch in (10, 512, 256, 128, 64, 32):
         a = torch.randn(batch, 43106).to(device=device)
-        torch._dynamo.reset()
+
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res = compiled(a)[0]
         res1 = func(a)[0]

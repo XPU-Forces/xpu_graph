@@ -22,7 +22,6 @@ def compare_test(xpugraph_backend):
     orig = NumpyScaleModule(input_dim)
     compiled = NumpyScaleModule(input_dim)
 
-    torch._dynamo.reset()
     compiled.forward = torch.compile(compiled.forward, backend=xpugraph_backend, dynamic=False)
 
     orig_output = orig(input_tensor)

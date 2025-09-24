@@ -15,7 +15,6 @@ def fn0(inputs):
 
 
 def dynamic_test(xpu_graph, func):
-    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph, dynamic=None)
 
     for bs in range(2, 10):

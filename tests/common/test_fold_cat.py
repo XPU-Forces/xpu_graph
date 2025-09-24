@@ -17,7 +17,7 @@ def cat_cat_test(xpu_graph, func, dynamic):
     b = torch.randn(128, 32)
     c = torch.randn(128, 300)
     args = [a, b, c]
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(args)
     res = compiled(args)
@@ -34,7 +34,7 @@ def fn2(input):
 
 def cat_test(xpu_graph, func, dynamic):
     input = torch.randn(10, 10)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(input)
     res = compiled(input)

@@ -55,7 +55,7 @@ def rmsnorm_test(xpu_graph, func, input_dtype, weight_dtype, dynamic):
         weight = torch.randn((1024,), device=device, dtype=weight_dtype)
     else:
         weight = None
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     weight = torch.randn((1024), device=device, dtype=data_type)
     norm = compiled(inputs, weight)
@@ -70,7 +70,7 @@ def rmsnorm_test_with_loss_and_grad(xpu_graph, func, input_dtype, weight_dtype, 
     else:
         weight = None
     dnorm = torch.randn((8, 1024), device=device, dtype=grad_dtype)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
 
     norm0 = compiled(inputs, weight)

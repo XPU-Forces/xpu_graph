@@ -37,7 +37,7 @@ def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act, dynam
     else:
         bias = torch.randn(bias_shape, device=device, dtype=data_type)
     res = func(input, bias, bin_op, act)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(input, bias, bin_op, act)
     is_similar(res.cpu().float(), res1.cpu().float())

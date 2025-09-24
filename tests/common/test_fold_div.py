@@ -22,7 +22,6 @@ def div_tensor_seq(x):
 
 
 def can_fold_test(xpu_graph, func, x, dynamic):
-    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(x)
     res = compiled(x)

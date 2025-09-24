@@ -555,7 +555,7 @@ def fa_test(xpu_graph_backend, pattern):
     Eqk, Ev = 64, 64
     Sq, Skv = 38, 38
     Hq, Hkv = 32, 32
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
     for B in [1, 2, 4]:
         args = pattern.gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev)

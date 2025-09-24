@@ -80,7 +80,7 @@ def where_slice_cat_test(xpu_graph_backend, func, dynamic=True):
     slice_ = torch.randn(batch, 35149, device=device, dtype=data_type)
 
     res = func(inputs, slice_, batch)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(inputs, slice_, batch)
     for i in range(len(res)):

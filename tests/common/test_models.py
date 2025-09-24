@@ -89,7 +89,7 @@ all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, Dr
 def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16):
     golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
-    torch._dynamo.reset()
+
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=True)
     compiled.load_state_dict(golden.state_dict())
     compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
@@ -112,7 +112,7 @@ def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16):
 def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input_dim=16):
     golden = ModCls(input_dim).to(device=device, dtype=data_type).train()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).train()
-    torch._dynamo.reset()
+
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=True)
     compiled.load_state_dict(golden.state_dict())
     compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)

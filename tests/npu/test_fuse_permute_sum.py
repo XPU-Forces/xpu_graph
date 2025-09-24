@@ -41,7 +41,7 @@ def permute_sum_test(xpu_graph, func):
     buf61 = torch.full([], -65504.0, dtype=data_type).npu()
     buf73 = torch.zeros([11, 12, 256, 256], dtype=data_type).npu()
     view_7 = torch.ops.aten.view.default(buf34, [11, 12, 256, 256])
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
     res_tri = compiled(view_7, buf47, buf59, arg107_1, buf61)
     res_ref = func(view_7, buf47, buf59, arg107_1, buf61)

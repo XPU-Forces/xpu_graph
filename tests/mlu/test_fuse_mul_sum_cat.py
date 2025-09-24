@@ -42,7 +42,6 @@ def mul_sum_cat_test(xpu_graph_backend, func, dynamic):
     g = torch.rand(batch, 80, 32, dtype=dtype, device="mlu")
     h = torch.rand(batch, 80, 32, dtype=dtype, device="mlu")
 
-    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     if func == fn0:
         res1 = func(a, b, c, d)

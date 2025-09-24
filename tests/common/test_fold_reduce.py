@@ -42,7 +42,6 @@ def fn6(a):
 
 
 def reduce_test(xpu_graph, func, dynamic):
-    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 1, 64, 1)
     res = func(a)
@@ -76,7 +75,6 @@ class TestReduce:
     @pytest.mark.parametrize("dynamic", [False, True])
     def test_reduce_none_patterns(self, caplog, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            torch._dynamo.reset()
             compiled = torch.compile(fn5, backend=self.xpu_graph, dynamic=dynamic)
             a = torch.randn(1, 1, 1, 1)
             res = fn5(a)

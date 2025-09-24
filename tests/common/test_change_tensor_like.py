@@ -48,7 +48,6 @@ def fn3(a):
 
 
 def tensorlike_test(xpu_graph, func, dynamic=None):
-    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     res = func(a)

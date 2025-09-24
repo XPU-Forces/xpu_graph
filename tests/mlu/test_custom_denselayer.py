@@ -133,7 +133,7 @@ def matmul_test(xpu_graph_backend, func):
     if func in [fn0, fn1, fn2, fn3, fn12]:
         bias = None
     res = func(inputs, weight, bias)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=True)
     res1 = compiled(inputs, weight, bias)
     assert is_similar(res.cpu().float(), res1.cpu().float())

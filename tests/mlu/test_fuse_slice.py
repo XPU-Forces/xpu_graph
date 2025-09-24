@@ -150,7 +150,7 @@ def slice_test(xpu_graph_backend, func, dynamic=True):
             a = torch.randn(batch, 12, 43106).to(device=device)
         else:
             a = torch.randn(batch, 43106).to(device=device)
-        torch._dynamo.reset()
+
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res = compiled(a)[0]
         res1 = func(a)[0]

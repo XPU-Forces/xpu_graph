@@ -24,7 +24,6 @@ def constant_folding_with_reload_test(xpu_graph_backend):
     compiled_mod.load_state_dict(mod.state_dict())
 
     with need_xpu_graph_logs(), skip_xpu_graph_cache(xpu_graph_backend):
-        torch._dynamo.reset()
         compiled_mod.forward = torch.compile(compiled_mod.forward, backend=xpu_graph_backend, dynamic=False)
         res = compiled_mod(torch.ones((128, 128), device=device, dtype=dtype))
         expect = mod(torch.ones((128, 128), device=device, dtype=dtype))

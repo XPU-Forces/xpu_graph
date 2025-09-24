@@ -45,7 +45,7 @@ def run_nd_to_nz_test(xpu_graph_backend, func_name, weight_shape, expected_patte
         module.eval()
 
         result_direct = module(*input_args)
-        torch._dynamo.reset()
+
         compiled_module = torch.compile(module, backend=xpu_graph_backend, dynamic=False)
         result_compiled = compiled_module(*input_args)
 

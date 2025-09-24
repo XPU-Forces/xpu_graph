@@ -67,7 +67,6 @@ def serial_mm_test(xpu_graph_backend, func, dynamic):
             act3,
         ]
 
-        torch._dynamo.reset()
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res1 = func(*args)
         res = compiled(*args)

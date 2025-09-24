@@ -45,7 +45,6 @@ def linear_attention_test(xpu_graph, func, dynamic=True):
         v = torch.randn((BATCH, H, N_CTX, D_HEAD), dtype=dtype, device=device)
         bias = torch.randn((BATCH, N_CTX, N_CTX), dtype=dtype, device=device)
 
-        torch._dynamo.reset()
         compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
         res = compiled(q, k, v, bias)
         res1 = func(q, k, v, bias)

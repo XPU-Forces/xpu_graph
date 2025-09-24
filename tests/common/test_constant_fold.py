@@ -202,7 +202,6 @@ class TestConstantFolding:
         mod = testcase_class()
         expect = mod(*inputs)
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            torch._dynamo.reset()
             compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=False)
             result = compiled_mod(*inputs)
 
@@ -258,7 +257,6 @@ class TestConstantFolding:
         mod = testcase_class()
         expect = mod(*inputs)
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            torch._dynamo.reset()
             compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=True)
             result = compiled_mod(*inputs)
 

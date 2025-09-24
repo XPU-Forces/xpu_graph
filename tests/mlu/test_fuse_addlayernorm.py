@@ -41,7 +41,7 @@ def layernorm_test(xpu_graph, func, dynamic):
     residual = torch.randn((8, 1024), device=device, dtype=data_type)
     weight = torch.randn((1024), device=device, dtype=data_type)
     bias = None
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     if func == fn0 or func == fn2:
         norm = compiled(inputs, residual, weight, bias)

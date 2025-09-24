@@ -25,7 +25,6 @@ def register_pattern_test(backend_level, pattern_level):
     else:
         xpu_graph.get_pattern_manager().register_pattern(matcher, replacement, opt_level=pattern_level)
 
-    torch._dynamo.reset()
     compiled = torch.compile(_add, backend=xpu_graph)
     a = torch.randn(10)
     b = torch.ones_like(a)

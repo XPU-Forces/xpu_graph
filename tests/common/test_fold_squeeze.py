@@ -96,7 +96,6 @@ def fn8(a):
 
 
 def squeeze_test(xpu_graph, func, dynamic):
-    torch._dynamo.reset()
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     if func in [fn2]:

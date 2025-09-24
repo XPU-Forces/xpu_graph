@@ -78,7 +78,7 @@ def sumcat_test(xpu_graph_backend, func, dynamic=True):
         elif func in [fn3, fn4]:
             other_tensor = torch.rand(batch, 32, 32).to("mlu:0").to(torch.float16)
             args += (other_tensor,)
-        torch._dynamo.reset()
+
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res1 = func(*args)
         res = compiled(*args)

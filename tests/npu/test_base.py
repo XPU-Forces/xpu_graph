@@ -22,7 +22,6 @@ class TestGeAndAclGraphMode:
         self.module = MyModule().eval().npu()
 
         # WARNING(liuyuan): It is necessary to provide vendor_compiler_config to enalbe GE.
-        torch._dynamo.reset()
         self.ge_func = torch.compile(
             self.module,
             backend=XpuGraph(

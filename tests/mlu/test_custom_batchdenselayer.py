@@ -104,7 +104,7 @@ def bmm_test(xpu_graph_backend, func, dynamic=True):
         bias = residual
 
     res = func(input_a, input_b, bias)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(input_a, input_b, bias)
     is_similar(res.cpu().float(), res1.cpu().float())

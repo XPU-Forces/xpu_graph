@@ -19,7 +19,6 @@ def test_cse():
             compiler._pass_manager._passes.remove(_p)
             break
 
-    torch._dynamo.reset()
     compiled_func = torch.compile(loop_fn, backend=compiler, dynamic=False)
     compiled_func(torch.randn(100, 100))
 

@@ -62,7 +62,6 @@ class TestFoldSlice:
         expect = testcase(self.input_tensor)
 
         with need_xpu_graph_logs():
-            torch._dynamo.reset()
             compiled_mod = torch.compile(testcase, backend=self.xpu_graph_backend, dynamic=dynamic)
             result = compiled_mod(self.input_tensor)
 
@@ -75,7 +74,6 @@ class TestFoldSlice:
         expect = mod(self.input_tensor)
 
         with need_xpu_graph_logs():
-            torch._dynamo.reset()
             compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=dynamic)
             result = compiled_mod(self.input_tensor)
 
@@ -102,7 +100,6 @@ class TestFoldSliceScatter:
         expect = mod(base, view)
 
         with need_xpu_graph_logs():
-            torch._dynamo.reset()
             compiled_mod = torch.compile(mod, backend=self.xpu_graph, dynamic=dynamic)
             result = compiled_mod(base, view)
 

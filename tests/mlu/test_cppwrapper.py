@@ -21,7 +21,7 @@ def fn1(input1, input2):
 def matmul_test(xpu_graph_backend, func, dynamic):
     input1 = torch.randn((4096, 768), dtype=data_type).to(device)
     input2 = torch.randn((4096, 768), dtype=data_type).to(device)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(input1, input2)
     res = func(input1, input2)

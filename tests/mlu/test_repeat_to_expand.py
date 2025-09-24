@@ -21,7 +21,7 @@ def gather_test(xpu_graph_backend, func):
     dtype = torch.half
     input = torch.randn(batch, 496, in_dim, dtype=dtype, device="mlu")
     res1 = func(input, 46, batch, in_dim)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=True)
     res = compiled(input, 46, batch, in_dim)
 

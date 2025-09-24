@@ -31,7 +31,7 @@ def layernorm_test(xpu_graph, func, dynamic):
     bias = torch.randn((1362,), device=device, dtype=data_type)
     q_weight = torch.randn((1362, 1362), device=device, dtype=data_type)
     scale = 0.1
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
 
     q_bias = None

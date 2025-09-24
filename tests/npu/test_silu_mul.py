@@ -47,7 +47,6 @@ def test_silu_mul():
         opt_level=OptLevel.level2,
         vendor_compiler_config={"mode": "reduce-overhead", "compiler": "ge"},
     )
-    torch._dynamo.reset()
     compiled_model = torch.compile(model_forward, backend=XpuGraph(xconf), fullgraph=True)
     res_tri = compiled_model(input)
 

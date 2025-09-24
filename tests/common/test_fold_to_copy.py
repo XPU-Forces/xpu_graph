@@ -11,7 +11,7 @@ def can_fold_test(xpu_graph, dynamic):
         return x + y
 
     x = torch.randn(128, 64)
-    torch._dynamo.reset()
+
     compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=dynamic)
     expect = _can_fold(x)
     res = compiled(x)
@@ -24,7 +24,7 @@ def cannot_fold_test(xpu_graph, dynamic):
         return y
 
     x = torch.randn(10, 10)
-    torch._dynamo.reset()
+
     compiled = torch.compile(_cannot_fold, backend=xpu_graph, dynamic=dynamic)
     expect = _cannot_fold(x)
     res = compiled(x)

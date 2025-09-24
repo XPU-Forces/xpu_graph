@@ -63,7 +63,7 @@ def rmsnorm_test(xpu_graph, func, dynamic):
         a = torch.randn(1, 10).mlu()
         if func == fn1:
             a = a.half()
-        torch._dynamo.reset()
+
         compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
         if func != fn3:
             norm = compiled(a)

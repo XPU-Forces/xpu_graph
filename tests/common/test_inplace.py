@@ -64,7 +64,7 @@ def fn6(indices, values):
 def inplace_test(xpu_graph, func, dynamic):
     indices = torch.tensor([7, 6, 5, 4, 0, 1, 2, 3], dtype=torch.int64, device=device)
     values = torch.randn([8], dtype=data_type, device=device)
-    torch._dynamo.reset()
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
 
     values1 = values.clone()

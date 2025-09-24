@@ -12,8 +12,6 @@ def test_convert_gelu():
 
     from xpu_graph import XpuGraph, XpuGraphConfig
 
-    torch._dynamo.reset()
-
     compiled_gelu0 = torch.compile(_gelu0, backend=XpuGraph(XpuGraphConfig(is_training=False)))
     compiled_gelu1 = torch.compile(_gelu1, backend=XpuGraph(XpuGraphConfig(is_training=False)))
 
