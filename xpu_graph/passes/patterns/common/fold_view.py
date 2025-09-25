@@ -3,11 +3,12 @@ import torch.fx as fx
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 
 
 class FoldView0(Pattern):
     """
-    Fold aten.view which inp.shape == target_shape
+    Fold aten.view which inp.shape equals target_shape
     """
 
     _support_stages = [
@@ -28,7 +29,7 @@ class FoldView0(Pattern):
         for view in candidates:
             inp = view.args[0]
             # Use target node's shape is more straightforward
-            if list(view.meta["val"].shape) == list(inp.meta["val"].shape):
+            if same_shape(view.meta["val"].shape, inp.meta["val"].shape):
                 changed = True
 
                 view.replace_all_uses_with(inp)

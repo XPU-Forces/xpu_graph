@@ -6,6 +6,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 
 from ..utils.check_ops import check_add_op, check_mm_op
+from ..utils.shape_utils import same_shape
 
 
 def _is_addmm(
@@ -24,7 +25,7 @@ def _is_addmm(
             return False, ()
     if len(mm_node.users) != 1:
         return False, ()
-    if node.meta["val"].shape != mm_node.meta["val"].shape:
+    if not same_shape(node.meta["val"].shape, mm_node.meta["val"].shape):
         return False, ()
 
     return True, (bias_node, input_node, weight_node)

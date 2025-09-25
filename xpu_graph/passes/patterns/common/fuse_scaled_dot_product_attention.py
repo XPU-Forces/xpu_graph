@@ -14,7 +14,7 @@ from xpu_graph.passes.patterns.utils.check_ops import (
     get_actual_node,
 )
 from xpu_graph.passes.patterns.utils.default_replacements import SDPAWrappedScale
-from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
+from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager, same_shape
 from xpu_graph.utils import logger
 
 
@@ -25,10 +25,10 @@ def validate_attention_shape(q_shape, k_shape, v_shape, mask_shape):
         len(q_shape) == 3
         and len(k_shape) == 3
         and len(v_shape) == 3
-        and q_shape[0] == k_shape[0]
-        and q_shape[0] == v_shape[0]
-        and q_shape[-1] == k_shape[-1]
-        and k_shape[1] == v_shape[1]
+        and same_shape(q_shape[0], k_shape[0])
+        and same_shape(q_shape[0], v_shape[0])
+        and same_shape(q_shape[-1], k_shape[-1])
+        and same_shape(k_shape[1], v_shape[1])
     ):
         return False, []
     total_bn = q_shape[0]

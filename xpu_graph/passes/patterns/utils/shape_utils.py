@@ -1,5 +1,5 @@
-import sympy
 import torch
+from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
 
 from xpu_graph.utils import logger
 
@@ -31,3 +31,11 @@ class SymShapeManager:
             logger.debug("Cannot find binding for shape sympy expr, shape: %s, (partial result: %s)", shape, bind_shape)
             return None
         return bind_shape
+
+
+def same_shape(shape, other):
+    if isinstance(shape, (torch.Size, tuple)):
+        shape = list(shape)
+    if isinstance(other, (torch.Size, tuple)):
+        other = list(other)
+    return statically_known_true(sym_eq(shape, other))

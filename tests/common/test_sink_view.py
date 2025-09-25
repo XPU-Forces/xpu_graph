@@ -40,7 +40,7 @@ def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act, dynam
 
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(input, bias, bin_op, act)
-    is_similar(res.cpu().float(), res1.cpu().float())
+    assert is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestSinkView:

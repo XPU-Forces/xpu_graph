@@ -3,6 +3,7 @@ import torch.fx as fx
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 
 
 class FoldExpand(Pattern):
@@ -24,7 +25,7 @@ class FoldExpand(Pattern):
         for expand in candidates:
             inp = expand.args[0]
             # use target node's shape is more straightforward
-            if list(expand.meta["val"].shape) == list(inp.meta["val"].shape):
+            if same_shape(expand.meta["val"].shape, inp.meta["val"].shape):
                 changed = True
                 expand.replace_all_uses_with(inp)
                 gm.graph.erase_node(expand)

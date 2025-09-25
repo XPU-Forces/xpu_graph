@@ -3,6 +3,7 @@ import torch_mlu
 from torch import fx, nn
 
 from ...utils.check_ops import get_shape
+from ...utils.shape_utils import same_shape
 
 
 def find_longest_same_shape_sequence(inputs, start, end, mini_len, compare_input=False):
@@ -33,7 +34,7 @@ def find_longest_same_shape_sequence(inputs, start, end, mini_len, compare_input
                 next_shape = get_shape(inputs[j].args[0])
             else:
                 next_shape = get_shape(inputs[j])
-            if next_shape == current_shape:
+            if same_shape(next_shape, current_shape):
                 current_end = j
             else:
                 break
