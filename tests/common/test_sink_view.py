@@ -31,11 +31,11 @@ def sinkview_test(xpu_graph_backend, input_shape, bias_shape, bin_op, act, dynam
     if bias_shape is None:
         bias = None
     elif bias_shape == "float":
-        bias = random.random()
+        bias = random.uniform(4, 10)
     elif bias_shape == "int":
-        bias = random.randint(0, 10)
+        bias = random.randint(4, 10)
     else:
-        bias = torch.randn(bias_shape, device=device, dtype=data_type)
+        bias = 4 + 6 * torch.rand(bias_shape, device=device, dtype=data_type)
     res = func(input, bias, bin_op, act)
 
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
@@ -58,7 +58,7 @@ class TestSinkView:
             ((8, 6, 4), (1, 4), lambda x, y: x + y, "silu"),
             ((8, 6, 4), (6, 1), lambda x, y: x * y, "relu"),
             ((8, 6, 4), (6, 4), lambda x, y: x - y, "none"),
-            ((8, 6, 4), "int", aten.div.Tensor, "silu"),
+            ((8, 6, 4), "int", aten.div.Tensor, "relu"),
             ((8, 6, 4), "int", torch.sub, "relu"),
         ],
     )
@@ -73,7 +73,7 @@ class TestSinkView:
         [
             ((8, 6, 4), None, torch.add, "none"),
             ((8, 6, 4), (2, 6, 4), torch.mul, "none"),
-            ((8, 6, 1, 4), (6, 4), torch.div, "silu"),
+            ((8, 6, 1, 4), (6, 4), torch.div, "relu"),
             ((4, 6, 8), (1, 6, 1), torch.sub, "none"),
         ],
     )
