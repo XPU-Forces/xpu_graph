@@ -18,40 +18,6 @@ __all__ = [
 ]
 
 
-def optimize_graph(gm, sample_inputs, config=None):
-    # Create default config if none provided
-    if config is None:
-        config = XpuGraphConfig(
-            is_training=False,
-            target=Target.none,
-            enable_cache=False,
-            opt_level=OptLevel.level2,
-        )
-    config._reset_config_with_env()
-
-    # Setup logging based on config
-    setup_logger(config.debug)
-
-    logger.info(f"{config}")
-
-    # Create fake inputs for optimization
-    fake_mode = FakeTensorMode()
-    fake_mode.allow_non_fake_inputs = True
-    fake_inputs = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in sample_inputs]
-
-    with fake_mode:
-        logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
-        logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
-
-        pass_manager = PassManager(config)
-        xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
-
-        logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
-        logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
-
-    return xpu_optimized
-
-
 class XpuGraph:
     def __init__(
         self,
@@ -213,3 +179,45 @@ class XpuGraph:
             torch._dynamo.config.numpy_default_float = self._orig_ctx["torch._dynamo.config.numpy_default_float"]
         if self._cache is not None:
             self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])
+
+    def aot_export(
+        self,
+        mod: torch.nn.Module,
+        example_args,
+        example_kwargs=None,
+        package_path=None,
+        *args,
+        **kwargs,
+    ):
+        from packaging import version
+
+        torch_version = version.parse(torch.__version__[:5])
+        if torch_version < version.parse("2.6.0"):
+            logger.error("AOT export functionality is only available on torch 2.6 for now")
+            raise NotImplemented
+        if self._config.is_training:
+            logger.error("AOT export functionality is only available for inference")
+            raise NotImplemented
+
+        example_kwargs = example_kwargs or {}
+
+        logger.info("export module start...")
+        exported_prog = torch.export.export(mod, example_args, example_kwargs, strict=False)
+        logger.info("export module complete")
+
+        flat_inputs = exported_prog._graph_module_flat_inputs(*exported_prog.example_inputs)
+        compiled_func = self(exported_prog._graph_module, flat_inputs)
+        optimized_mod = OptimizedModule(exported_prog, compiled_func)
+        return optimized_mod
+
+
+class OptimizedModule(torch.nn.Module):
+    def __init__(self, exported_program, optimized_gm):
+        super().__init__()
+        self.exported_program = exported_program
+        self.optimized_gm = optimized_gm
+
+    def forward(self, *args, **kwargs):
+        flat_inputs = self.exported_program._graph_module_flat_inputs(args, kwargs)
+        flat_outputs = self.optimized_gm(*flat_inputs)
+        return self.exported_program._postprocess_graph_module_outputs(flat_outputs, args, kwargs)

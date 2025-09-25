@@ -2,7 +2,7 @@ import dataclasses
 from typing import Any, Dict
 
 from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
-from .compiler import XpuGraph, optimize_graph
+from .compiler import XpuGraph
 from .config import OptLevel, Target, XpuGraphConfig
 from .passes.patterns.plugin_pattern import *
 from .version import __version__
@@ -12,7 +12,6 @@ __all__ = [
     "XpuGraphConfig",
     "Target",
     "OptLevel",
-    "optimize_graph",
     "XpuGraphCache",
     "default_cache",
     "mlu_compiler",
