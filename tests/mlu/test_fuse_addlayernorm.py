@@ -36,12 +36,13 @@ def fn2(inputs, residual, weight, bias):
     return output
 
 
-def layernorm_test(xpu_graph, func):
+def layernorm_test(xpu_graph, func, dynamic):
     inputs = torch.randn((8, 1024), device=device, dtype=data_type)
     residual = torch.randn((8, 1024), device=device, dtype=data_type)
     weight = torch.randn((1024), device=device, dtype=data_type)
     bias = None
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     if func == fn0 or func == fn2:
         norm = compiled(inputs, residual, weight, bias)
         norm1 = func(inputs, residual, weight, bias)
@@ -58,12 +59,12 @@ class TestLayerNorm:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
-        "pattern_func",
-        [fn0, fn1, fn2],
+        "pattern_func,dynamic",
+        [(fn0, False), (fn1, True), (fn2, False)],
     )
-    def test_layernorm_patterns(self, caplog, pattern_func):
+    def test_layernorm_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            layernorm_test(self.xpu_graph_backend, pattern_func)
+            layernorm_test(self.xpu_graph_backend, pattern_func, dynamic)
         # assert "Pattern.FusedAddLayerNorm changed graph" in caplog.text
 
 

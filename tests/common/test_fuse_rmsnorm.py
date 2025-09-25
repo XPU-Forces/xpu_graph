@@ -49,27 +49,29 @@ def naive_rmsnorm_liftparamdtype(inputs, weight):
     return naive_rmsnorm(inputs, weight.to(torch.float32)).to(inputs.dtype)
 
 
-def rmsnorm_test(xpu_graph, func, input_dtype, weight_dtype):
+def rmsnorm_test(xpu_graph, func, input_dtype, weight_dtype, dynamic):
     inputs = torch.randn((8, 1024), device=device, dtype=input_dtype)
     if weight_dtype is not None:
         weight = torch.randn((1024,), device=device, dtype=weight_dtype)
     else:
         weight = None
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     weight = torch.randn((1024), device=device, dtype=data_type)
     norm = compiled(inputs, weight)
     norm1 = func(inputs, weight)
     assert is_similar(norm1, norm)
 
 
-def rmsnorm_test_with_loss_and_grad(xpu_graph, func, input_dtype, weight_dtype, grad_dtype):
+def rmsnorm_test_with_loss_and_grad(xpu_graph, func, input_dtype, weight_dtype, grad_dtype, dynamic):
     inputs = torch.randn((8, 1024), device=device, dtype=input_dtype, requires_grad=True)
     if weight_dtype is not None:
         weight = torch.randn((1024,), device=device, dtype=weight_dtype, requires_grad=True)
     else:
         weight = None
     dnorm = torch.randn((8, 1024), device=device, dtype=grad_dtype)
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
 
     norm0 = compiled(inputs, weight)
     dinputs0, dweight0 = torch.autograd.grad((norm0,), (inputs, weight), (dnorm,), allow_unused=True)
@@ -104,9 +106,16 @@ class TestRMSNorm:
             (naive_rmsnorm_liftparamdtype, torch.float16, torch.float16),
         ],
     )
-    def test_rmsnorm_patterns(self, caplog, pattern_func, input_dtype, weight_dtype):
+    @pytest.mark.parametrize(
+        "dynamic",
+        [
+            True,
+            False,
+        ],
+    )
+    def test_rmsnorm_patterns(self, caplog, pattern_func, input_dtype, weight_dtype, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.infer_backend):
-            rmsnorm_test(self.infer_backend, pattern_func, input_dtype, weight_dtype)
+            rmsnorm_test(self.infer_backend, pattern_func, input_dtype, weight_dtype, dynamic)
         assert "Pattern.FusedRMSNorm changed graph" in caplog.text
         if pattern_func is naive_rmsnorm_liftdtype and input_dtype != torch.float32:
             assert "Pattern.RemoveRMSNormCast" in caplog.text
@@ -127,9 +136,20 @@ class TestRMSNorm:
             (naive_rmsnorm_liftparamdtype, torch.float32, torch.float16, torch.float32),
         ],
     )
-    def test_rmsnorm_patterns_with_loss_and_grad(self, caplog, pattern_func, input_dtype, weight_dtype, grad_dtype):
+    @pytest.mark.parametrize(
+        "dynamic",
+        [
+            True,
+            False,
+        ],
+    )
+    def test_rmsnorm_patterns_with_loss_and_grad(
+        self, caplog, pattern_func, input_dtype, weight_dtype, grad_dtype, dynamic
+    ):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
-            rmsnorm_test_with_loss_and_grad(self.train_backend, pattern_func, input_dtype, weight_dtype, grad_dtype)
+            rmsnorm_test_with_loss_and_grad(
+                self.train_backend, pattern_func, input_dtype, weight_dtype, grad_dtype, dynamic
+            )
         assert "Pattern.FusedRMSNorm changed graph" in caplog.text
         if pattern_func is naive_rmsnorm_liftdtype and input_dtype != torch.float32:
             assert "Pattern.RemoveRMSNormCast" in caplog.text

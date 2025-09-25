@@ -15,6 +15,7 @@ from ...utils.check_ops import (
     check_where_op,
     check_zeros_op,
 )
+from ...utils.shape_utils import same_shape
 from ...utils.submodule_manager import register_new_submodule
 from .triton_kernel.fused_slice_where_cat import fuse_slice_where_cat
 
@@ -115,7 +116,7 @@ def _is_slice_where_cat(
     slice_input_shape = param_tuple[1].meta["val"].shape
     if len(where_input_shape) != 2 or len(slice_input_shape) != 2:
         return False, (), ()
-    if where_input_shape[1] != 1:
+    if not same_shape(where_input_shape[1], 1):
         return False, (), ()
     if cat_dim != 1 and cat_dim != -1:
         return False, (), ()

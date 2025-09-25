@@ -7,6 +7,7 @@ from torch import fx, nn
 from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
 from xpu_graph.utils import logger
 
 from ...utils.check_ops import (
@@ -51,6 +52,8 @@ class ComboSliceWhereCat(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
+
+        sym_shape_manager = SymShapeManager(graph_module.graph)
 
         candidates = [
             node
@@ -138,7 +141,10 @@ class ComboSliceWhereCat(Pattern):
                     view_node = graph_module.graph.create_node(
                         op="call_function",
                         target=torch.ops.aten.view.default,
-                        args=(last_node, get_shape(node)),
+                        args=(
+                            last_node,
+                            tuple(sym_shape_manager.rebind_shape(get_shape(node))),
+                        ),
                         kwargs={},
                     )
                 last_node = view_node
