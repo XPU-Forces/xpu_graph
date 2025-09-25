@@ -3,6 +3,8 @@ from typing import Any, Dict, Optional, Union
 import torch
 import torch.fx as fx
 
+from .shape_utils import same_shape
+
 
 def get_binary_fold_result(
     gm: fx.GraphModule, inp: Union[int, float, fx.Node], target_meta: Dict[str, Any]
@@ -26,7 +28,7 @@ def get_binary_fold_result(
             },
         )
     else:
-        if inp.meta["val"].shape == target_meta["val"].shape:
+        if same_shape(inp.meta["val"].shape, target_meta["val"].shape):
             expand = inp
         else:
             if any(isinstance(s, torch.SymInt) for s in target_meta["val"].shape):
@@ -39,8 +41,17 @@ def get_binary_fold_result(
                     target_meta["val"].shape,
                 ),
             )
-        copy = gm.graph.call_function(
-            torch.ops.aten._to_copy.default,
-            args=(expand,),
-        )
+        if inp.meta["val"].dtype != target_meta["val"].dtype:
+            copy = gm.graph.call_function(
+                torch.ops.aten._to_copy.default,
+                args=(expand,),
+                kwargs={
+                    "dtype": target_meta["val"].dtype,
+                },
+            )
+        else:
+            copy = gm.graph.call_function(
+                torch.ops.aten.clone.default,
+                args=(expand,),
+            )
         return copy
