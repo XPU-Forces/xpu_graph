@@ -34,6 +34,7 @@ def where_seq(x):
 
 def can_fold_test(xpu_graph, func, dynamic):
     x = torch.randn(128, 64)
+
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(x)
     res = compiled(x)

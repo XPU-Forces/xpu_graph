@@ -9,6 +9,7 @@ from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.default_replacements import DefaultLayerNorm
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 
 from ..utils.check_ops import (
     check_add_op,
@@ -175,7 +176,7 @@ class FusedLayerNorm(Pattern):
                     continue
                 unaffined, weight = params
                 inputs, _, _, eps = unaffined.args
-                if get_shape(inputs)[-1:] != get_shape(weight):
+                if not same_shape(get_shape(inputs)[-1:], get_shape(weight)):
                     continue
 
                 with graph_module.graph.inserting_before(node):
@@ -194,7 +195,7 @@ class FusedLayerNorm(Pattern):
                     continue
                 unbiased, bias = params
                 inputs, weight, _, eps = unbiased.args
-                if get_shape(inputs)[-1:] != get_shape(bias):
+                if not same_shape(get_shape(inputs)[-1:], get_shape(bias)):
                     continue
 
                 with graph_module.graph.inserting_before(node):

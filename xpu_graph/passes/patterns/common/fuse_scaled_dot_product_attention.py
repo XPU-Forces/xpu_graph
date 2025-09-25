@@ -14,6 +14,7 @@ from xpu_graph.passes.patterns.utils.check_ops import (
     get_actual_node,
 )
 from xpu_graph.passes.patterns.utils.default_replacements import SDPAWrappedScale
+from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager, same_shape
 from xpu_graph.utils import logger
 
 
@@ -24,10 +25,10 @@ def validate_attention_shape(q_shape, k_shape, v_shape, mask_shape):
         len(q_shape) == 3
         and len(k_shape) == 3
         and len(v_shape) == 3
-        and q_shape[0] == k_shape[0]
-        and q_shape[0] == v_shape[0]
-        and q_shape[-1] == k_shape[-1]
-        and k_shape[1] == v_shape[1]
+        and same_shape(q_shape[0], k_shape[0])
+        and same_shape(q_shape[0], v_shape[0])
+        and same_shape(q_shape[-1], k_shape[-1])
+        and same_shape(k_shape[1], v_shape[1])
     ):
         return False, []
     total_bn = q_shape[0]
@@ -81,7 +82,7 @@ def _is_fa(node: fx.Node, is_inference: bool):
     is_scale_op, div_input_node, params = check_div_or_mul_op(bmm_1_node)
     if is_scale_op:
         scale, is_div = params
-        if isinstance(scale, fx.Node):
+        if isinstance(scale, fx.Node) and isinstance(scale.meta["val"], torch.Tensor):
             if not scale.meta["val"].numel() == 1:
                 return False, []
             if is_constant(scale):
@@ -121,6 +122,10 @@ class FusedSDPA(Pattern):
 
     def process(self, graph_module: fx.GraphModule):
         modified = False
+
+        # Note: this fuction should rerun every time needed, since graph may be changed elsewhere
+        sym_shape_manager = SymShapeManager(graph_module.graph)
+
         for node in reversed(graph_module.graph.nodes):
             is_inference = self._current_stage == FxStage.inference
             matched, fa_param = _is_fa(node, is_inference)
@@ -128,11 +133,20 @@ class FusedSDPA(Pattern):
                 continue
 
             q, k, v, scale, is_div, attn_mask, is_add, attn_shape = fa_param
-            logger.debug(f"Flash attention pass: Attention shape: {attn_shape}")
-            batch_size, num_heads, q_len, kv_len, qk_dim, v_dim = attn_shape
+
+            # Note: if the shape is non-atomic sympy expression, it must have been computed beforehand, thus it is okay to
+            # use get_shape_val to get the actual value
+            rebind_attn_shape = sym_shape_manager.rebind_shape(attn_shape)
+
+            if rebind_attn_shape is None:
+                continue
+            batch_size, num_heads, q_len, kv_len, qk_dim, v_dim = rebind_attn_shape
+
             with graph_module.graph.inserting_before(node):
                 is_scale_wrapped = False
-                if isinstance(scale, fx.Node):
+
+                # FIXME: (chenyifan) take symints as FA scale will introduce extra guards, this may be a problem
+                if isinstance(scale, fx.Node) and isinstance(scale.meta["val"], torch.Tensor):
                     if self._opt_level > OptLevel.level2:
                         q = graph_module.graph.call_function(
                             torch.ops.aten.div.Tensor if is_div else torch.ops.aten.mul.Tensor,
@@ -140,7 +154,7 @@ class FusedSDPA(Pattern):
                         )
                         scale = 1.0
                     elif not is_inference:
-                        # Note: we currently do not provide SDPAWrappedScale.backward
+                        logger.debug("Note: we currently do not provide SDPAWrappedScale.backward")
                         continue
                     else:
                         logger.warning("Unwrap scale for scaled_dot_product_attention, which may introduce extra sync")
@@ -151,6 +165,13 @@ class FusedSDPA(Pattern):
                         scale = graph_module.graph.call_function(
                             torch.ops.aten.reciprocal.default,
                             args=(scale,),
+                        )
+                    elif isinstance(scale, fx.Node):
+                        import operator
+
+                        scale = graph_module.graph.call_function(
+                            operator.truediv,
+                            args=(1.0, scale),
                         )
                     else:
                         scale = 1.0 / float(scale)
@@ -170,6 +191,23 @@ class FusedSDPA(Pattern):
                 v = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
                     args=(v, (batch_size, num_heads, kv_len, v_dim)),
+                )
+
+                # Note: force contiguous for SDP-backend compatibility
+                q = graph_module.graph.call_function(
+                    torch.ops.aten.clone.default,
+                    args=(q,),
+                    kwargs={"memory_format": torch.contiguous_format},
+                )
+                k = graph_module.graph.call_function(
+                    torch.ops.aten.clone.default,
+                    args=(k,),
+                    kwargs={"memory_format": torch.contiguous_format},
+                )
+                v = graph_module.graph.call_function(
+                    torch.ops.aten.clone.default,
+                    args=(v,),
+                    kwargs={"memory_format": torch.contiguous_format},
                 )
 
                 if attn_mask is not None and not is_add:
@@ -196,7 +234,7 @@ class FusedSDPA(Pattern):
                     )
                 view = graph_module.graph.call_function(
                     torch.ops.aten.view.default,
-                    args=(fused, node.meta["val"].shape),
+                    args=(fused, tuple(sym_shape_manager.rebind_shape(node.meta["val"].shape))),
                 )
             node.replace_all_uses_with(view)
             modified = True
