@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
@@ -8,16 +9,25 @@ def fn0(a):
     output = torch.stack([a], dim=0)
     return output
 
+
 def fn1(a):
     output = torch.stack([a], dim=1)
     return output
+
 
 def fn2(a):
     output = torch.stack([a], dim=2)
     return output
 
-def stack_test(xpu_graph, func):
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+def fn3(a):
+    a = torch.stack([a])
+
+    return torch.stack([a])
+
+
+def stack_test(xpu_graph, func, dynamic):
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     res = func(a)
     res1 = compiled(a)
@@ -36,11 +46,19 @@ class TestStack:
             fn0,
             fn1,
             fn2,
+            fn3,
         ],
     )
-    def test_stack_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize(
+        "dynamic",
+        [
+            True,
+            False,
+        ],
+    )
+    def test_stack_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            stack_test(self.xpu_graph, pattern_func)
+            stack_test(self.xpu_graph, pattern_func, dynamic)
         assert "Pattern.FoldStack changed graph" in caplog.text
 
 

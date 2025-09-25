@@ -1,12 +1,14 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 
 
 class FoldView0(Pattern):
     """
-    Fold aten.view which inp.shape == target_shape
+    Fold aten.view which inp.shape equals target_shape
     """
 
     _support_stages = [
@@ -22,16 +24,12 @@ class FoldView0(Pattern):
             torch.ops.aten.view.default,
             torch.ops.aten._unsafe_view.default,
         )
-        candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in view_tup
-        ]
+        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in view_tup]
 
         for view in candidates:
             inp = view.args[0]
-            target_shape = view.args[1]
-            if target_shape == list(inp.meta["val"].shape):
+            # Use target node's shape is more straightforward
+            if same_shape(view.meta["val"].shape, inp.meta["val"].shape):
                 changed = True
 
                 view.replace_all_uses_with(inp)
@@ -63,19 +61,11 @@ class FoldView1(Pattern):
             torch.ops.aten.view.default,
             torch.ops.aten._unsafe_view.default,
         )
-        candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in view_tup
-        ]
+        candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in view_tup]
 
         for view in candidates:
             inp = view.args[0]
-            if (
-                isinstance(inp, fx.Node)
-                and inp.op == "call_function"
-                and inp.target in _view_like_ops
-            ):
+            if isinstance(inp, fx.Node) and inp.op == "call_function" and inp.target in _view_like_ops:
                 changed = True
                 view.replace_input_with(inp, inp.args[0])
 

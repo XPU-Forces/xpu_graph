@@ -1,5 +1,6 @@
-import torch
 import math
+
+import torch
 
 
 def test_convert_gelu():
@@ -7,16 +8,7 @@ def test_convert_gelu():
         return 0.5 * (1 + torch.erf(x / math.sqrt(2))) * x
 
     def _gelu1(x):
-        return (
-            0.5
-            * x
-            * (
-                1.0
-                + torch.tanh(
-                    math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))
-                )
-            )
-        )
+        return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
 
     from xpu_graph import XpuGraph, XpuGraphConfig
 
