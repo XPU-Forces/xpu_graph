@@ -11,6 +11,7 @@ from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 
 from ...utils.check_ops import check_cat_op, check_meta_2d, check_mul_op, check_sum_op
+from ...utils.shape_utils import same_shape
 from .triton_kernel.fused_mul_sum_cat import fused_mul_sum_cat_2inp
 
 
@@ -20,7 +21,7 @@ class FusedMulSumCatReplacement(nn.Module):
         mul_list,
     ):
         s1, s2 = mul_list[0].shape[1:]
-        if any(x.shape[1:] != (s1, s2) for x in mul_list[1:]):
+        if any(not same_shape(x.shape[1:], [s1, s2]) for x in mul_list[1:]):
             return torch.cat(
                 [torch.sum(mul_list[i] * mul_list[i + 1]) for i in range(0, len(mul_list), 2)],
                 dim=1,
@@ -41,7 +42,7 @@ class FusedMulSumCatReplacement(nn.Module):
 
         batch_size = max(mul_list[0].shape[0], mul_list[1].shape[0])
         new_mul_list = [
-            (mul_list[i].expand(batch_size, s1, s2) if mul_list[i].shape[0] == 1 else mul_list[i])
+            (mul_list[i].expand(batch_size, s1, s2) if same_shape(mul_list[i].shape[0], 1) else mul_list[i])
             for i in list(range(0, len(mul_list), 2)) + list(range(1, len(mul_list), 2))
         ]
         tmp = torch.cat(new_mul_list, dim=0).view(2, len(new_mul_list) // 2, batch_size, s1, s2)

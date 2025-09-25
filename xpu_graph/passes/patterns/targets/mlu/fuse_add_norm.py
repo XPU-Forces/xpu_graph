@@ -7,6 +7,7 @@ from torch import fx, nn
 
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 from xpu_graph.utils import logger
 
 from ...utils.check_ops import (
@@ -111,7 +112,7 @@ def _is_add_norm(node: fx.Node, match_str: str):
     inputs = add_node.args[0]
     residual = add_node.args[1]
 
-    if get_shape(inputs) != get_shape(residual):
+    if not same_shape(get_shape(inputs), get_shape(residual)):
         return False, ()
 
     store_output_before_norm = False

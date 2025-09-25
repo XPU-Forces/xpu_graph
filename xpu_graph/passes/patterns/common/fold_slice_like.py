@@ -4,6 +4,7 @@ from torch import SymInt
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 from xpu_graph.utils import logger
 
 MAX_INT64 = 9223372036854775807
@@ -51,8 +52,6 @@ class FoldSliceLike(Pattern):
 
     def _fold_slice(self, node: fx.Node, gm: fx.GraphModule) -> bool:
         src_node, dim, start, end = node.args[0], node.args[1], node.args[2], node.args[3]
-        if not isinstance(start, int) or not isinstance(end, int):
-            return False
 
         if "val" not in src_node.meta:
             return False
@@ -61,6 +60,15 @@ class FoldSliceLike(Pattern):
             return False
 
         dim_length = src_shape[dim]
+
+        # start must be zero but end can be symint
+        if isinstance(start, fx.Node):
+            return False
+        if isinstance(end, fx.Node):
+            if "val" not in end.meta:
+                return False
+            else:
+                end = end.meta["val"]
 
         is_noop = False
         if start == 0 and end >= MAX_INT64:
@@ -78,8 +86,6 @@ class FoldSliceLike(Pattern):
         if len(node.args) < 5:
             return False
         base_node, view_node, dim, start, end = node.args[:5]
-        if not isinstance(start, int) or not isinstance(end, int):
-            return False
 
         if not all(isinstance(n, fx.Node) and "val" in n.meta for n in [base_node, view_node]):
             return False
@@ -89,13 +95,21 @@ class FoldSliceLike(Pattern):
         base_shape = base_node.meta["val"].shape
         view_shape = view_node.meta["val"].shape
 
-        if base_shape != view_shape:
+        if not same_shape(base_shape, view_shape):
             return False
 
         if start != 0:
             return False
 
         dim_length = view_shape[dim]
+
+        # start must be zero but end can be symint
+        if isinstance(end, fx.Node):
+            if "val" not in end.meta:
+                return False
+            else:
+                end = end.meta["val"]
+
         if end != dim_length:
             return False
 
