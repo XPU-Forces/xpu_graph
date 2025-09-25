@@ -4,6 +4,7 @@ from torch import SymInt
 
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
 
 
 class ChangeTensorLike(Pattern):
@@ -11,6 +12,7 @@ class ChangeTensorLike(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
+        sym_shape_manager = SymShapeManager(gm.graph)
 
         tensor_like_map = {
             torch.ops.aten.ones_like.default: torch.ops.aten.ones.default,
@@ -23,18 +25,24 @@ class ChangeTensorLike(Pattern):
         for like_node in candidates:
             template_node = like_node.args[0]
 
-            if "val" not in template_node.meta or any(isinstance(s, SymInt) for s in template_node.meta["val"].shape):
+            if "val" not in template_node.meta:
+                continue
+
+            template_shape = sym_shape_manager.rebind_shape(template_node.meta["val"].shape)
+            # do not change if target shape cannot be rebinded
+            if template_shape is None:
                 continue
 
             fill_value_arg = None
             if like_node.target == torch.ops.aten.full_like.default:
                 fill_value_arg = like_node.args[1]
-                if not isinstance(fill_value_arg, (int, float, bool)):
-                    continue
+                # Note: symbolic fill_value does not matter actually
+                # if not isinstance(fill_value_arg, (int, float, bool)):
+                #     continue
 
             changed = True
             with gm.graph.inserting_before(like_node):
-                new_args = [list(template_node.meta["val"].shape)]
+                new_args = [template_shape]
                 if fill_value_arg is not None:
                     new_args.append(fill_value_arg)
 

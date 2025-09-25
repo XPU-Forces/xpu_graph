@@ -47,8 +47,8 @@ def fn3(a):
     return output
 
 
-def tensorlike_test(xpu_graph, func):
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=None)
+def tensorlike_test(xpu_graph, func, dynamic=None):
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     res = func(a)
     res1 = compiled(a)
@@ -74,9 +74,8 @@ class TestTensorLike:
     )
     def test_tensorlike_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            tensorlike_test(self.xpu_graph, pattern_func)
-        if pattern_func not in [fn3]:
-            assert "Pattern.ChangeTensorLike changed graph" in caplog.text
+            tensorlike_test(self.xpu_graph, pattern_func, dynamic=True)
+        assert "Pattern.ChangeTensorLike changed graph" in caplog.text
 
 
 if __name__ == "__main__":
