@@ -109,8 +109,11 @@ class XpuGraphConfig:
             self.skip_patterns = os.getenv(__XPU_GRAPH_ENVS__.skip_patterns).split(",")
 
 
+cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)
+
+
 def get_cache_dir():
-    cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)
+    global cache_path
     if cache_path is None:
         import tempfile
 
@@ -120,8 +123,11 @@ def get_cache_dir():
     return cache_path
 
 
+dump_path = os.getenv(__XPU_GRAPH_ENVS__.dump_dir)
+
+
 def get_dump_dir():
-    dump_path = os.getenv(__XPU_GRAPH_ENVS__.dump_dir)
+    global dump_path
     if dump_path is None:
         import tempfile
 
