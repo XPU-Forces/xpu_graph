@@ -24,6 +24,8 @@ from ...utils.combo_utils import *
 from .combo_matmul_utils import *
 
 from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
+import torch.nn.functional as F
+
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
 NodeType = fx.Node
@@ -40,67 +42,73 @@ def all_same_tensor(tensor_list):
 
 
 class FusedCombineBmm(nn.Module):
-    def forward(self, input_list, weight_list, bias_list, act: str):
+    def forward(
+        self, input_list, weight_list, bias_list, act: str, trans_a: bool, trans_b: bool
+    ):
+        use_groupgemm = True
         output = None
-        if len(input_list[0].shape) == 3:
-            output = self.forward_bmm(input_list, weight_list, bias_list, act)
-            if bias_list[0] is None:
-                bias_batch = None
-            else:
-                bias_list = [
-                    bias.unsqueeze(0) if len(bias.shape) == 1 else bias
-                    for bias in bias_list
-                ]
-                bias_batch = torch.stack(
-                    bias_list, dim=0
-                )  # Stack all biases along a new dimension
-            # Add bias batch if available
-            if bias_batch is not None:
-                output = output + bias_batch
+
+        if len(input_list[0].shape) == 2 and use_groupgemm:
+            output = self.forward_groupgemm(
+                input_list, weight_list, bias_list, trans_a, trans_b
+            )
         else:
-            # output = self.forward_mm(input_list, weight_list, bias_list)
-            output = self.forward_mm(input_list, weight_list, bias_list, act)
+            output = self.forward_bmm(
+                input_list, weight_list, bias_list, trans_a, trans_b
+            )
 
         # Apply activation function if specified
-        if act == "relu":
-            output = torch.relu(output)
-        elif act == "gelu":
-            output = torch.gelu(output)
-        elif act == "silu":
-            output = torch.silu(output)
-        elif act == "sigmoid":
-            output = torch.sigmoid(output)
+
+        activations = {
+            "relu": torch.relu,
+            "gelu": F.gelu,
+            "silu": F.silu,
+            "sigmoid": torch.sigmoid,
+        }
+        if act in activations:
+            act_func = activations.get(act.lower())
+            output = act_func(output)
 
         return output
 
-    def forward_bmm(self, input_list, weight_list, bias_list, act: str):
+    def forward_bmm(self, input_list, weight_list, bias_list, trans_a, trans_b):
         input_batch = torch.stack(input_list, dim=0)
+        if trans_a:
+            input_batch = input_batch.transpose(-1, -2)
+
         weight_batch = torch.stack(weight_list, dim=0)
-        T, B, K, N = weight_batch.shape
-        M = input_list[0].shape[1]
-        output = torch.bmm(
-            input_batch.view(-1, M, K), weight_batch.view(-1, K, N)
-        ).view(T, B, M, N)
-        return output
+        if trans_b:
+            weight_batch = weight_batch.transpose(-1, -2)
 
-    # Fallback
-    """
-    def forward_mm(self, input_list, weight_list, bias_list):
-        if len(input_list) == 1:
-            input_list = input_list * len(weight_list)
-        batch_input = torch.stack(input_list)
-        batch_weight = torch.stack(weight_list)
+        input_shape = input_batch.shape
+        weight_shape = weight_batch.shape
+        M = input_shape[-2]
+        K = weight_shape[-2]
+        N = weight_shape[-1]
+
+        if len(weight_shape) == 4:
+            input_batch = input_batch.view(-1, M, K)
+            weight_batch = weight_batch.view(-1, K, N)
+
         if bias_list[0] is not None:
-            if len(bias_list[0].shape) == 1:
-                bias_list = [bias.unsqueeze(0) for bias in bias_list]
-            batch_bias = torch.stack(bias_list)
-            output = torch.bmm(batch_input, batch_weight) + batch_bias
+            bias_batch = torch.stack(bias_list)
+            # bias: [N]
+            if len(bias_list[1].shape) == 1:
+                # bias_batch: [T, 1, N]
+                bias_batch = bias_batch.unsqueeze(1)
+            output = torch.bmm(input_batch, weight_batch) + bias_batch
         else:
-            output = torch.bmm(batch_input, batch_weight)
-        return output
-    """
+            output = torch.bmm(input_batch, weight_batch)
 
-    def forward_mm(self, input_list, weight_list, bias_list, act: str):
+        output = torch.bmm(input_batch.view(-1, M, K), weight_batch.view(-1, K, N))
+
+        if len(weight_shape) == 4:
+            output = output.view(weight_shape[0], input_shape[1], M, N)
+        return output
+
+    def forward_groupgemm(
+        self, input_list, weight_list, bias_list, trans_a: bool, trans_b: bool
+    ):
         processed_inputs = [
             i.contiguous() if not i.is_contiguous() else i for i in input_list
         ]
@@ -108,7 +116,7 @@ class FusedCombineBmm(nn.Module):
             w.contiguous() if not w.is_contiguous() else w for w in weight_list
         ]
         args = [processed_inputs, processed_weights]
-        kwargs = {"trans_a": False, "trans_b": False}
+        kwargs = {"trans_a": trans_a, "trans_b": trans_b}
         if bias_list[0] is not None:
             if len(bias_list[0].shape) == 1:
                 kwargs["bias"] = bias_list
@@ -125,6 +133,8 @@ def replace_node(graph_module, nodes):
     new_input = [n.input1 for n in nodes]
     new_weight = [n.input2 for n in nodes]
     new_bias = [n.bias for n in nodes]
+    trans_a = nodes[0].input1_trans
+    trans_b = nodes[0].input2_trans
     act = nodes[0].act
 
     if len(new_weight) < COMBINE_LEN:
@@ -134,7 +144,7 @@ def replace_node(graph_module, nodes):
     ):
         new_node = graph_module.graph.call_module(
             "fused_combo_bmm",
-            args=(new_input, new_weight, new_bias, act),
+            args=(new_input, new_weight, new_bias, act, trans_a, trans_b),
         )
     with graph_module.graph.inserting_after(new_node):
         unbind_node = graph_module.graph.call_function(
@@ -163,14 +173,18 @@ def combo_matmul(graph_module, candidates, sym_shape_manager):
         mm_desc = get_node_desc(n)
         if mm_desc == None:
             continue
-            
+
         key = (
+            mm_desc.input1_trans,
+            mm_desc.input2_trans,
             tuple(sym_shape_manager.rebind_shape(mm_desc.input1_shape)),
             tuple(sym_shape_manager.rebind_shape(mm_desc.input2_shape)),
             (
-                None
-                if mm_desc.bias == None
-                else tuple(sym_shape_manager.rebind_shape(mm_desc.bias_shape)),
+                (
+                    None
+                    if mm_desc.bias == None
+                    else tuple(sym_shape_manager.rebind_shape(mm_desc.bias_shape))
+                ),
             ),
             mm_desc.act,
         )
@@ -220,7 +234,7 @@ class FusedCombineMatMul(Pattern):
             if len(candidates) < COMBINE_LEN:
                 continue
             changed = changed | combo_matmul(
-                graph_module, candidates, sym_shape_manager 
+                graph_module, candidates, sym_shape_manager
             )
 
         return changed

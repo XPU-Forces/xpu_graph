@@ -21,6 +21,12 @@ def has_mm_dependency(a, b):
     )
 
 
+def check_trans_input(node):
+    if node.op == "call_function" and node.target == torch.ops.aten.t.default:
+        return True
+    return False
+
+
 class MMNodeDesc:
     """
     NodeDesc class describes a node in torch.fx graph along with its associated information,
@@ -42,28 +48,48 @@ class MMNodeDesc:
         self.input2_ancestors = []
         self.bias_ancestors = []
         self.extra_match = False
+        self.input1_trans = False
+        self.input2_trans = False
 
     def set_node(self, node):
         self.node = node
 
     def set_input1(self, input1):
-        self.input1 = input1
+        if check_trans_input(input1):
+            self.input1_trans = True
+            self.input1 = input1.args[0]
+        else:
+            self.input1 = input1
         self.input1_shape = get_shape(input1)
+        if self.input1_shape == None:
+            return False
         self.input1_ancestors = get_ancestors(self.input1)
+        return True
 
     def set_input2(self, input2):
-        self.input2 = input2
+        if check_trans_input(input2):
+            self.input2_trans = True
+            self.input2 = input2.args[0]
+        else:
+            self.input2 = input2
         self.input2_shape = get_shape(input2)
+        if self.input2_shape == None:
+            return False
         self.input2_ancestors = get_ancestors(self.input2)
+        return True
 
     def set_bias(self, bias):
         self.bias = bias
         if bias is not None:
             self.bias_shape = get_shape(bias)
+            if self.bias_shape == None:
+                return False
             self.bias_ancestors = get_ancestors(self.bias)
+        return True
 
     def set_act(self, act: str):
         self.act = act
+
 
 def get_node_desc(node):
     intpu1 = None
@@ -91,19 +117,14 @@ def get_node_desc(node):
             return None
         act = node.args[4]
 
-    if get_shape(input1) == None:
-        return None
-    if get_shape(input2) == None:
-        return None
-    if bias == True:
-        if get_shape(bias) == None:
-            return None
-
     mm_desc = MMNodeDesc()
     mm_desc.set_node(node)
-    mm_desc.set_input1(input1)
-    mm_desc.set_input2(input2)
-    mm_desc.set_bias(bias)
+    if not mm_desc.set_input1(input1):
+        return None
+    if not mm_desc.set_input2(input2):
+        return None
+    if not mm_desc.set_bias(bias):
+        return None
     mm_desc.set_act(act)
 
     # extra match

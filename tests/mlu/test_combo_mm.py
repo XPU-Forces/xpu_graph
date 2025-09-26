@@ -215,14 +215,13 @@ class TestCombineMatMul:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
             combine_matmul_test_with_loss_and_grad(self.train_backend, pattern_func, dynamic)
             assert "Pattern.FusedCombineMatMul changed graph" in caplog.text
-            assert "Pattern.FusedComboTrans changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=True,
         opt_level=OptLevel.level2,
-        debug=True,
+        debug=False,
         vendor_compiler_config=None,
     )
     combine_matmul_test_with_loss_and_grad(xpu_graph_backend, fn6, dynamic=True)
