@@ -63,8 +63,6 @@ class XpuGraph:
         # Setup logging based on config
         setup_logger(self._config.debug)
 
-        logger.info(f"{config}")
-
         if self._config.target == Target.npu and self._config.vendor_compiler_config.get("compiler", None) == "ge":
             self._config.enable_cache = False
             logger.warning("Target NPU ge-compiler does not support cache.")
@@ -79,6 +77,8 @@ class XpuGraph:
         )
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
+        logger.info(f"{self._config}")
+
         def _compiler(gm, fake_inputs, stage: FxStage):
             nodes_statistics = NodesStatistics()
 
