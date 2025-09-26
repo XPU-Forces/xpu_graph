@@ -24,8 +24,21 @@ def fn0_concat_varlen(inputs, slice_):
     where_1 = inputs * slice_4
     where_2 = inputs * slice_5
     where_3 = inputs * slice_6
-    output = torch.cat([slice_1, where_0, where_1, where_2, where_3], dim=-1)
+    output = torch.concat([slice_1, where_0, where_1, where_2, where_3], dim=-1)
     return output, slice_1
+
+
+def fn0_output(inputs, slice_):
+    slice_1 = slice_[:, 0:32]
+    slice_2 = slice_[:, 10118:10150]
+    slice_4 = slice_[:, 10579:10611]
+    slice_5 = slice_[:, 11032:11064]
+    slice_6 = slice_[:, 11445:11477]
+    where_0 = inputs * slice_2
+    where_1 = inputs * slice_4
+    where_2 = inputs * slice_5
+    where_3 = inputs * slice_6
+    return slice_1, where_0, where_1, where_2, where_3
 
 
 def fn1(inputs, slice_):
@@ -142,6 +155,7 @@ def fn3(inputs, slice_):
 
 
 def fn4(inputs, slice_):
+    inputs = inputs > 0
     batch = inputs.size(0)
     zeros = torch.zeros([batch, 32], device=device, dtype=data_type)
     ones = torch.ones([batch, 32], device=device, dtype=data_type)
@@ -168,6 +182,7 @@ def fn4(inputs, slice_):
 
 
 def fn4_xfail(inputs, slice_):
+    inputs = inputs > 0
     batch = inputs.size(0)
     zeros = torch.zeros([batch, 32], device=device, dtype=data_type)
     ones = torch.ones([batch, 32], device=device, dtype=data_type)
@@ -198,19 +213,21 @@ def fn4_xfail(inputs, slice_):
     return output, output_1
 
 
-def combine_pointwise_test(xpu_graph_backend, func):
+def combine_pointwise_test(xpu_graph_backend, func, is_training=False):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
 
     for batch in [8, 10, 80]:
-        inputs = torch.randn(batch, device=device, dtype=data_type).unsqueeze(-1).bool()
+        inputs = torch.randn(batch, device=device, dtype=data_type).unsqueeze(-1)
         slice_ = torch.randn(batch, 35149, device=device, dtype=data_type)
+        if is_training:
+            inputs = inputs.requires_grad_()
 
         res = func(inputs, slice_)
         res1 = compiled(inputs, slice_)
         assert aggregate_similar(res, res1, atol=1e-5, rtol=1e-5)
 
 
-class TestCombinePointwiseSink:
+class TestCombinePointwiseSinkInference:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
@@ -221,11 +238,35 @@ class TestCombinePointwiseSink:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0_concat_varlen, fn1, fn2_concat_varlen, fn3, fn4, fn4_xfail],
+        [fn0_concat_varlen, fn0_output, fn1, fn2_concat_varlen, fn3, fn4, fn4_xfail],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             combine_pointwise_test(self.xpu_graph_backend, pattern_func)
+        if "xfail" in pattern_func.__name__:
+            assert "Pattern.CombinePointwiseSink changed graph" not in caplog.text
+        else:
+            assert "Pattern.CombinePointwiseSink changed graph" in caplog.text
+        if "concat_varlen" in pattern_func.__name__:
+            assert "aten.stack.default" not in caplog.text
+
+
+class TestCombinePointwiseSinkTraining:
+    def setup_class(self):
+        self.xpu_graph_backend = XpuGraph(
+            XpuGraphConfig(
+                is_training=True,
+                opt_level=OptLevel.level1,
+            )
+        )
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [fn0_concat_varlen, fn0_output, fn1],
+    )
+    def test_pointwise_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            combine_pointwise_test(self.xpu_graph_backend, pattern_func, is_training=True)
         if "xfail" in pattern_func.__name__:
             assert "Pattern.CombinePointwiseSink changed graph" not in caplog.text
         else:

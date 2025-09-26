@@ -103,13 +103,18 @@ class CombinePointwiseSink(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
         for node in reversed(graph_module.graph.nodes):
-            if check_op(node, aten.stack.default) or check_op(node, aten.cat.default):
+            if (
+                check_op(node, aten.stack.default)
+                or check_op(node, aten.cat.default)
+                or check_op(node, aten.concat.default)
+                or node.op == "output"
+            ):
                 if len(node.args[0]) < COMBINE_WIDTH:
                     continue
             else:
                 continue
 
-            if check_op(node, aten.cat.default):
+            if check_op(node, aten.cat.default) or check_op(node, aten.concat.default):
                 cat_dim = 0
                 if len(node.args) > 1:
                     cat_dim = node.args[1]
