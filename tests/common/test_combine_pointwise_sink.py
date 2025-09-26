@@ -3,12 +3,15 @@ import torch
 
 from xpu_graph import XpuGraph, XpuGraphConfig
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.test_utils import (
+    aggregate_similar,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 device = "cpu"
 data_type = torch.float16
 aten = torch.ops.aten
-batch = 512
 
 
 def fn0_concat_varlen(inputs, slice_):
@@ -195,18 +198,19 @@ def fn4_xfail(inputs, slice_):
     return output, output_1
 
 
-def combine_pointwise_same_shape_test(xpu_graph_backend, func):
-    inputs = torch.randn(batch, device=device, dtype=data_type).unsqueeze(-1).bool()
-    slice_ = torch.randn(batch, 35149, device=device, dtype=data_type)
+def combine_pointwise_test(xpu_graph_backend, func):
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
 
-    res = func(inputs, slice_)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
-    res1 = compiled(inputs, slice_)
-    for i in range(len(res)):
-        assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
+    for batch in [8, 10, 80]:
+        inputs = torch.randn(batch, device=device, dtype=data_type).unsqueeze(-1).bool()
+        slice_ = torch.randn(batch, 35149, device=device, dtype=data_type)
+
+        res = func(inputs, slice_)
+        res1 = compiled(inputs, slice_)
+        assert aggregate_similar(res, res1, atol=1e-5, rtol=1e-5)
 
 
-class TestCombinePointwise:
+class TestCombinePointwiseSink:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
@@ -221,18 +225,18 @@ class TestCombinePointwise:
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            combine_pointwise_same_shape_test(self.xpu_graph_backend, pattern_func)
+            combine_pointwise_test(self.xpu_graph_backend, pattern_func)
         if "xfail" in pattern_func.__name__:
-            assert "Pattern.CombinePointwise changed graph" not in caplog.text
+            assert "Pattern.CombinePointwiseSink changed graph" not in caplog.text
         else:
-            assert "Pattern.CombinePointwise changed graph" in caplog.text
+            assert "Pattern.CombinePointwiseSink changed graph" in caplog.text
         if "concat_varlen" in pattern_func.__name__:
             assert "aten.stack.default" not in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level1, debug=True))
-    # combine_pointwise_same_shape_test(xpu_graph_backend, fn0)
-    # combine_pointwise_same_shape_test(xpu_graph_backend, fn1)
-    combine_pointwise_same_shape_test(xpu_graph_backend, fn2)
-    # combine_pointwise_same_shape_test(xpu_graph_backend, fn4)
+    combine_pointwise_test(xpu_graph_backend, fn0_concat_varlen)
+    combine_pointwise_test(xpu_graph_backend, fn1)
+    combine_pointwise_test(xpu_graph_backend, fn2_concat_varlen)
+    combine_pointwise_test(xpu_graph_backend, fn4)

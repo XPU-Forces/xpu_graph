@@ -81,7 +81,7 @@ def try_add_parallel_lists(result_node, combined_idx, shared_to_combinelists, co
         shared_to_combinelists[other_args_kwargs] = [(combined_value, [result_node])]
 
 
-class CombinePointwise(Pattern):
+class CombinePointwiseSink(Pattern):
     _opt_level = OptLevel.level1
     _pattern_group = PatternGroup.GROUP1  # Note: This pattern should be applied after folding patterns
     _support_stages = [FxStage.inference, FxStage.pregrad]

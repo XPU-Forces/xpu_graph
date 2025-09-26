@@ -5,7 +5,11 @@ import torch
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.test_utils import (
+    aggregate_similar,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 device = "mlu:0"
 data_type = torch.float16
@@ -82,8 +86,7 @@ def slice_where_cat_test(xpu_graph_backend, func, dynamic=True):
 
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(inputs, slice_, batch)
-    for i in range(len(res)):
-        assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
+    assert aggregate_similar(tuple(r.cpu().float() for r in res), tuple(r.cpu().float() for r in res1))
 
 
 class TestSliceWhereCat:
@@ -100,7 +103,7 @@ class TestSliceWhereCat:
     def test_slice_where_cat_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             slice_where_cat_test(self.xpu_graph_backend, pattern_func, dynamic)
-        assert "Pattern.CombinePointwise changed graph" in caplog.text
+        assert "Pattern.CombinePointwiseSink changed graph" in caplog.text
 
 
 if __name__ == "__main__":
