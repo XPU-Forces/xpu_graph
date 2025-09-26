@@ -12,12 +12,13 @@ def fn0(inputs):
     return output
 
 
-def cat_cat_test(xpu_graph, func):
+def cat_cat_test(xpu_graph, func, dynamic):
     a = torch.randn(128, 64)
     b = torch.randn(128, 32)
     c = torch.randn(128, 300)
     args = [a, b, c]
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(args)
     res = compiled(args)
     assert is_similar(expect, res)
@@ -28,7 +29,7 @@ def fn1(input):
 
 
 def fn2(a):
-    outputs = a.split([2, 5, 3], dim=-1)
+    outputs = a.split([2, 5, a.shape[-1] - 7], dim=-1)
     output = torch.cat(outputs, dim=-1)
     return output
 
@@ -45,9 +46,10 @@ def fn2_xfail2(a):
     return output
 
 
-def cat_test(xpu_graph, func):
+def cat_test(xpu_graph, func, dynamic):
     input = torch.randn(10, 10)
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(input)
     res = compiled(input)
     assert is_similar(expect, res)
@@ -64,18 +66,20 @@ class TestFoldCat:
             fn0,
         ],
     )
-    def test_foldcatcat_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_foldcatcat_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs():
-            cat_cat_test(self.xpu_graph, pattern_func)
+            cat_cat_test(self.xpu_graph, pattern_func, dynamic)
             assert "Pattern.FoldCatCat changed graph" in caplog.text
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn1, fn2, fn2_xfail, fn2_xfail2],
     )
-    def test_cat_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_cat_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs():
-            cat_test(self.xpu_graph, pattern_func)
+            cat_test(self.xpu_graph, pattern_func, dynamic)
             if "xfail" in pattern_func.__name__:
                 assert "Pattern.FoldCat changed graph" not in caplog.text
             else:

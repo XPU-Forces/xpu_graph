@@ -206,3 +206,18 @@ def get_bool_env_var(name, default_value: bool):
             raise ValueError(f"Invalid value for {name}: {val}")
     else:
         return val
+
+
+def recursive_set_obj(src_dict: dict, tgt_obj):
+    # NOTE(liuyuan): If performance should be considered, sperate the following statements into two loops. Otherwise, let it be pythonic.
+    for k, v in src_dict.items():
+        if hasattr(tgt_obj, k) or (isinstance(tgt_obj, dict) and k in tgt_obj):
+            if isinstance(v, dict):
+                recursive_set_obj(v, getattr(tgt_obj, k) or tgt_obj[k])
+            else:
+                try:
+                    tgt_obj[k] = v
+                except TypeError:
+                    setattr(tgt_obj, k, v)
+                except Exception as e:
+                    raise e

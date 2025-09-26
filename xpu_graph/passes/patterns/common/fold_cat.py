@@ -46,7 +46,7 @@ class FoldCat(Pattern):
             node for node in gm.graph.nodes if node.op == "call_function" and node.target == torch.ops.aten.cat.default
         ]
 
-        for cat in candidates:
+        for cat in reversed(candidates):
             inps = cat.args[0]
             if len(inps) == 1:
                 changed = True

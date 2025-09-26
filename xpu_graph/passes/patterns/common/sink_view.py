@@ -7,6 +7,7 @@ from torch import fx, nn
 from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 from xpu_graph.utils import logger
 
 from ..utils.check_ops import (
@@ -54,7 +55,9 @@ class SinkView(Pattern):
                     other_node = user.args[1]
                 else:
                     other_node = user.args[0]
-                if isinstance(other_node, float) or isinstance(other_node, int):
+                if isinstance(other_node, (float, int, bool)) or (
+                    isinstance(other_node, fx.Node) and not isinstance(other_node.meta["val"], torch.Tensor)
+                ):
                     other_shape = []
                 else:
                     other_shape = other_node.meta["val"].shape
@@ -63,8 +66,9 @@ class SinkView(Pattern):
                 orig_shape = node.args[0].meta["val"].shape
                 no_broadcast_dims = min(len(other_shape), len(orig_shape))
                 # Only if the result shape is the same as the view shape, and the bias-ed part get unchanged
-                if result_shape == view_shape and (
-                    len(other_shape) == 0 or orig_shape[-no_broadcast_dims:] == view_shape[-no_broadcast_dims:]
+                if same_shape(result_shape, view_shape) and (
+                    len(other_shape) == 0
+                    or same_shape(orig_shape[-no_broadcast_dims:], view_shape[-no_broadcast_dims:])
                 ):
                     with graph_module.graph.inserting_before(user):
                         new_add = graph_module.graph.create_node(

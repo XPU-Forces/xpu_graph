@@ -2,11 +2,12 @@
 from typing import Optional
 
 import torch.fx
+from torch._dispatch.python import enable_python_dispatcher
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.fx import Node
-from torch.fx.node import map_aggregate
 from torch.fx._compatibility import compatibility
-from torch._subclasses.fake_tensor import FakeTensorMode, FakeTensor
-from torch.fx.experimental.proxy_tensor import snapshot_fake, py_sym_types
+from torch.fx.experimental.proxy_tensor import py_sym_types, snapshot_fake
+from torch.fx.node import map_aggregate
 
 __all__ = ["FakeTensorProp"]
 
@@ -27,9 +28,7 @@ class FakeTensorProp(torch.fx.Interpreter):
          mode (Optional[FakeTensorMode]): The dispatch mode used to execute computation indicated by each FX Node.
     """
 
-    def __init__(
-        self, module: torch.fx.GraphModule, mode: Optional[FakeTensorMode] = None
-    ):
+    def __init__(self, module: torch.fx.GraphModule, mode: Optional[FakeTensorMode] = None):
         super().__init__(module)
         if mode is None:
             mode = FakeTensorMode()
@@ -42,8 +41,8 @@ class FakeTensorProp(torch.fx.Interpreter):
             return n.meta["val"]
 
         from torch.fx.experimental.symbolic_shapes import (
-            rebind_unbacked,
             compute_unbacked_bindings,
+            rebind_unbacked,
         )
 
         result = super().run_node(n)
@@ -64,20 +63,17 @@ class FakeTensorProp(torch.fx.Interpreter):
         meta = map_aggregate(result, extract_val)
         if meta is not None:
             n.meta["val"] = meta
-            if (shape_env := self._mode.shape_env) and (
-                symbol_to_path := compute_unbacked_bindings(shape_env, result)
-            ):
+            if (shape_env := self._mode.shape_env) and (symbol_to_path := compute_unbacked_bindings(shape_env, result)):
                 n.meta["unbacked_bindings"] = symbol_to_path
 
         return result
 
     def propagate(self, *args):
-        fake_args = [
-            self._mode.from_tensor(a) if isinstance(a, torch.Tensor) else a
-            for a in args
-        ]
+        fake_args = [self._mode.from_tensor(a) if isinstance(a, torch.Tensor) else a for a in args]
         return self.propagate_dont_convert_inputs(*fake_args)
 
     def propagate_dont_convert_inputs(self, *args):
-        with self._mode:
+        # Note: without python dispatcher, aten.expand may fail with symbolid shapes
+        # ref: https://github.com/pytorch/pytorch/pull/135933/files#diff-e0cdb58c0f84f56f20c5433339b6d83c470dcde47847e2328effea6bedd4cd27
+        with enable_python_dispatcher(), self._mode:
             return super().run(*args)

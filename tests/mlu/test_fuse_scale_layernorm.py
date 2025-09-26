@@ -24,14 +24,15 @@ def fn0(inputs, weight, bias, scale, q_weight, q_bias):
     return outputs
 
 
-def layernorm_test(xpu_graph, func):
+def layernorm_test(xpu_graph, func, dynamic):
     inputs = torch.randn((64, 1362), device=device, dtype=data_type)
     residual = torch.randn((64, 1362), device=device, dtype=data_type)
     weight = torch.randn((1362), device=device, dtype=data_type)
     bias = torch.randn((1362,), device=device, dtype=data_type)
     q_weight = torch.randn((1362, 1362), device=device, dtype=data_type)
     scale = 0.1
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
 
     q_bias = None
     norm = compiled(inputs, weight, bias, scale, q_weight, q_bias)
@@ -47,9 +48,10 @@ class TestLayerNorm:
         "pattern_func",
         [fn0],
     )
-    def test_layernorm_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize("dynamic", [True, False])
+    def test_layernorm_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            layernorm_test(self.xpu_graph_backend, pattern_func)
+            layernorm_test(self.xpu_graph_backend, pattern_func, dynamic)
         assert "Pattern.FusedScaleLayernorm changed graph" in caplog.text
 
 

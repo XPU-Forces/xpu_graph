@@ -9,6 +9,7 @@ from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
 from ..utils.check_ops import check_op, is_firstly_used
+from ..utils.shape_utils import same_shape
 
 aten = torch.ops.aten
 import operator
@@ -51,7 +52,7 @@ def try_add_parallel_lists(result_node, combined_idx, shared_to_combinelists, co
     # currently, the combination rule is strict:
     # only when the original node is not broadcasted and has same requires_grad
     combined_value = result_node.args[combined_idx].meta["val"]
-    if combined_value.shape != result_node.meta["val"].shape:
+    if not same_shape(combined_value.shape, result_node.meta["val"].shape):
         return
 
     if concat_dim is not None:
@@ -71,7 +72,7 @@ def try_add_parallel_lists(result_node, combined_idx, shared_to_combinelists, co
                 and combined_value.dtype == example_val.dtype
                 and combined_value.requires_grad == example_val.requires_grad
                 # Note: no need to check shape as is resricted by broadcast check
-                # and combined_value.shape == example_val.shape
+                # and same_shape(combined_value.shape, example_val.shape)
             ):
                 combine_list.append(result_node)
                 return

@@ -61,7 +61,7 @@ class FoldStack(Pattern):
             if node.op == "call_function" and node.target == torch.ops.aten.stack.default
         ]
 
-        for stack in candidates:
+        for stack in reversed(candidates):
             inps = get_input_node(stack, 0)
             if len(inps) == 1:
                 changed = True

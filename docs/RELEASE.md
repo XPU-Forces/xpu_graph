@@ -1,3 +1,27 @@
+# Release 0.5.1
+
+## 主要依赖库版本描述
+- python 3.9 或者更高
+- pytorch 2.5.1 或者更高
+- [torch-mlu] 与pytorch版本对应
+- [torch-npu] 与pytorch版本对应
+- [triton-x] 3.2.0 或者更高
+
+## 重大变动
+- 优化推理场景动态shape支持，修复不支持动态shape的pass
+- 支持部分业务使用uv包管理
+
+## 主要特性与改进
+- 增加动态shape相关的功能函数，避免pattern中产生额外的shape guard
+
+## Bug修复与其他改动
+- 修复 binary op 的 fold pattern 在存在 type promotion 时 dtype 与原结果不一致的问题
+- 修复 fold 类的 pattern 在计算图中的迭代顺序
+- 修复 change_tensor_like pattern 未处理 dtype 参数的问题
+- 优化日志打印
+
+---
+
 # Release 0.5.0
 
 ## 主要依赖库版本描述

@@ -1,7 +1,9 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import same_shape
 
 
 class FoldExpand(Pattern):
@@ -17,23 +19,13 @@ class FoldExpand(Pattern):
         candidates = [
             node
             for node in gm.graph.nodes
-            if node.op == "call_function"
-            and node.target == torch.ops.aten.expand.default
+            if node.op == "call_function" and node.target == torch.ops.aten.expand.default
         ]
-
-        def _same_shape(org_shape, target_shape) -> bool:
-            if len(org_shape) != len(target_shape):
-                return False
-            for os, ts in zip(org_shape, target_shape):
-                if os != ts and ts != -1:
-                    return False
-            return True
 
         for expand in candidates:
             inp = expand.args[0]
-            target_shape = expand.args[1]
-            org_shape = list(inp.meta["val"].shape)
-            if _same_shape(org_shape, target_shape):
+            # use target node's shape is more straightforward
+            if same_shape(expand.meta["val"].shape, inp.meta["val"].shape):
                 changed = True
                 expand.replace_all_uses_with(inp)
                 gm.graph.erase_node(expand)
