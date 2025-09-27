@@ -26,11 +26,15 @@ class FoldCat(Pattern):
             split_dim = split_node.args[2]
         elif "dim" in split_node.kwargs:
             split_dim = split_node.kwargs["dim"]
+        if split_dim < 0:
+            split_dim += len(split_node.args[0].meta["val"].shape)
         cat_dim = 0
         if len(cat_node.args) > 1:
             cat_dim = cat_node.args[1]
         elif "dim" in cat_node.kwargs:
             cat_dim = cat_node.kwargs["dim"]
+        if cat_dim < 0:
+            cat_dim += len(cat_node.meta["val"].shape)
 
         if split_dim == cat_dim:
             return gm.graph.call_function(

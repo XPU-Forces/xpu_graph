@@ -10,7 +10,7 @@ from xpu_graph.test_utils import (
 )
 
 device = "cpu"
-data_type = torch.float16
+data_type = torch.float32
 aten = torch.ops.aten
 
 
@@ -270,7 +270,7 @@ class TestCombinePointwiseSinkTraining:
         if "xfail" in pattern_func.__name__:
             assert "Pattern.CombinePointwiseSink changed graph" not in caplog.text
         else:
-            assert "Pattern.CombinePointwiseSink changed graph" in caplog.text
+            assert caplog.text.count("Pattern.CombinePointwiseSink changed graph") == 2
         if "concat_varlen" in pattern_func.__name__:
             assert "aten.stack.default" not in caplog.text
 

@@ -1,4 +1,4 @@
-import os
+import operator
 
 import torch
 from torch import fx
@@ -6,79 +6,11 @@ from torch import fx
 from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
-from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
 from ..utils.check_ops import check_op, is_firstly_used
-from ..utils.shape_utils import same_shape
+from ..utils.combo_utils import COMBINABLE_POI_OP_IDX, COMBINE_WIDTH, ComboManager
 
 aten = torch.ops.aten
-import operator
-
-DEFAULT_COMBINE_WIDTH = "3"
-DEFAULT_COMBINABLE_POI_OP_IDX = "aten.mul.Tensor:0,1;aten.add.Tensor:0,1;aten.where.self:1,2;"
-
-
-def _fetch_combinable_ops_idx(config_str):
-    extra_combinable_ops_idx = []
-    for combine_op_idx in config_str.split(";"):
-        if combine_op_idx == "":
-            continue
-        combine_op, combine_idxs = combine_op_idx.split(":")
-        try:
-            attrs = combine_op.split(".")
-            target = torch.ops
-            for attr in attrs:
-                target = getattr(target, attr)
-        except:
-            logger.warning(f"Unsupported call_function: {combine_op}")
-            continue
-        combine_idxs = [int(idx) for idx in combine_idxs.split(",")]
-        extra_combinable_ops_idx.append((target, combine_idxs))
-    return extra_combinable_ops_idx
-
-
-COMBINE_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, DEFAULT_COMBINE_WIDTH)), 2)
-COMBINABLE_POI_OP_IDX = _fetch_combinable_ops_idx(
-    DEFAULT_COMBINABLE_POI_OP_IDX + os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_ops_idx, "")
-)
-
-
-def try_add_parallel_lists(result_node, combined_idx, shared_to_combinelists, concat_dim=None):
-    if not isinstance(result_node.args[combined_idx], fx.Node) or not isinstance(
-        result_node.args[combined_idx].meta["val"], torch.Tensor
-    ):
-        return
-
-    # currently, the combination rule is strict:
-    # only when the original node is not broadcasted and has same requires_grad
-    combined_value = result_node.args[combined_idx].meta["val"]
-    if not same_shape(combined_value.shape, result_node.meta["val"].shape):
-        return
-
-    if concat_dim is not None:
-        if isinstance(combined_value.shape[concat_dim], torch.SymInt):
-            # symbolic shape cannot be concated as split_with_sizes needs concrete shape
-            return
-
-    other_args_kwargs = (
-        tuple(result_node.args[:combined_idx]) + tuple(result_node.args[combined_idx + 1 :]),
-        result_node.kwargs,
-    )
-
-    if other_args_kwargs in shared_to_combinelists:
-        for example_val, combine_list in shared_to_combinelists[other_args_kwargs]:
-            if (
-                combined_value.device == example_val.device
-                and combined_value.dtype == example_val.dtype
-                and combined_value.requires_grad == example_val.requires_grad
-                # Note: no need to check shape as is resricted by broadcast check
-                # and same_shape(combined_value.shape, example_val.shape)
-            ):
-                combine_list.append(result_node)
-                return
-        shared_to_combinelists[other_args_kwargs].append((combined_value, [result_node]))
-    else:
-        shared_to_combinelists[other_args_kwargs] = [(combined_value, [result_node])]
 
 
 class CombinePointwiseSink(Pattern):
@@ -97,7 +29,7 @@ class CombinePointwiseSink(Pattern):
     input_3 ----/                          /
     other   ------------------------------/
 
-    N*poi + 1*cat -> 1*stack + 1+poi + 1*cat
+    N*poi + 1*cat -> 1*stack + 1+poi + 1*unbind + 1*cat
     """
 
     def process(self, graph_module: fx.GraphModule) -> bool:
@@ -125,70 +57,29 @@ class CombinePointwiseSink(Pattern):
 
             for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
                 for combinable_argidx in combinable_argidxs:
-                    shared_to_combinelists = {}
+                    combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim)
                     for arg in node.args[0]:
                         if isinstance(arg, fx.Node) and check_op(arg, poi_op) and is_firstly_used(arg, node):
-                            try_add_parallel_lists(arg, combinable_argidx, shared_to_combinelists, cat_dim)
+                            combo_manager.try_add_candidate(arg)
 
-                    for shared_args_kwargs, combinable_lists in shared_to_combinelists.items():
-                        for _, combinable_results in combinable_lists:
-                            if len(combinable_results) >= COMBINE_WIDTH:
-                                changed = True
-                                combinable_args = [
-                                    combinable_result.args[combinable_argidx]
-                                    for combinable_result in combinable_results
-                                ]
-                                do_stack = True
-                                if cat_dim is not None:
-                                    # Note: for concats, if all concated shapes are same,
-                                    #       we should use stack instead to avoid non-broadcastable cases
-                                    for combinable_result in combinable_results[1:]:
-                                        if (
-                                            combinable_result.meta["val"].shape[cat_dim]
-                                            != combinable_results[0].meta["val"].shape[cat_dim]
-                                        ):
-                                            do_stack = False
-                                            break
-                                with graph_module.graph.inserting_before(node):
-                                    if do_stack:
-                                        combinable_arg = graph_module.graph.call_function(
-                                            aten.stack.default,
-                                            args=(combinable_args,),
-                                        )
-                                    else:
-                                        combinable_arg = graph_module.graph.call_function(
-                                            aten.cat.default, args=(combinable_args,), kwargs={"dim": cat_dim}
-                                        )
-                                    shared_args, shared_kwargs = shared_args_kwargs
-                                    shared_args = (
-                                        tuple(shared_args[:combinable_argidx])
-                                        + (combinable_arg,)
-                                        + tuple(shared_args[combinable_argidx:])
-                                    )
-                                    combined_poi = graph_module.graph.call_function(
-                                        poi_op, args=shared_args, kwargs=shared_kwargs
-                                    )
-                                    if do_stack:
-                                        split_results = graph_module.graph.call_function(
-                                            aten.unbind.int, args=(combined_poi,)
-                                        )
-                                    else:
-                                        combined_sizes = [
-                                            result.meta["val"].shape[cat_dim] for result in combinable_results
-                                        ]
-                                        split_results = graph_module.graph.call_function(
-                                            aten.split_with_sizes.default,
-                                            args=(combined_poi, combined_sizes),
-                                            kwargs={"dim": cat_dim},
-                                        )
-                                    for combined_idx, combinable_result in enumerate(combinable_results):
-                                        split_result = graph_module.graph.create_node(
-                                            "call_function",
-                                            operator.getitem,
-                                            args=(split_results, combined_idx),
-                                            name=combinable_result.name + "_combined",
-                                        )
-                                        combinable_result.replace_all_uses_with(split_result)
-                                        graph_module.graph.erase_node(combinable_result)
+                    with graph_module.graph.inserting_before(node):
+                        for (
+                            orig_args,
+                            orig_results,
+                            combined_arg,
+                            combined_result,
+                            split_node,
+                        ) in combo_manager.generate_combined_results():
+                            changed = True
+
+                            for combined_idx, orig_result in enumerate(orig_results):
+                                split_result = graph_module.graph.create_node(
+                                    "call_function",
+                                    operator.getitem,
+                                    args=(split_node, combined_idx),
+                                    name=orig_result.name + "_combined",
+                                )
+                                orig_result.replace_all_uses_with(split_result)
+                                graph_module.graph.erase_node(orig_result)
 
         return changed

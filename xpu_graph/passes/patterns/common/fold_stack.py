@@ -33,14 +33,14 @@ class FoldStack(Pattern):
         elif "dim" in unbind_node.kwargs:
             unbind_dim = unbind_node.kwargs["dim"]
         if unbind_dim < 0:
-            unbind_dim += unbind_node.meta["val"].dim()
+            unbind_dim += len(unbind_node.args[0].meta["val"].shape)
         stack_dim = 0
         if len(stack_node.args) == 2:
             stack_dim = stack_node.args[1]
         elif "dim" in stack_node.kwargs:
             stack_dim = stack_node.kwargs["dim"]
         if stack_dim < 0:
-            stack_dim += stack_node.meta["val"].dim()
+            stack_dim += len(stack_node.meta["val"].shape)
 
         if unbind_dim == stack_dim:
             return gm.graph.call_function(
@@ -48,9 +48,13 @@ class FoldStack(Pattern):
                 args=(unbind_node.args[0],),
             )
         else:
+            if unbind_dim < stack_dim:
+                permutations = list(range(unbind_dim, stack_dim)) + [unbind_dim]
+            else:
+                permutations = [unbind_dim] + list(range(stack_dim, unbind_dim))
             return gm.graph.call_function(
-                torch.ops.aten.transpose.int,
-                args=(unbind_node.args[0], unbind_dim, stack_dim),
+                torch.ops.aten.permute.default,
+                args=(unbind_node.args[0], permutations),
             )
 
     def process(self, gm: fx.GraphModule):
