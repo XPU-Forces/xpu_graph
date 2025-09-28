@@ -96,11 +96,12 @@ class FusedCombineBmm(nn.Module):
             if len(bias_list[1].shape) == 1:
                 # bias_batch: [T, 1, N]
                 bias_batch = bias_batch.unsqueeze(1)
+            if len(bias_batch.shape) == 4:
+                bias_batch = bias_batch.view(-1, M, N)
             output = torch.bmm(input_batch, weight_batch) + bias_batch
         else:
             output = torch.bmm(input_batch, weight_batch)
 
-        output = torch.bmm(input_batch.view(-1, M, K), weight_batch.view(-1, K, N))
 
         if len(weight_shape) == 4:
             output = output.view(weight_shape[0], input_shape[1], M, N)
