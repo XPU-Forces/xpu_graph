@@ -213,6 +213,19 @@ def fn4_xfail(inputs, slice_):
     return output, output_1
 
 
+def fn5_symshape(inputs, slice_):
+    seq_len = inputs.size(0)
+    l0, l1, l2, l3 = seq_len // 4, (seq_len + 1) // 4, (seq_len + 2) // 4, (seq_len + 3) // 4
+    o0, o1, o2, o3 = 0, l0, l0 + l1, l0 + l1 + l2
+    a0 = slice_[o0:o1]
+    a1 = slice_[o1:o2]
+    a2 = slice_[o2:o3]
+    a3 = slice_[o3:]
+
+    res = torch.cat([a0 * 0.1, a1 * 0.1, a2 * 0.1, a3], dim=0).sum(dim=0)
+    return res
+
+
 def combine_pointwise_test(xpu_graph_backend, func, is_training=False):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
 
@@ -238,7 +251,16 @@ class TestCombinePointwiseSinkInference:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0_concat_varlen, fn0_output, fn1, fn2_concat_varlen, fn3, fn4, fn4_xfail],
+        [
+            fn0_concat_varlen,
+            fn0_output,
+            fn1,
+            fn2_concat_varlen,
+            fn3,
+            fn4,
+            fn4_xfail,
+            fn5_symshape,
+        ],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
@@ -262,7 +284,12 @@ class TestCombinePointwiseSinkTraining:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0_concat_varlen, fn0_output, fn1],
+        [
+            fn0_concat_varlen,
+            fn0_output,
+            fn1,
+            fn5_symshape,
+        ],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):

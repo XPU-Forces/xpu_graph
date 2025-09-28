@@ -9,6 +9,7 @@ from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ..utils.check_ops import check_op, get_input_node
 from ..utils.combo_utils import COMBINABLE_POI_OP_IDX, COMBINE_WIDTH, ComboManager
+from ..utils.shape_utils import SymShapeManager
 
 aten = torch.ops.aten
 
@@ -32,6 +33,7 @@ class CombinePointwiseSource(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
+        shape_manager = SymShapeManager(graph_module.graph)
         for node in reversed(graph_module.graph.nodes):
             if (
                 check_op(node, aten.unbind.int)
@@ -60,7 +62,7 @@ class CombinePointwiseSource(Pattern):
             else:
                 cat_dim = None
 
-            changed = self.process_candidates(graph_module, node, candidates, cat_dim) or changed
+            changed = self.process_candidates(graph_module, node, candidates, cat_dim, shape_manager) or changed
 
         placeholders = [
             node
@@ -68,17 +70,19 @@ class CombinePointwiseSource(Pattern):
             if node.op == "placeholder" and "val" in node.meta and isinstance(node.meta["val"], torch.Tensor)
         ]
         if len(placeholders) >= COMBINE_WIDTH:
-            changed = self.process_candidates(graph_module, None, placeholders, None) or changed
+            changed = self.process_candidates(graph_module, None, placeholders, None, shape_manager) or changed
 
         return changed
 
-    def process_candidates(self, graph_module, source_node, candidates, cat_dim):
+    def process_candidates(self, graph_module, source_node, candidates, cat_dim, shape_manager):
         changed = False
         extra_shape_check = source_node is None
 
         for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
             for combinable_argidx in combinable_argidxs:
-                combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check)
+                combo_manager = ComboManager(
+                    graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check, shape_manager
+                )
                 for cand in candidates:
                     for result_node in cand.users:
                         if get_input_node(result_node, combinable_argidx) is cand:

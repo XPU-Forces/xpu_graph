@@ -9,6 +9,7 @@ from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ..utils.check_ops import check_op, is_firstly_used
 from ..utils.combo_utils import COMBINABLE_POI_OP_IDX, COMBINE_WIDTH, ComboManager
+from ..utils.shape_utils import SymShapeManager
 
 aten = torch.ops.aten
 
@@ -34,6 +35,7 @@ class CombinePointwiseSink(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
+        shape_manager = SymShapeManager(graph_module.graph)
         for node in reversed(graph_module.graph.nodes):
             if (
                 check_op(node, aten.stack.default)
@@ -59,7 +61,9 @@ class CombinePointwiseSink(Pattern):
 
             for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
                 for combinable_argidx in combinable_argidxs:
-                    combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check)
+                    combo_manager = ComboManager(
+                        graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check, shape_manager
+                    )
                     for arg in node.args[0]:
                         if isinstance(arg, fx.Node) and check_op(arg, poi_op) and is_firstly_used(arg, node):
                             combo_manager.try_add_candidate(arg)

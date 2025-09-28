@@ -1,5 +1,5 @@
-import operator
 import os
+from typing import Optional
 
 import torch
 import torch.fx as fx
@@ -7,7 +7,7 @@ import torch.fx as fx
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
 from .check_ops import check_op
-from .shape_utils import same_shape
+from .shape_utils import SymShapeManager, same_shape
 
 
 def _fetch_combinable_ops_idx(config_str):
@@ -39,13 +39,22 @@ COMBINABLE_POI_OP_IDX = _fetch_combinable_ops_idx(
 
 
 class ComboManager:
-    def __init__(self, gm, combo_op, combo_argidx, concat_dim=None, extra_shape_check=False):
+    def __init__(
+        self,
+        gm: fx.GraphModule,
+        combo_op: torch._ops.OpOverload,
+        combo_argidx: int,
+        concat_dim: Optional[int] = None,
+        extra_shape_check: bool = False,
+        shape_mgr: Optional[SymShapeManager] = None,
+    ):
         self.graph_module = gm
         self.combo_op = combo_op
         self.combo_argidx = combo_argidx
         self.concat_dim = concat_dim
         self.shared_to_combinelists = {}
         self.extra_shape_check = extra_shape_check
+        self.shape_mgr = shape_mgr
 
     def check_compatible_shape(self, shape0, shape1):
         if self.concat_dim is None:
@@ -77,7 +86,8 @@ class ComboManager:
         if self.concat_dim is not None:
             if isinstance(combined_value.shape[self.concat_dim], torch.SymInt):
                 # symbolic shape cannot be concated as split_with_sizes needs concrete shape
-                return False
+                if self.shape_mgr is None or self.shape_mgr.get_shape_val(combined_value) is None:
+                    return False
 
         other_args_kwargs = (
             tuple(result_node.args[: self.combo_argidx]) + tuple(result_node.args[self.combo_argidx + 1 :]),
@@ -123,11 +133,16 @@ class ComboManager:
                             do_stack = False
                             break
                 if do_stack:
+                    combined_sizes = None
                     combined_arg = self.graph_module.graph.call_function(
                         torch.ops.aten.stack.default,
                         args=(orig_args,),
                     )
                 else:
+                    combined_sizes = [result.meta["val"].shape[self.concat_dim] for result in orig_results]
+                    combined_sizes = self.shape_mgr.rebind_shape(combined_sizes)
+                    if any(s is None for s in combined_sizes):
+                        continue
                     combined_arg = self.graph_module.graph.call_function(
                         torch.ops.aten.cat.default, args=(orig_args,), kwargs={"dim": self.concat_dim}
                     )
@@ -144,7 +159,6 @@ class ComboManager:
                         torch.ops.aten.unbind.int, args=(combined_result,)
                     )
                 else:
-                    combined_sizes = [result.meta["val"].shape[self.concat_dim] for result in orig_results]
                     split_node = self.graph_module.graph.call_function(
                         torch.ops.aten.split_with_sizes.default,
                         args=(combined_result, combined_sizes),
