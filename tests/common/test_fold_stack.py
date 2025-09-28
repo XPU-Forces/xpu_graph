@@ -28,13 +28,13 @@ def fn3(a):
 
 def fn4(a):
     outputs = a.unbind(dim=1)
-    output = torch.stack(outputs, dim=0)
+    output = torch.stack(outputs, dim=1)
     return output
 
 
 def fn4_xfail(a):
     outputs = a.unbind(dim=1)
-    output = torch.stack(outputs[:4], dim=0)
+    output = torch.stack(outputs[:4], dim=1)
     return output
 
 

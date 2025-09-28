@@ -55,9 +55,11 @@ class CombinePointwiseSink(Pattern):
             else:
                 cat_dim = None
 
+            extra_shape_check = node.op == "output"
+
             for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
                 for combinable_argidx in combinable_argidxs:
-                    combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim)
+                    combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check)
                     for arg in node.args[0]:
                         if isinstance(arg, fx.Node) and check_op(arg, poi_op) and is_firstly_used(arg, node):
                             combo_manager.try_add_candidate(arg)

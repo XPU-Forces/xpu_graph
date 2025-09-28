@@ -39,12 +39,25 @@ COMBINABLE_POI_OP_IDX = _fetch_combinable_ops_idx(
 
 
 class ComboManager:
-    def __init__(self, gm, combo_op, combo_argidx, concat_dim=None):
+    def __init__(self, gm, combo_op, combo_argidx, concat_dim=None, extra_shape_check=False):
         self.graph_module = gm
         self.combo_op = combo_op
         self.combo_argidx = combo_argidx
         self.concat_dim = concat_dim
         self.shared_to_combinelists = {}
+        self.extra_shape_check = extra_shape_check
+
+    def check_compatible_shape(self, shape0, shape1):
+        if self.concat_dim is None:
+            return same_shape(shape0, shape1)
+        elif -len(shape0) <= self.concat_dim < len(shape0) and -len(shape1) <= self.concat_dim < len(shape1):
+            shape0 = list(shape0)
+            shape1 = list(shape1)
+            shape0[self.concat_dim] = 1
+            shape1[self.concat_dim] = 1
+            return same_shape(shape0, shape1)
+        else:
+            return False
 
     def try_add_candidate(self, result_node):
         if (
@@ -73,13 +86,17 @@ class ComboManager:
 
         if other_args_kwargs in self.shared_to_combinelists:
             for example_val, combine_list in self.shared_to_combinelists[other_args_kwargs]:
-                if (
+                combinable = (
                     combined_value.device == example_val.device
                     and combined_value.dtype == example_val.dtype
                     and combined_value.requires_grad == example_val.requires_grad
-                    # Note: no need to check shape as is resricted by broadcast check
-                    # and same_shape(combined_value.shape, example_val.shape)
-                ):
+                )
+                if self.extra_shape_check:
+                    # Note: actually, this check is only for combining within outputs/inputs nodes
+                    # because they have no shape constraints
+                    combinable = combinable and self.check_compatible_shape(combined_value.shape, example_val.shape)
+
+                if combinable:
                     combine_list.append(result_node)
                     return True
             self.shared_to_combinelists[other_args_kwargs].append((combined_value, [result_node]))

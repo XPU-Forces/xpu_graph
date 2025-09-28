@@ -48,14 +48,7 @@ class FoldStack(Pattern):
                 args=(unbind_node.args[0],),
             )
         else:
-            if unbind_dim < stack_dim:
-                permutations = list(range(unbind_dim, stack_dim)) + [unbind_dim]
-            else:
-                permutations = [unbind_dim] + list(range(stack_dim, unbind_dim))
-            return gm.graph.call_function(
-                torch.ops.aten.permute.default,
-                args=(unbind_node.args[0], permutations),
-            )
+            return None
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -78,10 +71,11 @@ class FoldStack(Pattern):
             else:
                 unbind_src = find_common_src(inps, torch.ops.aten.unbind.int)
                 if unbind_src is not None:
-                    changed = True
                     with gm.graph.inserting_before(stack):
                         fold_res = self._get_fold_unbind_stack_result(gm, unbind_src, stack)
-                        stack.replace_all_uses_with(fold_res)
-                        gm.graph.erase_node(stack)
+                        if fold_res is not None:
+                            stack.replace_all_uses_with(fold_res)
+                            gm.graph.erase_node(stack)
+                            changed = True
 
         return changed

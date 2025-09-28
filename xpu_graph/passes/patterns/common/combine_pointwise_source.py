@@ -74,9 +74,11 @@ class CombinePointwiseSource(Pattern):
 
     def process_candidates(self, graph_module, source_node, candidates, cat_dim):
         changed = False
+        extra_shape_check = source_node is None
+
         for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
             for combinable_argidx in combinable_argidxs:
-                combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim)
+                combo_manager = ComboManager(graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check)
                 for cand in candidates:
                     for result_node in cand.users:
                         if get_input_node(result_node, combinable_argidx) is cand:
