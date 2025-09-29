@@ -73,6 +73,14 @@ def trace_and_inline(
     return inliner
 
 
+def fakify_tensors(full_args):
+    fake_mode = detect_fake_mode(full_args)
+    if fake_mode is None:
+        fake_mode = FakeTensorMode(shape_env=ShapeEnv())
+    fake_flat_args = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in full_args]
+    return fake_mode, fake_flat_args
+
+
 def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     params_flat, params_spec, full_args, aot_config = _collect_params_and_inputs_info(gm, example_inputs)
 
@@ -89,11 +97,8 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
 
     ctx = nullcontext if stage == FxStage.pregrad else torch.no_grad
     with ctx():
-        fake_mode = detect_fake_mode(full_args)
-        if fake_mode is None:
-            fake_mode = FakeTensorMode(shape_env=ShapeEnv())
+        fake_mode, fake_flat_args = fakify_tensors(full_args)
         shape_env = fake_mode.shape_env
-        fake_flat_args = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in full_args]
 
         dispatched_gm, fw_metadata = _invoke_dispatcher(
             flat_fn, fake_flat_args, fake_mode, shape_env, aot_config, stage
@@ -376,3 +381,13 @@ def _get_wrapped_constant(node: fx.Node):
             return node.item()
     else:
         assert False, "Cannot fetch wrapped constant from node: {}".format(node)
+
+
+def find_hop_nodes(graph: fx.Graph) -> bool:
+    """Check if the graph module contains higher-order operators."""
+    hop_nodes = []
+    for node in graph.nodes:
+        if node.op == "call_function":
+            if hasattr(node.target, "namespace") and node.target.namespace == "higher_order":
+                hop_nodes.append(node)
+    return hop_nodes
