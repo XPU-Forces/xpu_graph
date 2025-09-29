@@ -1,23 +1,38 @@
 import pytest
+import torch
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
-from tests.mlu.test_dist_train_utils import *
+import xpu_graph
+from tests.mlu.test_dist_train_utils import (
+    MainModel,
+    cleanup,
+    get_dp_dataloader,
+    set_dist_env,
+    set_seed,
+    train_setup,
+)
+from xpu_graph.config import OptLevel
+
+set_seed(12)
 
 
-def train(rank, world_size, do_compile, return_queue, model_path):
+def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     train_setup(rank, world_size)
-    model = MatMulModel(10)
+    model = ModCls()
     model.load_state_dict(torch.load(model_path))
     if do_compile:
         xpu_graph_backend = xpu_graph.mlu_compiler(is_training=True, freeze=False, opt_level=OptLevel.level2)
         model = torch.compile(model, backend=xpu_graph_backend, dynamic=False)
     model.mlu(rank)
-    fsdp_model = FSDP(model, use_orig_params=True)
+    model.inner = FSDP(model.inner, use_orig_params=True)
 
-    dataset = RandomDataset(size=10, length=1000)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    dataloader = get_dp_dataloader(rank, world_size)
 
     criterion = nn.MSELoss()
-    optimizer = optim.SGD(fsdp_model.parameters(), lr=0.01)
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
 
     final_loss = 0
     for epoch in range(5):
@@ -25,17 +40,17 @@ def train(rank, world_size, do_compile, return_queue, model_path):
             data, target = data.mlu(rank), target.mlu(rank)
 
             optimizer.zero_grad()
-            output = fsdp_model(data)
+            output = model(data)
             loss = criterion(output, target)
             loss.backward()
             optimizer.step()
 
             if batch_idx % 10 == 0 and rank == 0:
-                print(f"Epoch [{epoch}], Batch [{batch_idx}], Loss: {loss.cpu().item():.4f}")
+                print(f"Epoch [{epoch}], Batch [{batch_idx}], Loss: {loss.item():.4f}")
 
             final_loss = loss
 
-    return_queue.put((rank, final_loss.cpu().item()))
+    return_queue.put((rank, final_loss.item()))
     cleanup()
 
 
@@ -51,7 +66,7 @@ def fsdp_test(ModCls, model_path="fsdp_model.pth"):
     do_compile = 0
     torch.multiprocessing.spawn(
         train,
-        args=(world_size, do_compile, return_queue1, model_path),
+        args=(world_size, do_compile, return_queue1, ModCls, model_path),
         nprocs=world_size,
         join=True,
     )
@@ -63,7 +78,7 @@ def fsdp_test(ModCls, model_path="fsdp_model.pth"):
     do_compile = 1
     torch.multiprocessing.spawn(
         train,
-        args=(world_size, do_compile, return_queue2, model_path),
+        args=(world_size, do_compile, return_queue2, ModCls, model_path),
         nprocs=world_size,
         join=True,
     )
@@ -78,14 +93,14 @@ def fsdp_test(ModCls, model_path="fsdp_model.pth"):
 
 class TestFSDP:
     @pytest.mark.parametrize(
-        "pattern_func",
+        "PatternModel",
         [
-            MatMulModel,
+            MainModel,
         ],
     )
-    def test_rmsnorm_patterns(self, tmp_path, pattern_func):
-        fsdp_test(pattern_func, tmp_path / "fsdp_model.pth")
+    def test_fsdp(self, tmp_path, PatternModel):
+        fsdp_test(PatternModel, tmp_path / "fsdp_model.pth")
 
 
 if __name__ == "__main__":
-    fsdp_test(MatMulModel)
+    fsdp_test(MainModel)

@@ -20,12 +20,13 @@ from torch._functorch._aot_autograd.dispatch_and_compile_graph import (
 )
 from torch._functorch.aot_autograd import AOTConfig, create_functional_call
 from torch._guards import detect_fake_mode
-from torch._subclasses.fake_tensor import FakeTensorMode
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export.unflatten import _assign_attr, _AttrKind
 from torch.fx import map_arg
 from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.proxy import GraphAppendingTracer, Proxy
+from torch.utils._python_dispatch import is_traceable_wrapper_subclass_type
 
 from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var
 
@@ -77,7 +78,11 @@ def fakify_tensors(full_args):
     fake_mode = detect_fake_mode(full_args)
     if fake_mode is None:
         fake_mode = FakeTensorMode(shape_env=ShapeEnv())
-    fake_flat_args = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in full_args]
+    fake_mode.allow_non_fake_inputs = True
+    fake_flat_args = [
+        fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) and not isinstance(x, FakeTensor) else x
+        for x in full_args
+    ]
     return fake_mode, fake_flat_args
 
 
@@ -383,11 +388,23 @@ def _get_wrapped_constant(node: fx.Node):
         assert False, "Cannot fetch wrapped constant from node: {}".format(node)
 
 
-def find_hop_nodes(graph: fx.Graph) -> bool:
-    """Check if the graph module contains higher-order operators."""
-    hop_nodes = []
+def find_hop_nodes_or_subclass_inputs(gm: fx.GraphModule, inputs):
+    """Check if the graph module contains higher-order operators and subclass inputs."""
+
+    hops = {}
+    graph = gm.graph
     for node in graph.nodes:
         if node.op == "call_function":
             if hasattr(node.target, "namespace") and node.target.namespace == "higher_order":
-                hop_nodes.append(node)
-    return hop_nodes
+                if node.target not in hops:
+                    hops[node.target] = []
+                hops[node.target].append(node)
+
+    subclasses = {}
+    for i in inputs:
+        if isinstance(i, torch.Tensor) and is_traceable_wrapper_subclass_type(type(i)):
+            if type(i) not in subclasses:
+                subclasses[type(i)] = []
+            subclasses[type(i)].append(i)
+
+    return hops, subclasses
