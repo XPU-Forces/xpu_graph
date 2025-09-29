@@ -27,5 +27,7 @@
 
     ```
   目前我们仍然兼容原来的选项写法，但接下来三个版本后，我们将废弃原有的`use_custom_pool`字段，并不再新增npu compiler选项字段，请参考官方的选项用法。 #399
+- 在存在高阶op和subclass tensor的情况下，使用aot_autograd来进行编译，以避免dispatch失败。 #191
+
 ## Bug修复与其他改动
 -

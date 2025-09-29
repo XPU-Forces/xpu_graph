@@ -66,7 +66,12 @@ class XpuGraphConfig:
 
     # Users can enable interceptor to monitor the results of compiled graph
     enable_interceptor: Optional[str] = None
+
+    # Users can specify which patterns can be skipped
     skip_patterns: List[str] = field(default_factory=list)
+
+    # Whether to use legacy dispatchers in case of higher-order operators or subclass-tensors
+    fallback_legacy_dispatch: bool = False
 
     def _reset_config_with_env(self):
         import os
@@ -107,6 +112,11 @@ class XpuGraphConfig:
 
         if os.getenv(__XPU_GRAPH_ENVS__.skip_patterns) is not None:
             self.skip_patterns = os.getenv(__XPU_GRAPH_ENVS__.skip_patterns).split(",")
+
+        if os.getenv(__XPU_GRAPH_ENVS__.fallback_legacy_dispatch) is not None:
+            self.fallback_legacy_dispatch = get_bool_env_var(
+                __XPU_GRAPH_ENVS__.fallback_legacy_dispatch, self.fallback_legacy_dispatch
+            )
 
 
 cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)

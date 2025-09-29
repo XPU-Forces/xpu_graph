@@ -190,6 +190,7 @@ class __XPU_GRAPH_ENVS__:
     enable_interceptor = "XPUGRAPH_INTERCEPTOR"
     logs = "XPUGRAPH_LOGS"
     skip_patterns = "XPUGRAPH_DEBUG_SKIP_PATTERNS"
+    fallback_legacy_dispatch = "XPUGRAPH_FALLBACK_LEGACY_DISPATCH"
 
 
 def get_bool_env_var(name, default_value: bool):
