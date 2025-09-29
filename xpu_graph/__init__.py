@@ -98,6 +98,7 @@ _MLU_TRAIN_CONFIG = XpuGraphConfig(
     opt_level=OptLevel.level2,
     constant_folding=False,
     vendor_compiler_config={"mode": "default"},
+    fallback_legacy_dispatch=True,
 )
 
 _MLU_INFER_CONFIG = XpuGraphConfig(
@@ -109,4 +110,5 @@ _MLU_INFER_CONFIG = XpuGraphConfig(
     opt_level=OptLevel.level2,
     constant_folding=False,
     vendor_compiler_config={"mode": "reduce-overhead"},
+    fallback_legacy_dispatch=True,
 )
