@@ -137,6 +137,9 @@ class SerializeWrapper(torch.nn.Module):
             #   2. Example_inputs in post_compile actually leads to symint guards,
             #      but we choose to not produce extra guards
             if torch_version.startswith("2.5"):
+                tracing_context = torch._guards.TracingContext.try_get()
+                if tracing_context is not None and tracing_context.output_strides:
+                    tracing_context.output_strides.clear()
                 FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
             return SerializeWrapper(compiled_fn)
         elif cls == GraphModule:
