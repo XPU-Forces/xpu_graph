@@ -69,7 +69,7 @@ def set_dist_env():
     print(f'Setting master: {os.environ["MASTER_ADDR"]}:{os.environ["MASTER_PORT"]}')
 
 
-def train_setup(rank, world_size, mesh_shape=None, mesh_dim_names=None):
+def dist_setup(rank, world_size, mesh_shape=None, mesh_dim_names=None):
     set_seed(12)
     if mesh_shape is None:
         mesh_shape = (world_size,)

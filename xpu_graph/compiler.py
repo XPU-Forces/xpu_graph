@@ -156,12 +156,18 @@ class XpuGraph:
                 fallback_dispatch = True
 
         if fallback_dispatch:
-            xpu_gm = aot_autograd(
-                fw_compiler=_staged_compiler(FxStage.forward),
-                bw_compiler=_staged_compiler(FxStage.backward),
-                inference_compiler=_staged_compiler(FxStage.inference),
-                keep_inference_input_mutations=True,
-            )(dynamo_gm, example_inputs)
+            logger.debug(f"before compile: graph like:\n {dynamo_gm.graph}")
+            if self._config.is_training:
+                xpu_gm = aot_autograd(
+                    fw_compiler=_staged_compiler(FxStage.forward),
+                    bw_compiler=_staged_compiler(FxStage.backward),
+                    keep_inference_input_mutations=True,
+                )(dynamo_gm, example_inputs)
+            else:
+                xpu_gm = aot_autograd(
+                    fw_compiler=_staged_compiler(FxStage.inference),
+                    keep_inference_input_mutations=True,
+                )(dynamo_gm, example_inputs)
             fw_metadata = None
         elif self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
