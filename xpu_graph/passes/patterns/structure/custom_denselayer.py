@@ -77,6 +77,7 @@ class CustomDenseLayer(Pattern):
         self.constraint_fn = constraint_fn
 
     def process(self, graph_module: fx.GraphModule) -> bool:
+        return False
         fast_act = True if self._opt_level == OptLevel.level3 else False
         if not hasattr(graph_module, "custom_dense_layer_replacement"):
             graph_module.add_submodule("custom_dense_layer_replacement", self.target_mod(fast_act))
@@ -107,6 +108,7 @@ class CustomBatchDenseLayer(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
+        return False
         if not hasattr(graph_module, "custom_batch_dense_layer_replacement"):
             graph_module.add_submodule("custom_batch_dense_layer_replacement", self.target_mod())
         for node in reversed(graph_module.graph.nodes):
