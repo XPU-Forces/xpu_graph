@@ -191,6 +191,8 @@ class __XPU_GRAPH_ENVS__:
     interceptor_config = "XPUGRAPH_INTERCEPTOR_CONFIG"
     logs = "XPUGRAPH_LOGS"
     skip_patterns = "XPUGRAPH_DEBUG_SKIP_PATTERNS"
+    pointwise_combine_width = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_WIDTH"
+    pointwise_combine_ops_idx = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_OPS_IDX"
 
 
 def get_bool_env_var(name, default_value: bool):
@@ -205,3 +207,18 @@ def get_bool_env_var(name, default_value: bool):
             raise ValueError(f"Invalid value for {name}: {val}")
     else:
         return val
+
+
+def recursive_set_obj(src_dict: dict, tgt_obj):
+    # NOTE(liuyuan): If performance should be considered, sperate the following statements into two loops. Otherwise, let it be pythonic.
+    for k, v in src_dict.items():
+        if hasattr(tgt_obj, k) or (isinstance(tgt_obj, dict) and k in tgt_obj):
+            if isinstance(v, dict):
+                recursive_set_obj(v, getattr(tgt_obj, k) or tgt_obj[k])
+            else:
+                try:
+                    tgt_obj[k] = v
+                except TypeError:
+                    setattr(tgt_obj, k, v)
+                except Exception as e:
+                    raise e

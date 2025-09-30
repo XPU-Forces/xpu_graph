@@ -111,7 +111,8 @@ def compare_inference_compile(device, data_type, ModCls, backend, bsz=80, input_
     torch._dynamo.reset()
     golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
-    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
+
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=True)
     compiled.load_state_dict(golden.state_dict())
     compare_inference(device, data_type, golden, compiled, bsz, input_dim)
 

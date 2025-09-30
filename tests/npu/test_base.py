@@ -30,7 +30,7 @@ class TestGeAndAclGraphMode:
                     target=Target.npu,
                     freeze=True,  # WARNING(liuyuan): Critical for nn.Module with Parameter under pytorch 2.5-
                     debug=True,
-                    vendor_compiler_config={"mode": 1, "compiler": "ge"},
+                    vendor_compiler_config={"compiler": "ge"},
                 )
             ),
             dynamic=False,
