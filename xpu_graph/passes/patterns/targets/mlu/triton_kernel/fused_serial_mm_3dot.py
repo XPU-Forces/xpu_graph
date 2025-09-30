@@ -6,7 +6,6 @@ import torch_mlu
 import triton
 import triton.backends.mlu.driver as driver
 import triton.language as tl
-from triton.runtime import fast_libentry
 
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
@@ -45,7 +44,7 @@ def relu(x):
     return tl.maximum(x, zero)
 
 
-@fast_libentry()
+@libentry.libentry()
 @libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},
@@ -188,7 +187,7 @@ configs1 = [
 ]
 
 
-@fast_libentry()
+@libentry.libentry()
 @libentry.libtuner(
     configs=configs1,
     key=["M", "K1", "N1", "N2", "N3"],

@@ -4,7 +4,6 @@ import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from triton.runtime import fast_libentry
 
 from . import libentry
 from .get_mlu_devinfo import get_device_properties
@@ -85,7 +84,7 @@ def single_mul_sum_cat(
     tl.store(output_block_ptr, value, boundary_check=(0,))
 
 
-@fast_libentry()
+@libentry.libentry()
 @libentry.libtuner(
     configs=[
         triton.Config(
