@@ -4,7 +4,7 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
-from .linear_attention import attention
+from .linear_attention_kernel import attention
 
 
 @torch.library.custom_op(
