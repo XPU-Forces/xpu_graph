@@ -92,6 +92,7 @@ class TestPluginPattern:
                 # WARNING(liuyuan): MUST construct compiler just in time.
                 config = XpuGraphConfig(is_training=False, debug=True)
                 xpu_graph = XpuGraph(config)
+
                 compiled = torch.compile(another_one, backend=xpu_graph, dynamic=False)
 
                 # NOTE(liuyuan): DO NOT match with cosntraint0
@@ -241,7 +242,7 @@ class TestPluginPattern:
             def replace(x):
                 return x * 2
 
-            @register_this_as_plugin_pattern((torch.empty(10, 10),), replace, Target.none)
+            @register_this_as_plugin_pattern((torch.empty(10, 10),), replace, Target.none, ignore_literal=True)
             def pattern(x):
                 x = x.view(-1, 1)  # NOTE(liuyuan): Fake literal, best to be 1.
                 return (x,)
@@ -256,6 +257,7 @@ class TestPluginPattern:
 
             config = XpuGraphConfig(is_training=False, debug=True)
             xpu_graph = XpuGraph(config)
+
             # NOTE(liuyuan): expectedly, the pattern will be matched.
             compiled = torch.compile(true_func, backend=xpu_graph, dynamic=False)
             # NOTE(liuyuan): expectedly, the pattern will be MISmatched.
@@ -264,3 +266,65 @@ class TestPluginPattern:
             input_tensor = torch.rand(1024, 1024 * 1024)
             assert is_similar(compiled(input_tensor)[0], replace(input_tensor))
             assert is_similar(compiled_2(input_tensor)[0], replace(input_tensor)) == False
+
+    def test_literal_rewrite_basic(self, caplog):
+        with enable_plugin_patterns():
+
+            def replace(x, y):
+                return x * y
+
+            @register_this_as_plugin_pattern((torch.empty(10, 10), 3), replace, Target.none)
+            def pattern(x, y):
+                return (x + y,)
+
+            def test_func(x):
+                return x + 100
+
+            config = XpuGraphConfig(is_training=False, debug=True)
+            xpu_graph = XpuGraph(config)
+
+            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+
+            input_tensor = torch.rand(1024, 1024)
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100))
+
+    def test_literal_rewrite_complex(self, caplog):
+        with enable_plugin_patterns():
+
+            def replace(x, y, z):
+                return x * y * z
+
+            # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the wrong literal rewrite !!!!
+            @register_this_as_plugin_pattern((torch.empty(1, 1024), 1024, 300), replace, Target.none)
+            def pattern(x, y, z):
+                return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
+
+            def test_func(x):
+                return (x.view(-1, 1024)[0][0] * (x - 100)).add(100, alpha=3)
+
+            config = XpuGraphConfig(is_training=False, debug=True, enable_cache=False)
+            xpu_graph = XpuGraph(config)
+
+            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+
+            input_tensor = torch.rand(1024, 2048)
+
+            # NOTE(liuyuan): we MUST NOT use 1024 as literal input because it will cause the slice op with literal rewrite !!!!
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100, 3)) is False
+
+        with enable_plugin_patterns():
+            # NOTE(liuyuan): This is a good case compared to the one before.
+            @register_this_as_plugin_pattern((torch.empty(1, 1024), 3, 300), replace, Target.none)
+            def pattern(x, y, z):
+                return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
+
+            def test_func(x):
+                return (x.view(-1, 1024)[0][0] * (x - 100)).add(200, alpha=300000)
+
+            xpu_graph = XpuGraph(config)
+
+            compiled = torch.compile(test_func, backend=xpu_graph, dynamic=False)
+
+            input_tensor = torch.rand(1024, 2048)
+
+            assert is_similar(compiled(input_tensor), replace(input_tensor, 100, 300000)) is True

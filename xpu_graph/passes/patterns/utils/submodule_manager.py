@@ -1,13 +1,14 @@
 import torch
 import torch.fx
 
+from xpu_graph.fx_utils import get_disable_fake_mode
+
 
 def _gen_target_name(gm: torch.fx.GraphModule, target: str):
     *prefix, field = target.split(".")
 
     mod = gm
     for item in prefix:
-
         submod = getattr(mod, item, None)
 
         if submod is None:
@@ -39,18 +40,7 @@ def register_new_submodule(
 ):
     indexed_name = _gen_target_name(gm, target)
 
-    disable_fake_mode = None
-    from packaging import version
-
-    torch_version = version.parse(torch.__version__[:5])
-    if torch_version < version.parse("2.5"):
-        from torch.fx.experimental.proxy_tensor import (
-            maybe_disable_fake_tensor_mode as disable_fake_mode,
-        )
-    else:
-        from torch._subclasses.fake_tensor import (
-            unset_fake_temporarily as disable_fake_mode,
-        )
+    disable_fake_mode = get_disable_fake_mode()
     with disable_fake_mode():
         gm.add_submodule(indexed_name, modcls(*args, **kwargs))
 

@@ -4,18 +4,39 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    # paths_ignore:
-    # - /**/npu/**
-    # - /**/ascend/**
-    # - /**/*npu*
-    # - /**/*ascend*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/mlu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/mlu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/mlu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-mlu.yml'
   push:
     branches:
     - master
+    paths-ignore:
+    - 'docs/**'
+    - 'doc/**'
+    - 'README.md'
+    - 'tests/*/**'
+    - '!tests/common/**'
+    - '!tests/mlu/**'
+    - 'xpu_graph/backends/*.py'
+    - '!xpu_graph/backends/__init__.py'
+    - '!xpu_graph/backends/mlu.py'
+    - 'xpu_graph/passes/patterns/targets/*/**'
+    - '!xpu_graph/passes/patterns/targets/mlu/**'
+    - '.github/ISSUE_TEMPLATE/**'
+    - '.github/workflows/ci-for-*.yml'
+    - '!.github/workflows/ci-for-mlu.yml'
   workflow_dispatch:
 env:
   XPU_GPRAH_PROXY: ${{ secrets.XPU_GPRAH_PROXY }}
@@ -27,23 +48,35 @@ jobs:
     name: Run mlu tests
     runs-on: MLU
     container:
-      image: hub.byted.org/ci/xpu_graph:934ebcfdd670bcea94aa0a0ed247a576
+      image: hub.byted.org/ci/xpu_graph:c5672b8705309273fc76f33d6eeefcfd
       options: --privileged=true --ipc=host --pid=host --user root --network host
     steps:
     - uses: actions/checkout@v4
-    - name: Running mlu tests
+    - name: Build And Install Wheel Artifact
       shell: bash
+      # WARNING(liuyuan): This step is goddamn important for us to keep the release artifact available.
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
         pip install -e '.[dev]'
+        python3 -m build .
+        pip install dist/*.whl --force-reinstall --no-deps
+    - name: Running mlu tests
+      shell: bash
+      env:
+        COV_OMIT: "xpu_graph/backends/npu.py,xpu_graph/passes/patterns/targets/npu/*"
+      run: |
+        export DEV0=$(shuf -n 1 -e 0 2 4 6)
+        export DEV1=$(( $DEV0 + 1 ))
+        export MLU_VISIBLE_DEVICES=$DEV0,$DEV1
+        echo "MLU_VISIBLE_DEVICES: $MLU_VISIBLE_DEVICES"
         echo "Running MLU tests..."
-        python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu --cov=xpu_graph tests
+        python3 -m pytest --cov=xpu_graph tests/common tests/mlu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
-        flags: mlu
         name: mlu-codecov
-        use_pypi: true
         fail_ci_if_error: true
+        binary: /usr/local/bin/codecovcli # We have v11.0.3 installed whose binary is still codecovcli and it is called codecov-cli since v11.2.0
+        use_pypi: true
         verbose: true

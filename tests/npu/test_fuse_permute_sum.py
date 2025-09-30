@@ -1,8 +1,10 @@
 import torch
+import torch_npu
+
 import xpu_graph
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import is_similar
-import torch_npu
+
 
 def fn0(view_7, gather, gather_1, arg107_1, full_default):
     slice_3: "i64[11, 256]" = torch.ops.aten.slice.Tensor(arg107_1, 1, 0, 512)
@@ -18,7 +20,9 @@ def fn0(view_7, gather, gather_1, arg107_1, full_default):
     mul_4: "f16[11, 12, 256, 256]" = torch.ops.aten.mul.Tensor(add_4, 0.07216878364870322)
     add_5: "f16[11, 12, 256, 256]" = torch.ops.aten.add.Tensor(view_7, mul_4)
     add_6: "f16[11, 12, 256, 256]" = torch.ops.aten.add.Tensor(add_5, where)
-    convert_element_type_20: "f32[11, 12, 256, 256]" = torch.ops.prims.convert_element_type.default(add_6, torch.float32)
+    convert_element_type_20: "f32[11, 12, 256, 256]" = torch.ops.prims.convert_element_type.default(
+        add_6, torch.float32
+    )
     amax: "f32[11, 12, 256, 1]" = torch.ops.aten.amax.default(convert_element_type_20, [-1], True)
     sub_4: "f32[11, 12, 256, 256]" = torch.ops.aten.sub.Tensor(convert_element_type_20, amax)
     exp: "f32[11, 12, 256, 256]" = torch.ops.aten.exp.default(sub_4)
@@ -26,7 +30,6 @@ def fn0(view_7, gather, gather_1, arg107_1, full_default):
     div: "f32[11, 12, 256, 256]" = torch.ops.aten.div.Tensor(exp, sum_1)
     convert_element_type_21: "f16[11, 12, 256, 256]" = torch.ops.prims.convert_element_type.default(div, torch.float16)
     return convert_element_type_21
-
 
 
 def permute_sum_test(xpu_graph, func):
@@ -46,7 +49,5 @@ def permute_sum_test(xpu_graph, func):
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.npu_compiler(
-        opt_level=OptLevel.level2
-    )
+    xpu_graph_backend = xpu_graph.npu_compiler(opt_level=OptLevel.level2)
     permute_sum_test(xpu_graph_backend, fn0)

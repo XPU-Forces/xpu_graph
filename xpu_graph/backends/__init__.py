@@ -1,36 +1,23 @@
-from typing import Optional, Dict, Callable, Any
+import importlib
+from typing import Any, Callable, Dict, Optional
+
 import torch
+
 from xpu_graph.config import Target
 from xpu_graph.utils import logger
 
 
 def vendor_compiler(
-    gm: torch.fx.GraphModule,
-    fake_inputs: list,
-    target: Target,
-    config_dict: Optional[Dict[str, Any]],
-    **extra_kwargs
+    gm: torch.fx.GraphModule, fake_inputs: list, target: Target, **config_dict: Dict[str, Any]
 ) -> Callable:
-    if target == Target.ascend:
-        from .ascend import ascend_compile
+    try:
+        target_mod = importlib.import_module(f".{target.value}", __package__)
+    except Exception:
+        logger.warning(f"{target.value}_compiler not found, return gm")
+        return gm
 
-        logger.info("ascend_compile start...")
-        ascend_compiled = ascend_compile(gm, fake_inputs, config_dict, **extra_kwargs)
-        logger.info("ascend_compile complete")
-        return ascend_compiled
-    elif target == Target.npu:
-        from .npu import npu_compile
-
-        logger.info("npu_compile start...")
-        npu_compiled = npu_compile(gm, fake_inputs, config_dict, **extra_kwargs)
-        logger.info("npu_compile complete")
-        return npu_compiled
-    elif target == Target.mlu:
-        from .mlu import mlu_compile
-
-        logger.info("mlu_compile start...")
-        mlu_compiled = mlu_compile(gm, fake_inputs, config_dict, **extra_kwargs)
-        logger.info("mlu_compile complete")
-        return mlu_compiled
-
-    return gm
+    compile_fn = getattr(target_mod, f"{target.value}_compile")
+    logger.info(f"{target.value}_compile start...")
+    xpu_compiled = compile_fn(gm, fake_inputs, **config_dict)
+    logger.info(f"{target.value}_compile complete")
+    return xpu_compiled
