@@ -126,16 +126,96 @@ class TestTryCompile:
 
             assert hasattr(module.forward, "_wrapped_with_try_compile")
 
+            raised_msg = ""
             try:
-                with pytest.raises(RuntimeError, match="buggy compiler bw"):
-                    out = module.forward(input)
-                    out.sum(-1).pow(2).mean().backward()
-            except RuntimeError:
+                out = module.forward(input)
+                out.sum(-1).pow(2).mean().backward()
+            except RuntimeError as e:
+                raised_msg = str(e)
                 set_try_compile_mode(False)
                 module.zero_grad()
                 out = module.forward(input)
                 out.sum(-1).pow(2).mean().backward()
-                assert torch.allclose(module.linear.weight.grad, golden_grad)
+
+            assert "buggy compiler bw" in raised_msg
+            assert torch.allclose(module.linear.weight.grad, golden_grad)
+
+    def test_wrap_compile_with_single_layer(self):
+        torch.compile = ORIG_COMPILE_FUNC
+        torch._dynamo.reset()
+        set_try_compile_mode(True)
+
+        class Model1(torch.nn.Module):
+            def __init__(self, ctx):
+                super().__init__()
+                self.ctx = ctx
+                self.linear = torch.nn.Linear(10, 10)
+
+            def forward(self):
+                x = self.ctx["emb"]
+                return self.linear(x)
+
+        class NonReentrableModel(torch.nn.Module):
+            def __init__(self, ctx):
+                super().__init__()
+                self.embed = torch.nn.Embedding(10, 10)
+                self.checked = set([])
+                self.ctx = ctx
+
+            def forward(self):
+                x = self.ctx["inp"]
+                for i in x.tolist():
+                    if i in self.checked:
+                        raise ValueError("reentry")
+                    self.checked.add(i)
+                self.ctx["emb"] = self.embed(x)
+                return
+
+        class SeqModule(torch.nn.Module):
+            def __init__(self, ctx):
+                super().__init__()
+                self.model0 = NonReentrableModel(ctx)
+                self.model1 = Model1(ctx)
+
+            def forward(self):
+                self.model0()
+                return self.model1()
+
+        ctx = {}
+        module = SeqModule(ctx)
+        ctx_golden = {}
+        golden = SeqModule(ctx_golden)
+        golden.model0.load_state_dict(module.model0.state_dict())
+        golden.model1.load_state_dict(module.model1.state_dict())
+
+        input0 = torch.arange(0, 5)
+        input1 = torch.arange(5, 10)
+
+        raised_msg = ""
+        with patching_try_compile():
+            module.model1.forward = torch.compile(
+                module.model1.forward, backend=gen_buggy_compiler(raise_in_backward=True)
+            )
+            for inp in [input0, input1]:
+                golden.zero_grad()
+                ctx_golden["inp"] = inp
+                golden_out = golden()
+                golden_out.sum(-1).pow(2).mean().backward()
+                golden_grad = golden.model1.linear.weight.grad.clone()
+                module.zero_grad()
+                try:
+                    ctx["inp"] = inp
+                    out = module()
+                    out.sum(-1).pow(2).mean().backward()
+                except RuntimeError as e:
+                    raised_msg = str(e)
+                    set_try_compile_mode(False)
+                    module.model1.zero_grad()
+                    out = module.model1()
+                    out.sum(-1).pow(2).mean().backward()
+                assert torch.allclose(module.model1.linear.weight.grad, golden_grad)
+            assert "buggy compiler bw" in raised_msg
+            assert hasattr(module.model1.forward, "_wrapped_with_try_compile")
 
 
 class FaultyPattern(Pattern):
@@ -219,3 +299,7 @@ class TestTryCompileWithInterceptor:
             assert "diverges" not in caplog.text
             assert caplog.text.count("Monitored forward") == try_steps
             assert caplog.text.count("Monitored backward") == try_steps
+
+
+if __name__ == "__main__":
+    TestTryCompile().test_wrap_compile_with_single_layer()
