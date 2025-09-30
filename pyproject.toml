@@ -23,8 +23,10 @@ description = "A graph compiler based on Torch Dynamo."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-  'torch>=2.5.0a0,<2.8.0',
-  'dataclasses',
+  "torch>=2.5.0a0,<2.8.0",
+  "dataclasses",
+  "numpy",
+  "pyyaml",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -44,15 +46,42 @@ dev = [
     "setuptools >= 65",
     "build >= 1.2.2",
     "expecttest",
+    "pydot",
+]
+npu = [
+    "torch==2.7.1", # Change it if you wish to use another version.
+    "numpy<2",
+    "torch-npu", # DO NOT forget to change the version according to PyTorch and the source defined below.
+    "decorator",
+    "scipy",
+    "attrs",
+    "psutil",
+    "protobuf",
+    "byted-triton-x",
+    "pybind11",
 ]
 
 
 [project.urls]
-Homepage = "https://github.com/BD-Seed-HHW/xpu_graph"
-Issues = "https://github.com/BD-Seed-HHW/xpu_graph/issues"
+Homepage = "https://github.com/XPU-Forces/xpu_graph"
+Issues = "https://github.com/XPU-Forces/xpu_graph/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "xpu_graph.version.__version__"}
 
 [tool.setuptools.package-data]
 "xpu_graph" = ["RELEASE.md"]
+
+# UV section
+[[tool.uv.index]]
+url = "https://bytedpypi.byted.org/simple/"
+
+[[tool.uv.index]]
+name = "pytorch_cpu"
+url = "https://download.pytorch.org/whl/cpu"
+
+[tool.uv.sources]
+torch           = { index = "pytorch_cpu" }
+torchvision     = { index = "pytorch_cpu" }
+# DO NOT forget to change the verison here.
+torch_npu       = { url = "https://tosv.byted.org/obj/seed-hhw/xllm_xpu_plugin_ci/torch_npu-2.7.1.dev20250903-cp310-cp310-manylinux_2_28_x86_64.whl" }

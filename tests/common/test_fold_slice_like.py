@@ -31,6 +31,18 @@ class FoldableSliceScatter(torch.nn.Module):
         return result + view
 
 
+class FoldableSliceScatterFixed(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    @torch.no_grad()
+    def forward(self, base, view):
+        end = view.shape[self.dim]
+        result = torch.slice_scatter(base, view, self.dim, 0, end)
+        return result + view
+
+
 class TestFoldSlice:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig(is_training=False)
@@ -45,22 +57,24 @@ class TestFoldSlice:
             (noop_slice_1),
         ],
     )
-    def test_noop_slice_is_folded(self, testcase, caplog):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_noop_slice_is_folded(self, testcase, caplog, dynamic):
         expect = testcase(self.input_tensor)
 
         with need_xpu_graph_logs():
-            compiled_mod = torch.compile(testcase, backend=self.xpu_graph_backend, dynamic=False)
+            compiled_mod = torch.compile(testcase, backend=self.xpu_graph_backend, dynamic=dynamic)
             result = compiled_mod(self.input_tensor)
 
         assert is_similar(expect, result)
         assert "Pattern.FoldSliceLike changed graph" in caplog.text
 
-    def test_unnoop_slice_is_not_folded(self, caplog):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_unnoop_slice_is_not_folded(self, caplog, dynamic):
         mod = unnoop_slice
         expect = mod(self.input_tensor)
 
         with need_xpu_graph_logs():
-            compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=False)
+            compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=dynamic)
             result = compiled_mod(self.input_tensor)
 
         assert is_similar(expect, result)
@@ -73,8 +87,12 @@ class TestFoldSliceScatter:
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
     @pytest.mark.parametrize("dim", [0, 1, 2])
-    def test_foldable_slice_scatter(self, caplog, dim):
-        mod = FoldableSliceScatter(dim=dim, start=0)
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_foldable_slice_scatter(self, caplog, dim, dynamic):
+        if dynamic:
+            mod = FoldableSliceScatterFixed(dim=dim)
+        else:
+            mod = FoldableSliceScatter(dim=dim, start=0)
 
         base = torch.randn(8, 16, 32)
         view = torch.ones(8, 16, 32)
@@ -82,7 +100,7 @@ class TestFoldSliceScatter:
         expect = mod(base, view)
 
         with need_xpu_graph_logs():
-            compiled_mod = torch.compile(mod, backend=self.xpu_graph, dynamic=False)
+            compiled_mod = torch.compile(mod, backend=self.xpu_graph, dynamic=dynamic)
             result = compiled_mod(base, view)
 
         assert is_similar(result, expect)

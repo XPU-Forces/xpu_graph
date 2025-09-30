@@ -6,6 +6,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 
 from ..utils.check_ops import check_add_op, check_bmm_op
+from ..utils.shape_utils import same_shape
 
 
 def _is_baddbmm(
@@ -24,7 +25,7 @@ def _is_baddbmm(
             return False, ()
     if len(bmm_node.users) != 1:
         return False, ()
-    if node.meta["val"].shape != bmm_node.meta["val"].shape:
+    if not same_shape(node.meta["val"].shape, bmm_node.meta["val"].shape):
         return False, ()
 
     return True, (bias_node, input_node, weight_node)
@@ -41,7 +42,9 @@ class FusedBAddBMM(Pattern):
             if is_match:
                 bias_node, input_node, weight_node = bmm_inputs
                 with graph_module.graph.inserting_before(node):
-                    if isinstance(bias_node, float) or isinstance(bias_node, int):
+                    if isinstance(bias_node, (float, int)) or (
+                        isinstance(bias_node, fx.Node) and not isinstance(bias_node.meta["val"], torch.Tensor)
+                    ):
                         bias_node = graph_module.graph.create_node(
                             op="call_function",
                             target=torch.ops.aten.scalar_tensor.default,

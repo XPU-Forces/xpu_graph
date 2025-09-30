@@ -26,7 +26,7 @@ parser.add_argument(
     default=__version__,
     help="",
 )
-parser.add_argument("--repo", type=str, default="BD-Seed-HHW/xpu_graph", help="")
+parser.add_argument("--repo", type=str, default="XPU-Forces/xpu_graph", help="")
 parser.add_argument("--actions", type=str, choices=__ACTIONS__.keys(), default="release", help="")
 
 

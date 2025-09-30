@@ -144,13 +144,14 @@ def fn16(x):
     return input_list
 
 
-def slice_test(xpu_graph_backend, func):
+def slice_test(xpu_graph_backend, func, dynamic=True):
     for batch in (10, 512, 64, 31):
         if func in [fn16]:
             a = torch.randn(batch, 12, 43106).to(device=device)
         else:
             a = torch.randn(batch, 43106).to(device=device)
-        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res = compiled(a)[0]
         res1 = func(a)[0]
         assert torch.equal(res.cpu().float(), res1.cpu().float())
@@ -163,17 +164,17 @@ class TestSlice:
         )
 
     @pytest.mark.parametrize(
-        "pattern_func",
+        "pattern_func,dynamic",
         [
-            fn12,
-            fn13,
-            fn14,
-            fn15,
+            (fn12, False),
+            (fn13, True),
+            (fn14, False),
+            (fn15, True),
         ],
     )
-    def test_slice_patterns(self, caplog, pattern_func):
+    def test_slice_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            slice_test(self.xpu_graph_backend, pattern_func)
+            slice_test(self.xpu_graph_backend, pattern_func, dynamic)
         assert "Pattern.FusedSlice changed graph" in caplog.text
 
 
