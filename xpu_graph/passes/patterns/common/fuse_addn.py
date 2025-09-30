@@ -60,13 +60,13 @@ class FusedAddN(Pattern):
                     op="call_function",
                     target=torch.ops.aten.stack.default,
                     args=(add_list,),
-                    name=add.name + "_fusedadd_stack",
+                    name=add.name + "_fusedaddn_stack",
                 )
                 sum_node = graph_module.graph.create_node(
                     op="call_function",
                     target=torch.ops.aten.sum.dim_IntList,
                     args=(stack_node, [0]),
-                    name=add.name + "_fusedadd_sum",
+                    name=add.name + "_fusedaddn_sum",
                 )
                 add.replace_all_uses_with(sum_node)
                 changed = True
