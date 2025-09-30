@@ -1,8 +1,9 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.check_ops import check_cat_op
+from xpu_graph.passes.patterns.utils.check_ops import check_cat_op, find_common_src
 
 
 class FoldCat(Pattern):
@@ -19,15 +20,37 @@ class FoldCat(Pattern):
             args=(src,),
         )
 
+    def _get_fold_cat_split_result(self, gm: fx.GraphModule, split_node: fx.Node, cat_node: fx.Node):
+        split_dim = 0
+        if len(split_node.args) > 2:
+            split_dim = split_node.args[2]
+        elif "dim" in split_node.kwargs:
+            split_dim = split_node.kwargs["dim"]
+        if split_dim < 0:
+            split_dim += len(split_node.args[0].meta["val"].shape)
+        cat_dim = 0
+        if len(cat_node.args) > 1:
+            cat_dim = cat_node.args[1]
+        elif "dim" in cat_node.kwargs:
+            cat_dim = cat_node.kwargs["dim"]
+        if cat_dim < 0:
+            cat_dim += len(cat_node.meta["val"].shape)
+
+        if split_dim == cat_dim:
+            return gm.graph.call_function(
+                torch.ops.aten.clone.default,
+                args=(split_node.args[0],),
+            )
+        else:
+            return None
+
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [
-            node
-            for node in gm.graph.nodes
-            if node.op == "call_function" and node.target == torch.ops.aten.cat.default
+            node for node in gm.graph.nodes if node.op == "call_function" and node.target == torch.ops.aten.cat.default
         ]
 
-        for cat in candidates:
+        for cat in reversed(candidates):
             inps = cat.args[0]
             if len(inps) == 1:
                 changed = True
@@ -36,6 +59,15 @@ class FoldCat(Pattern):
                     fold_res = self._get_fold_result(gm, inps[0])
                 cat.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(cat)
+            else:
+                split_src = find_common_src(inps, torch.ops.aten.split_with_sizes.default)
+                if split_src is not None:
+                    with gm.graph.inserting_before(cat):
+                        fold_res = self._get_fold_cat_split_result(gm, split_src, cat)
+                        if fold_res is not None:
+                            cat.replace_all_uses_with(fold_res)
+                            gm.graph.erase_node(cat)
+                            changed = True
 
         return changed
 

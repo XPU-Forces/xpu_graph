@@ -21,6 +21,9 @@ import torch
 import torch_mlu
 import triton
 
+from xpu_graph.config import get_cache_dir
+from xpu_graph.utils import logger
+
 DEVICE_COUNT = torch.mlu.device_count()
 ATTRS = {
     (2, 2): 5,
@@ -34,27 +37,10 @@ version = triton.__version__.split(".")
 major_version, minor_version = eval(version[0]), eval(version[1])
 
 
-@functools.lru_cache(maxsize=None)  # this is the same as functools.cache in Python 3.9+
-def cache_dir_path() -> Path:
-    """Return the cache directory for generated files in libtuner."""
-    _cache_dir = os.environ.get("TRITON_CACHE_DIR")
-    if _cache_dir is None:
-        _cache_dir = Path.home() / ".xpugraph_libentry"
-    else:
-        _cache_dir = Path(_cache_dir)
-    return _cache_dir
-
-
-def cache_dir() -> Path:
-    """Return cache directory for generated files in libtuner. Create it if it does not exist."""
-    _cache_dir = cache_dir_path()
-    os.makedirs(_cache_dir, exist_ok=True)
-    return _cache_dir
-
-
 def config_cache_dir() -> Path:
-    _config_cache_dir = cache_dir() / "config_cache"
+    _config_cache_dir = Path(get_cache_dir()) / "config_cache"
     os.makedirs(_config_cache_dir, exist_ok=True)
+    logger.info(f"Save configs to cache dir: {_config_cache_dir}")
     return _config_cache_dir
 
 

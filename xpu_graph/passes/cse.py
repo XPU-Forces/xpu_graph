@@ -2,11 +2,11 @@ from typing import Callable
 
 import torch
 import torch.fx as fx
-from torch.utils._pytree import tree_flatten
 from torch.multiprocessing.reductions import StorageWeakRef
+from torch.utils._pytree import tree_flatten
 
+from xpu_graph.fx_utils import FxStage, has_storage
 from xpu_graph.passes.optimizer import Optimizer
-from xpu_graph.fx_utils import has_storage, FxStage
 
 aten = torch.ops.aten
 
@@ -47,9 +47,7 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
     hash_env = {}  # map from hash to a node in the new graph
     token_map = {}  # map from hash to token
 
-    from torch._inductor.pattern_matcher import (
-        compute_mutation_region_ids,
-    )
+    from torch._inductor.pattern_matcher import compute_mutation_region_ids
 
     # Compatible with version torch==2.3.1
     try:
@@ -66,27 +64,20 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
     # Make a set of separate storages returned from the output, which will be preserved
     # when pruning.  This prevents us from deduplicating returned tensors which have
     # experienced identical operations, but are separate data structures in eager mode.
-    output_node: fx.Node = list(fx_g.nodes)[-1]
+    output_node: fx.Node = next(iter(reversed(fx_g.nodes)))
     assert output_node.op == "output"
 
     output_storages = {
-        StorageWeakRef(n.meta["val"].untyped_storage())
-        for n in output_node.all_input_nodes
-        if has_storage(n)
+        StorageWeakRef(n.meta["val"].untyped_storage()) for n in output_node.all_input_nodes if has_storage(n)
     }
 
     output_storages_producers = set()
     for n in fx_g.nodes:
-        if (
-            has_storage(n)
-            and StorageWeakRef(n.meta["val"].untyped_storage()) in output_storages
-        ):
+        if has_storage(n) and StorageWeakRef(n.meta["val"].untyped_storage()) in output_storages:
             output_storages_producers.add(n)
             output_storages.remove(StorageWeakRef(n.meta["val"].untyped_storage()))
 
-    output_node_and_storage_producer = (
-        set(output_node.all_input_nodes) | output_storages_producers
-    )
+    output_node_and_storage_producer = set(output_node.all_input_nodes) | output_storages_producers
 
     for n in fx_g.nodes:
         # The placeholder, output, and get_attr nodes are copied to the new graph without change
@@ -133,9 +124,7 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
             # hash substituted args to a number, do not hash specs because specs are not hashable
             # We need to add type into hash to avoid situations like:
             # hash((primals_2, 1.0)) == hash((primals_2, 1))
-            hash_arg = hash(
-                (tuple((a, type(a)) for a in args), tuple((a, type(a)) for a in kwargs))
-            )
+            hash_arg = hash((tuple((a, type(a)) for a in args), tuple((a, type(a)) for a in kwargs)))
             hash_val = (n.target, hash_arg)
 
             # check if a node has a substitute and can be eliminated

@@ -26,11 +26,20 @@ parser.add_argument(
     default=__version__,
     help="",
 )
-parser.add_argument("--repo", type=str, default="BD-Seed-HHW/xpu_graph", help="")
+parser.add_argument("--repo", type=str, default="XPU-Forces/xpu_graph", help="")
 parser.add_argument("--actions", type=str, choices=__ACTIONS__.keys(), default="release", help="")
-parser.add_argument(
-    "--description", "-desc", type=str, dest="desc", nargs="?", default=f"Release xpu-graph {__version__}"
-)
+
+
+def read_file(path):
+    import os
+
+    assert os.path.exists(path)
+    with open(path, "r") as f:
+        return f.read()
+
+
+parser.add_argument("--description", "-desc", type=read_file, dest="desc", default=f"Release xpu-graph {__version__}")
+
 parser.add_argument(
     "--tagger",
     type=str,

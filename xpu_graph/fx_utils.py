@@ -7,6 +7,7 @@ from unittest.mock import patch
 import torch
 import torch.fx as fx
 import torch.utils._pytree as pytree
+from packaging import version
 from torch._decomp.decompositions_for_rng import PhiloxStateTracker
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.utils import preserve_rng_state
@@ -25,6 +26,8 @@ from torch.fx import map_arg
 from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.proxy import GraphAppendingTracer, Proxy
+
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var
 
 FX_COUNT = itertools.count()
 
@@ -76,7 +79,7 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     params_len = len(params_flat)
 
     # Use the config similar to aot_export_module
-    aot_config.is_export = True
+    aot_config.is_export = get_bool_env_var(__XPU_GRAPH_ENVS__.aot_config_is_export, True)
     aot_config.pre_dispatch = stage == FxStage.pregrad
     aot_config.no_tangents = True
     if decompositions is not None:
@@ -105,7 +108,7 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     dispatched_gm.recompile()
 
     fake_inputs = fake_flat_args[params_len:]
-    return dispatched_gm, fake_inputs
+    return dispatched_gm, fake_inputs, fw_metadata
 
 
 def find_nodes(graph, *, op: str, target=None):
@@ -205,9 +208,13 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
     # If any saved tensor hooks are active, we **don't** want to trace them.
     # Instead, we'll let them run at runtime, around the custom autograd.Function
     # that we generate in torch.compile.
-    with torch.autograd.set_multithreading_enabled(
-        False
-    ), preserve_rng_state(), fake_mode, python_dispatcher_mode, PhiloxStateTracker():
+    with (
+        torch.autograd.set_multithreading_enabled(False),
+        preserve_rng_state(),
+        fake_mode,
+        python_dispatcher_mode,
+        PhiloxStateTracker(),
+    ):
         with enable_python_dispatcher():
             with patch("torch.cuda.set_rng_state", lambda *args: None):
                 if hasattr(aot_config, "static_input_indices"):
@@ -345,3 +352,27 @@ def has_storage(node: fx.Node) -> bool:
         return False
 
     return True
+
+
+def get_disable_fake_mode():
+    torch_version = version.parse(torch.__version__[:5])
+    if torch_version < version.parse("2.5"):
+        from torch.fx.experimental.proxy_tensor import (
+            maybe_disable_fake_tensor_mode as disable_fake_mode,
+        )
+    else:
+        from torch._subclasses.fake_tensor import (
+            unset_fake_temporarily as disable_fake_mode,
+        )
+    return disable_fake_mode
+
+
+def _get_wrapped_constant(node: fx.Node):
+    if node.op == "call_function" and node.target == torch.ops.aten.scalar_tensor.default:
+        return node.args[0]
+    elif node.op == "get_attr":
+        with get_disable_fake_mode()():
+            node = getattr(node.graph.owning_module, node.target)
+            return node.item()
+    else:
+        assert False, "Cannot fetch wrapped constant from node: {}".format(node)

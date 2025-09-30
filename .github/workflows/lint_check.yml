@@ -11,12 +11,7 @@ defaults:
 jobs:
   run-tests:
     name: Run Lint Check
-    runs-on: NPU
-    container:
-      image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.2.rc1_py3.11_th26
-      volumes:
-      - /etc/localtime:/etc/localtime
-      options: --privileged=true --ipc=host --pid=host --user root
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Lint Check
@@ -27,6 +22,5 @@ jobs:
           bash scripts/commit_msg_check.sh ${PR_TITLE}
 
           echo "fetching the HEAD of origin target branch."
-          git config --global --add safe.directory /__w/xpu_graph/xpu_graph
           git fetch --depth=1 origin ${{ github.event.pull_request.base.ref }}
           bash scripts/lint_check.sh origin/${{ github.event.pull_request.base.ref }}

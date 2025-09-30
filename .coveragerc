@@ -1,0 +1,8 @@
+# .coveragerc
+
+[run]
+omit =
+    ${COV_OMIT}
+
+[report]
+skip_empty = True

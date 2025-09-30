@@ -1,17 +1,16 @@
+import logging
+import time
+from contextlib import contextmanager
+
 import torch
 from torch.testing._internal.common_utils import TestCase
-from .utils import logger
+
 from .cache import XpuGraphCache
 from .compiler import XpuGraph
-import logging
-from contextlib import contextmanager
-import time
 
 
 def is_similar(result, expected, rtol=0.01, atol=0.01):
-    return result.shape == expected.shape and torch.allclose(
-        result, expected, rtol, atol
-    )
+    return result.shape == expected.shape and torch.allclose(result, expected, rtol, atol)
 
 
 def maybe_similar(result, expected, rtol=0.01, atol=0.01):
@@ -26,9 +25,7 @@ def aggregate_similar(result, expected, rtol=0.01, atol=0.01):
             return False
         if len(result) != len(expected):
             return False
-        return all(
-            [aggregate_similar(r, e, rtol, atol) for r, e in zip(result, expected)]
-        )
+        return all([aggregate_similar(r, e, rtol, atol) for r, e in zip(result, expected)])
     else:
         return is_similar(result, expected, rtol, atol)
 
@@ -50,9 +47,7 @@ def assertTensorsEqual(
         b = b.float()
     epsilon = 1.0 / 16384
     tc.assertEqual(a.size(), b.size(), message)
-    assert isinstance(a, torch.Tensor) and isinstance(
-        b, torch.Tensor
-    ), "a and b are need be torch tensor."
+    assert isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor), "a and b are need be torch tensor."
     if a.numel() > 0:
         # check that NaNs are in the same locations
         nan_mask = a != a
@@ -106,37 +101,38 @@ def assertTensorsEqual(
             tc.assertLessEqual(max_err, prec, message)
 
 
-class need_xpu_graph_logs:
-    def __init__(self):
-        self.original_propagate = logger.propagate
-        self.original_level = logger.level
+@contextmanager
+def need_xpu_graph_logs():
+    xpugraph_logger = logging.getLogger("xpu_graph")
+    original_propagate = xpugraph_logger.propagate
+    original_level = xpugraph_logger.level
 
-    def __enter__(self):
-        logger.propagate = True
-        logger.setLevel(logging.DEBUG)
-        return self
+    try:
+        xpugraph_logger.propagate = True
+        xpugraph_logger.setLevel(logging.DEBUG)
+        yield
+    finally:
+        xpugraph_logger.propagate = original_propagate
+        xpugraph_logger.setLevel(original_level)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        logger.propagate = self.original_propagate
-        logger.setLevel(self.original_level)
 
+@contextmanager
+def skip_xpu_graph_cache(xpu_graph_backend: XpuGraph):
+    cache = xpu_graph_backend._cache
 
-class skip_xpu_graph_cache:
-    def __init__(self, xpu_graph_backend: XpuGraph):
-        self.backend = xpu_graph_backend
-        self.cache = xpu_graph_backend._cache
-
-    def __enter__(self):
+    try:
         # Use base cache to skip save/load
-        self.backend._cache = XpuGraphCache()
-        return self
+        torch._dynamo.reset_code_caches()
+        xpu_graph_backend._cache = XpuGraphCache()
+        yield
+    finally:
+        xpu_graph_backend._cache = cache
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.backend._cache = self.cache
 
 def timeit(func, *args, **kwargs):
     def wrap(*args, **kwargs):
         start = time.time()
         result = func(*args, **kwargs)
         return result, time.time() - start
+
     return wrap

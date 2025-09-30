@@ -1,8 +1,11 @@
+import os
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional
+
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
 
 class Target(Enum):
@@ -39,16 +42,16 @@ class XpuGraphConfig:
     opt_level: OptLevel = field(default_factory=lambda: OptLevel.level1)
     dump_graph: bool = False
     enable_cache: bool = True
-    use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = (
         # Only take effects when "is_training" is False.
         # Freezing parameter will change model's parameter from inputs into attributes.
         # This may help XpuGraph do better constant folding.
+        # WARNING: DO NOT freeze if you need to UPDATE your parameters
         False
     )
     constant_folding: bool = True
     folding_freezed_params: bool = (
-        # Only take effects whe freeze is True and constant_folding is True
+        # (Experimental) Only take effects whe freeze is True and constant_folding is True
         # When freeze is True, params exists as attributes in GraphModule.
         # If folding_freezed_params is True, XpuGraph will treat freezed parameters as constants and fold them
         # If folding_freezed_params is False, XpuGraph will not fold freezed parameters and allow parameter hot-swapping
@@ -61,13 +64,17 @@ class XpuGraphConfig:
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
     vendor_compiler_config: Optional[Dict[str, Any]] = None
 
+    # Users can enable interceptor to monitor the results of compiled graph
+    enable_interceptor: Optional[str] = None
+    skip_patterns: List[str] = field(default_factory=list)
+
     def _reset_config_with_env(self):
         import os
 
-        if os.getenv("XPUGRAPH_DEBUG") is not None:
-            self.debug = os.getenv("XPUGRAPH_DEBUG", "0") == "1"  # 1: enable 0: disable
+        if os.getenv(__XPU_GRAPH_ENVS__.debug) is not None:
+            self.debug = get_bool_env_var(__XPU_GRAPH_ENVS__.debug, False)
 
-        opt_level_env = os.getenv("XPUGRAPH_OPT_LEVEL", str(self.opt_level.value))
+        opt_level_env = os.getenv(__XPU_GRAPH_ENVS__.opt_level, str(self.opt_level.value))
         if opt_level_env == "0":
             self.opt_level = OptLevel.level0
         elif opt_level_env == "1":
@@ -79,7 +86,7 @@ class XpuGraphConfig:
         else:
             warnings.warn("Illegal XPUGRAPH_OPT_LEVEL value, XPUGRAPH_OPT_LEVEL will not take effect.")
 
-        vendor_compiler_mode = os.getenv("VENDOR_COMPILER_MODE", "Null")
+        vendor_compiler_mode = os.getenv(__XPU_GRAPH_ENVS__.vendor_compiler_mode, "Null")
         if vendor_compiler_mode != "Null":
             if vendor_compiler_mode == "none":
                 self.vendor_compiler_config = None
@@ -94,3 +101,37 @@ class XpuGraphConfig:
                     warnings.warn("Illegal VENDOR_COMPILER_MODE value, VENDOR_COMPILER_MODE will not take effect.")
                 else:
                     self.vendor_compiler_config = {"mode": vendor_compiler_mode}
+
+        if os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor) is not None:
+            self.enable_interceptor = os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor)
+
+        if os.getenv(__XPU_GRAPH_ENVS__.skip_patterns) is not None:
+            self.skip_patterns = os.getenv(__XPU_GRAPH_ENVS__.skip_patterns).split(",")
+
+
+cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)
+
+
+def get_cache_dir():
+    global cache_path
+    if cache_path is None:
+        import tempfile
+
+        cache_path = tempfile.mkdtemp(prefix="xpugraph_")
+        os.environ[__XPU_GRAPH_ENVS__.cache_dir] = cache_path
+        logger.debug(f"Use {cache_path} as default local cache")
+    return cache_path
+
+
+dump_path = os.getenv(__XPU_GRAPH_ENVS__.dump_dir)
+
+
+def get_dump_dir():
+    global dump_path
+    if dump_path is None:
+        import tempfile
+
+        dump_path = tempfile.mkdtemp(prefix="xpugraph_")
+        os.environ[__XPU_GRAPH_ENVS__.dump_dir] = dump_path
+        logger.debug(f"Use {dump_path} as default dump path")
+    return dump_path
