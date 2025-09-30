@@ -21,9 +21,21 @@ def fn2(a):
 
 
 def fn3(a):
-    a = torch.stack([a])
+    outputs = a.unbind()
+    output = torch.stack(outputs)
+    return output
 
-    return torch.stack([a])
+
+def fn4(a):
+    outputs = a.unbind(dim=1)
+    output = torch.stack(outputs, dim=1)
+    return output
+
+
+def fn4_xfail(a):
+    outputs = a.unbind(dim=1)
+    output = torch.stack(outputs[:4], dim=1)
+    return output
 
 
 def stack_test(xpu_graph, func, dynamic):
@@ -47,6 +59,8 @@ class TestStack:
             fn1,
             fn2,
             fn3,
+            fn4,
+            fn4_xfail,
         ],
     )
     @pytest.mark.parametrize(
@@ -59,7 +73,10 @@ class TestStack:
     def test_stack_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
             stack_test(self.xpu_graph, pattern_func, dynamic)
-        assert "Pattern.FoldStack changed graph" in caplog.text
+        if "xfail" in pattern_func.__name__:
+            assert "Pattern.FoldStack changed graph" not in caplog.text
+        else:
+            assert "Pattern.FoldStack changed graph" in caplog.text
 
 
 if __name__ == "__main__":
@@ -68,3 +85,5 @@ if __name__ == "__main__":
     stack_test(xpu_graph, fn0)
     stack_test(xpu_graph, fn1)
     stack_test(xpu_graph, fn2)
+    stack_test(xpu_graph, fn3)
+    stack_test(xpu_graph, fn4)

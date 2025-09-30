@@ -28,8 +28,22 @@ def fn1(input):
     return torch.cat([input], dim=1)
 
 
-def fn2(input):
-    return torch.cat([torch.cat([input], dim=1)])
+def fn2(a):
+    outputs = a.split([2, 5, a.shape[-1] - 7], dim=-1)
+    output = torch.cat(outputs, dim=-1)
+    return output
+
+
+def fn2_xfail(a):
+    outputs = a.split([5, 5], dim=0)
+    output = torch.cat(outputs, dim=-1)
+    return output
+
+
+def fn2_xfail2(a):
+    outputs = a.split([2, 5, 3])
+    output = torch.cat(outputs[:2])
+    return output
 
 
 def cat_test(xpu_graph, func, dynamic):
@@ -60,16 +74,16 @@ class TestFoldCat:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [
-            fn1,
-            fn2,
-        ],
+        [fn1, fn2, fn2_xfail, fn2_xfail2],
     )
     @pytest.mark.parametrize("dynamic", [False, True])
     def test_cat_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs():
             cat_test(self.xpu_graph, pattern_func, dynamic)
-            assert "Pattern.FoldCat changed graph" in caplog.text
+            if "xfail" in pattern_func.__name__:
+                assert "Pattern.FoldCat changed graph" not in caplog.text
+            else:
+                assert "Pattern.FoldCat changed graph" in caplog.text
 
 
 if __name__ == "__main__":

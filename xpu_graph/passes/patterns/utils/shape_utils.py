@@ -22,11 +22,11 @@ class SymShapeManager:
             return int(sym_num.node.expr)
         if sym_num.node.expr in self.sym_shape_node_map:
             return self.sym_shape_node_map[sym_num.node.expr]
-        return sym_num
+        return None
 
     def rebind_shape(self, shape):
         bind_shape = [self.get_shape_val(s) for s in shape]
-        if any(isinstance(s, torch.SymInt) for s in bind_shape):
+        if any(s is None for s in bind_shape):
             logger.debug("Cannot find binding for shape sympy expr, shape: %s, (partial result: %s)", shape, bind_shape)
             return None
         return bind_shape
