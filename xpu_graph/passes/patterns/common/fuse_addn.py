@@ -1,15 +1,14 @@
-from typing import Callable, List, Optional, Tuple, Union
-
 import torch
-import torch.nn.functional as F
-from torch import fx, nn
+from torch import fx
 
 from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.utils import logger
 
-from ..utils.check_ops import check_add_op, check_mm_op, check_view, get_shape
+from ..utils.check_ops import check_op, get_shape
+from ..utils.shape_utils import same_shape
+
+FUSED_ADDN_LIMIT = 4
 
 
 class FusedAddN(Pattern):
@@ -21,18 +20,21 @@ class FusedAddN(Pattern):
     c = add(b, x4)
     -->
     stack([x1, x2, x3, x4]).sum(dim=[0])
+
+    # Note: only left adder is considered because of accumulate-order
     """
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
-        add_tup = (
-            torch.ops.aten.add.Tensor,
-            torch.ops.aten.add.Scalar,
-        )
         candidates = [
             node
             for node in reversed(graph_module.graph.nodes)
-            if node.op == "call_function" and node.target in add_tup and isinstance(node.args[1], fx.Node)
+            if node.op == "call_function"
+            and check_op(node, torch.ops.aten.add.Tensor)
+            and isinstance(node.args[1], fx.Node)
+            and isinstance(node.args[1].meta["val"], torch.Tensor)
+            and same_shape(get_shape(node.args[0]), get_shape(node.args[1]))
+            and node.args[0].meta["val"].dtype == node.args[1].meta["val"].dtype
         ]
 
         for add in candidates:
@@ -46,23 +48,12 @@ class FusedAddN(Pattern):
                     delete_list.append(inp0)
                     n = inp0
                 else:
+                    add_list.append(inp0)
                     break
-            add_list.append(n.args[0])
-            if len(add_list) < 4:
+            if len(add_list) < FUSED_ADDN_LIMIT:
                 continue
 
             add_list = list(reversed(add_list))
-
-            # assert the same shape
-            shape0 = get_shape(add_list[0])
-            shapes_compatible = True
-            for operand in add_list[1:]:
-                shape_i = get_shape(operand)
-                if shape0 != shape_i:
-                    shapes_compatible = False
-                    break
-            if not shapes_compatible:
-                continue
 
             with graph_module.graph.inserting_before(add):
                 stack_node = graph_module.graph.create_node(
@@ -82,6 +73,4 @@ class FusedAddN(Pattern):
                 for add_node in delete_list:
                     if len(add_node.users) == 0:
                         graph_module.graph.erase_node(add_node)
-            if changed:
-                print(graph_module.graph)
         return changed
