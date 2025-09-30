@@ -1,4 +1,4 @@
-# Release 0.5.1
+# Release 0.5.2
 
 ## 主要依赖库版本描述
 - python 3.9 或者更高
@@ -28,6 +28,7 @@
     ```
   目前我们仍然兼容原来的选项写法，但接下来三个版本后，我们将废弃原有的`use_custom_pool`字段，并不再新增npu compiler选项字段，请参考官方的选项用法。 #399
 - 增加对横向融合pattern的支持，可以将多个无依赖的pointwise算子融合成一次调用，减少host开销。 #390
+- 增加AddN pattern，将多次add融合为stack sum。 #248
 
 ## Bug修复与其他改动
 -
