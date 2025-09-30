@@ -46,9 +46,7 @@ class FoldCat(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        candidates = [
-            node for node in gm.graph.nodes if node.op == "call_function" and node.target == torch.ops.aten.cat.default
-        ]
+        candidates = [node for node in gm.graph.nodes if check_cat_op(node)[0]]
 
         for cat in reversed(candidates):
             inps = cat.args[0]

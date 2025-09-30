@@ -207,7 +207,7 @@ def check_softmax_op(node: fx.Node) -> bool:
 
 
 def check_cat_op(node: fx.Node):
-    is_cat = check_op(node, aten.cat.default)
+    is_cat = check_op(node, aten.cat.default) or check_op(node, aten.concat.default)
     if is_cat:
         if len(node.args) == 1:
             return True, 0
