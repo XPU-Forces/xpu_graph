@@ -454,12 +454,16 @@ class LibEntry(triton.KernelInterface):
         return kernel, constexprs
 
 
-def libentry():
-    """
-    Decorator for triton library entries.
-    """
+try:
+    from triton.runtime import fast_libentry as libentry
+except ImportError:
 
-    def decorator(fn):
-        return LibEntry(fn)
+    def libentry():
+        """
+        Decorator for triton library entries.
+        """
 
-    return decorator
+        def decorator(fn):
+            return LibEntry(fn)
+
+        return decorator

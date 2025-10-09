@@ -191,6 +191,8 @@ class __XPU_GRAPH_ENVS__:
     logs = "XPUGRAPH_LOGS"
     skip_patterns = "XPUGRAPH_DEBUG_SKIP_PATTERNS"
     fallback_legacy_dispatch = "XPUGRAPH_FALLBACK_LEGACY_DISPATCH"
+    pointwise_combine_width = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_WIDTH"
+    pointwise_combine_ops_idx = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_OPS_IDX"
 
 
 def get_bool_env_var(name, default_value: bool):

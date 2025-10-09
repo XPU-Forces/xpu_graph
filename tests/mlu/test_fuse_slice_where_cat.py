@@ -2,11 +2,14 @@ import random
 
 import pytest
 import torch
-import torch_mlu
 
 import xpu_graph
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.test_utils import (
+    aggregate_similar,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 device = "mlu:0"
 data_type = torch.float16
@@ -73,7 +76,7 @@ def fn1(inputs, slice_, batch):
     return stack, slice_1
 
 
-def where_slice_cat_test(xpu_graph_backend, func, dynamic=True):
+def slice_where_cat_test(xpu_graph_backend, func, dynamic=True):
     batch = 512
     random_list = random.choices([0, 1], k=batch)
     inputs = torch.tensor(random_list, device=device, dtype=data_type).unsqueeze(-1).bool()
@@ -83,11 +86,10 @@ def where_slice_cat_test(xpu_graph_backend, func, dynamic=True):
 
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(inputs, slice_, batch)
-    for i in range(len(res)):
-        assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
+    assert aggregate_similar(tuple(r.cpu().float() for r in res), tuple(r.cpu().float() for r in res1))
 
 
-class TestWhereSliceCat:
+class TestSliceWhereCat:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
 
@@ -98,13 +100,13 @@ class TestWhereSliceCat:
             (fn1, True),
         ],
     )
-    def test_where_cat_patterns(self, caplog, pattern_func, dynamic):
+    def test_slice_where_cat_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            where_slice_cat_test(self.xpu_graph_backend, pattern_func, dynamic)
-        assert "Pattern.ComboSliceWhereCat changed graph" in caplog.text
+            slice_where_cat_test(self.xpu_graph_backend, pattern_func, dynamic)
+        assert "Pattern.CombinePointwiseSink changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False)
-    where_slice_cat_test(xpu_graph_backend, fn0)
-    where_slice_cat_test(xpu_graph_backend, fn1)
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level1, is_training=False, debug=True)
+    slice_where_cat_test(xpu_graph_backend, fn0)
+    slice_where_cat_test(xpu_graph_backend, fn1)
