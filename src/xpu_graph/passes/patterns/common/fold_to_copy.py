@@ -47,10 +47,10 @@ class FoldToCopy(Pattern):
             if "pin_memory" in copy.kwargs or "non_blocking" in copy.kwargs:
                 return False
             if "memory_format" in copy.kwargs:
-                return (
-                    "tensor_meta" in inp.meta
-                    and "tensor_meta" in copy.meta
-                    and inp.meta["tensor_meta"].memory_format == copy.meta["tensor_meta"].memory_format
+                copy_memory_format = copy.kwargs["memory_format"]
+                return copy_memory_format == torch.preserve_format or (
+                    inp.meta["val"].layout == torch.strided
+                    and inp.meta["val"].is_contiguous(memory_format=copy_memory_format)
                 )
             return True
 
