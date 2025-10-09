@@ -50,6 +50,7 @@ class FoldToCopy(Pattern):
                 copy_memory_format = copy.kwargs["memory_format"]
                 return copy_memory_format == torch.preserve_format or (
                     inp.meta["val"].layout == torch.strided
+                    and not inp.meta["val"]._has_symbolic_sizes_strides
                     and inp.meta["val"].is_contiguous(memory_format=copy_memory_format)
                 )
             return True

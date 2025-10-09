@@ -33,6 +33,7 @@ class FoldClone(Pattern):
             target_memoryformat = clone.kwargs.get("memory_format", torch.preserve_format)
             if target_memoryformat == torch.preserve_format or (
                 inp.meta["val"].layout == torch.strided
+                and not inp.meta["val"]._has_symbolic_sizes_strides
                 and inp.meta["val"].is_contiguous(memory_format=target_memoryformat)
             ):
                 changed = True
