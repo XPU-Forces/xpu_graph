@@ -50,8 +50,11 @@ def get_input_kw_node(node, key):
     return None
 
 
-def get_actual_node(node, idx):
-    new_node = node.args[idx]
+def get_actual_node(node, idx=None):
+    if idx is None:
+        new_node = node
+    else:
+        new_node = node.args[idx]
     changed1 = True
     while changed1:
         changed1 = False
@@ -72,6 +75,10 @@ def check_op(node: fx.Node, target) -> bool:
 
 def check_sqrt_op(node: fx.Node) -> bool:
     return check_op(node, aten.sqrt.default)
+
+
+def check_square_op(node: fx.Node) -> bool:
+    return check_op(node, aten.square.default)
 
 
 def check_rsqrt_op(node: fx.Node) -> bool:
@@ -200,7 +207,7 @@ def check_softmax_op(node: fx.Node) -> bool:
 
 
 def check_cat_op(node: fx.Node):
-    is_cat = check_op(node, aten.cat.default)
+    is_cat = check_op(node, aten.cat.default) or check_op(node, aten.concat.default)
     if is_cat:
         if len(node.args) == 1:
             return True, 0
@@ -285,14 +292,14 @@ def check_unsqueeze_op(node: fx.node) -> bool:
     return check_op(node, aten.unsqueeze.default)
 
 
-def check_norm_op(node: fx.node):
+def check_norm_module(node: fx.node):
     if not isinstance(node, fx.Node):
         return False, None
-    if not (node.op == "call_function" or node.op == "call_module"):
+    if node.op != "call_module":
         return False, None
-    if node.target == aten.native_layer_norm.default:
+    if node.target == "fused_layer_norm" or node.target == "custom_layer_norm":
         return True, "layer_norm"
-    if node.target == "rms_norm_op":
+    if node.target == "fused_rms_norm" or node.target == "custom_rms_norm":
         return True, "rms_norm"
     return False, None
 
@@ -301,6 +308,17 @@ def check_addmm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
     if not check_op(node, aten.addmm.default):
+        return False, None, None, None
+    arg1 = get_input_node(node, 0)
+    arg2 = get_input_node(node, 1)
+    arg3 = get_input_node(node, 2)
+    return True, arg1, arg2, arg3
+
+
+def check_baddbmm_op(
+    node: fx.Node,
+) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
+    if not check_op(node, aten.baddbmm.default):
         return False, None, None, None
     arg1 = get_input_node(node, 0)
     arg2 = get_input_node(node, 1)
@@ -352,3 +370,37 @@ def is_one_like(node: Any) -> bool:
             aten.ones_like.default,
         )
     return False
+
+
+def is_type_cast(node: Any) -> bool:
+    if check_copy(node):
+        return len(node.kwargs) == 1 and "dtype" in node.kwargs
+    elif check_op(node, aten.to.dtype):
+        return True
+    return False
+
+
+def is_exclusively_used(used: fx.Node, user: fx.Node):
+    return all(cand is user for cand in used.users)
+
+
+def is_firstly_used(used: fx.Node, user: fx.Node) -> bool:
+    return all(cand >= user for cand in used.users)
+
+
+def find_common_src(nodes, multi_out_op):
+    multi_src = None
+    for idx, node in enumerate(nodes):
+        if check_getitem_op(node) and node.args[1] == idx:
+            if idx == 0:
+                if check_op(node.args[0], multi_out_op):
+                    multi_src = node.args[0]
+                else:
+                    return None
+            elif node.args[0] != multi_src:
+                return None
+        else:
+            return None
+    if len(multi_src.meta["val"]) == len(nodes):
+        return multi_src
+    return None

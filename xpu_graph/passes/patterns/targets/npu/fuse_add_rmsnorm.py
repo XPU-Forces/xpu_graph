@@ -13,7 +13,7 @@ from xpu_graph.passes.patterns.pattern import Pattern
 from ...utils.check_ops import (
     check_add_op,
     check_getitem_op,
-    check_norm_op,
+    check_norm_module,
     check_typecast_op,
 )
 from .check_npu_ops import check_npu_norm_op, check_npu_typecast_op
@@ -33,13 +33,13 @@ class FusedAddRmsnorm(Pattern):
             return None
         final_rmsnorm = getitem_final_rmsnorm.args[0]
 
-        res_flag, op_name = check_norm_op(final_rmsnorm)
+        res_flag, op_name = check_norm_module(final_rmsnorm)
         if (not res_flag) and (not op_name == "rms_norm"):
             res_flag, op_name = check_npu_norm_op(final_rmsnorm)
             if (not res_flag) and (not op_name == "rms_norm"):
                 return None
 
-        to_node, weight_node = final_rmsnorm.args  # eps
+        to_node, weight_node = final_rmsnorm.args[:2]  # eps
 
         to_flag, to_ty = check_typecast_op(to_node)
         if not to_flag:

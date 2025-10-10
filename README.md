@@ -1,12 +1,16 @@
 # xpu_graph
-![arch](./doc/xpu_graph_arch.png)
-XPU_GRAPH is a graph compiler based on torch [Fx graph](https://pytorch.org/docs/stable/fx.html) and [Aten IR](https://pytorch.org/docs/stable/torch.compiler_ir.html).
+<img src="./docs/xpu_graph_arch.png" alt="arch" style="display: block; margin: 0 auto; width: 60%;">
 
-Here are some features of XPU_GRAPH:
+XPU_GRAPH is a graph compiler based on torch [Fx graph](https://pytorch.org/docs/stable/fx.html) and [Aten IR](https://pytorch.org/docs/stable/torch.compiler_ir.html). Here are some features of XPU_GRAPH:
 * General graph optimizations: CSE, DCE, Op folding, Constant folding, and more aggresive constant propagation.
 * Vendor custom op conveter: convert less efficient ops (who will often cause a lot of memory access) to custom fused op.
 * Structure patterns: XPU_GRAPH abstracts common structural patterns, allowing users to implement the corresponding target structure. XPU_GRAPH will then convert the specified structure into the user-defined format.
 * Backend compiler integration: XPU_GRAPH is a fx-graph-in and fx-graph-out graph compiler, so it is compatible with other fx graph compiler, like Inductor and GE.
+* Support both of inference and training.
+
+## Compilation-pipeline
+
+<img src="./docs/compilation_pipeline.png" alt="pipeline" style="display: block; margin: 0 auto; width: 60%;">
 
 
 ## Environment requirements
