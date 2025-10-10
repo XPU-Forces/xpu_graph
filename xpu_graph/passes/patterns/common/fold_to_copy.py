@@ -4,6 +4,7 @@ from torch.multiprocessing.reductions import StorageWeakRef
 
 from xpu_graph.fx_utils import FxStage, has_storage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
+from xpu_graph.passes.patterns.utils.check_ops import is_uselesss_copy
 
 
 class FoldToCopy(Pattern):
@@ -47,12 +48,7 @@ class FoldToCopy(Pattern):
             if "pin_memory" in copy.kwargs or "non_blocking" in copy.kwargs:
                 return False
             if "memory_format" in copy.kwargs:
-                copy_memory_format = copy.kwargs["memory_format"]
-                return copy_memory_format == torch.preserve_format or (
-                    inp.meta["val"].layout == torch.strided
-                    and not inp.meta["val"]._has_symbolic_sizes_strides
-                    and inp.meta["val"].is_contiguous(memory_format=copy_memory_format)
-                )
+                return is_uselesss_copy(inp.meta["val"], copy.kwargs["memory_format"])
             return True
 
         for _to_copy in candidates:
