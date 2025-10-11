@@ -1,32 +1,33 @@
-import torch
-from torch import nn, fx
-from xpu_graph.passes.patterns.pattern import Pattern
 from typing import Callable
+
+import torch
+from torch import fx, nn
+
 from xpu_graph import OptLevel
+from xpu_graph.passes.patterns.pattern import Pattern
+
 from ..utils.check_ops import (
     check_cat_op,
+    check_meta_2d,
     check_slice_op,
     check_stack_op,
-    check_meta_2d,
     check_sum_op,
 )
 from ..utils.match_sub_list import match_sub_list
 
 MAX_INT64 = 9223372036854775807
 
+
 class MergeCatReplacement(nn.Module):
     def forward(self, input_tensor_list, cat_axis=0):
         return torch.cat(
             [
-                (
-                    input_tensor
-                    if len(input_tensor.shape) == 3
-                    else input_tensor.unsqueeze(0)
-                )
+                (input_tensor if len(input_tensor.shape) == 3 else input_tensor.unsqueeze(0))
                 for input_tensor in input_tensor_list
             ],
             axis=0,
         )
+
 
 def validate_slice_operation(n_list):
     if len(n_list) < 2:
@@ -48,6 +49,7 @@ def validate_slice_operation(n_list):
     if slice_axis.count(1) != len(slice_axis):
         return False, None, None
     return True, slice_input[0], slice_param
+
 
 def fuse_mixed_ops_and_cat(graph_module: fx.GraphModule):
     changed = False
@@ -96,9 +98,10 @@ def fuse_mixed_ops_and_cat(graph_module: fx.GraphModule):
 
 
 class FusedCatSlice(Pattern):
-    '''
+    """
     slice + cat -> fuse_slice_cat
-    '''
+    """
+
     def __init__(self, target_mod: torch.nn.Module, *super_args):
         super().__init__(*super_args)
         self.target_mod = target_mod

@@ -4,15 +4,27 @@ import triton
 import triton.language as tl
 import triton.language.math as tl_math
 
+
 @triton.jit
 def fused_brc_permute_sum_kernel(
-        out_ptr0, in_ptr0, in_ptr1, in_ptr2, in_ptr3, X4: tl.constexpr,
-        XBLOCK0: tl.constexpr, XBLOCK0_SUB: tl.constexpr,
-        XBLOCK1: tl.constexpr, XBLOCK1_SUB: tl.constexpr,
-        PBLOCK: tl.constexpr, RBLOCK: tl.constexpr,
-        XSIZE0: tl.constexpr, XSIZE1: tl.constexpr,
-        PSIZE: tl.constexpr, RSIZE: tl.constexpr,
-        CORE_SCALE: tl.constexpr):
+    out_ptr0,
+    in_ptr0,
+    in_ptr1,
+    in_ptr2,
+    in_ptr3,
+    X4: tl.constexpr,
+    XBLOCK0: tl.constexpr,
+    XBLOCK0_SUB: tl.constexpr,
+    XBLOCK1: tl.constexpr,
+    XBLOCK1_SUB: tl.constexpr,
+    PBLOCK: tl.constexpr,
+    RBLOCK: tl.constexpr,
+    XSIZE0: tl.constexpr,
+    XSIZE1: tl.constexpr,
+    PSIZE: tl.constexpr,
+    RSIZE: tl.constexpr,
+    CORE_SCALE: tl.constexpr,
+):
     tl.static_assert(XBLOCK0 == 1)
     tl.static_assert(XBLOCK0_SUB == 1)
     pid = tl.program_id(0)
@@ -35,9 +47,13 @@ def fused_brc_permute_sum_kernel(
             x1_idx = x1_pid * XBLOCK1 + x_sub_id * XBLOCK1_SUB + x1_sub_idx
             p_idx = p_sub_id * PBLOCK + p_sub_idx
             x1pr_idx = x1_idx[:, None, None] * PSIZE * RSIZE + p_idx[None, :, None] * RSIZE + r_idx[None, None, :]
-            x1pr_mask = (x1_idx[:, None, None] < x1_max) & ((p_idx[None, :, None] < PSIZE) & (r_idx[None, None, :] < RSIZE))
+            x1pr_mask = (x1_idx[:, None, None] < x1_max) & (
+                (p_idx[None, :, None] < PSIZE) & (r_idx[None, None, :] < RSIZE)
+            )
             x1rp_idx = x1_idx[:, None, None] * RSIZE * PSIZE + r_idx[None, :, None] * PSIZE + p_idx[None, None, :]
-            x1rp_mask = (x1_idx[:, None, None] < x1_max) & ((r_idx[None, :, None] < RSIZE) & (p_idx[None, None, :] < PSIZE))
+            x1rp_mask = (x1_idx[:, None, None] < x1_max) & (
+                (r_idx[None, :, None] < RSIZE) & (p_idx[None, None, :] < PSIZE)
+            )
             x2 = tl.load(in_ptr2 + x1rp_idx, mask=x1rp_mask, other=0.0)
             tmp0 = tl.broadcast_to(x3, (XBLOCK0_SUB, PBLOCK, RBLOCK))
             tmp1 = tmp0.to(tl.float16)
@@ -63,17 +79,23 @@ def fused_brc_permute_sum_kernel(
             o0r_mask = x1pr_mask
             tl.store(out_ptr0 + o0r_idx, tmp17, mask=o0r_mask)
 
+
 from torch.library import Library, impl
-from xpu_graph.passes.patterns.targets.npu.triton_kernel import npu_def, npu_lib, npu_meta
-npu_def.define("fused_brc_permute_sum(Tensor view_7, Tensor buf47, Tensor buf59, Tensor arg107_1, float buf61) -> (Tensor)")
+
+from xpu_graph.passes.patterns.targets.npu.triton_kernel import (
+    npu_def,
+    npu_lib,
+    npu_meta,
+)
+
+npu_def.define(
+    "fused_brc_permute_sum(Tensor view_7, Tensor buf47, Tensor buf59, Tensor arg107_1, float buf61) -> (Tensor)"
+)
+
 
 @impl(npu_lib, "fused_brc_permute_sum")
 def fused_brc_permute_sum(
-    view_7: torch.Tensor,
-    buf47: torch.Tensor,
-    buf59: torch.Tensor,
-    arg107_1: torch.Tensor,
-    buf61_val: float
+    view_7: torch.Tensor, buf47: torch.Tensor, buf59: torch.Tensor, arg107_1: torch.Tensor, buf61_val: float
 ) -> torch.Tensor:
     N0 = view_7.shape[0]
     N1 = view_7.shape[1]
@@ -82,23 +104,30 @@ def fused_brc_permute_sum(
     CORE_SCALE = 4
     out = torch.empty((N0, N1, N2, N3), dtype=view_7.dtype, device=view_7.device)
     fused_brc_permute_sum_kernel[N0 * CORE_SCALE, 1, 1](
-        out, view_7, buf47, buf59, arg107_1,
-        X4 = buf61_val,
-        XBLOCK0 = 1, XBLOCK0_SUB = 1,
-        XBLOCK1 = N1 // CORE_SCALE, XBLOCK1_SUB = 3,
-        PBLOCK = 16, RBLOCK = N3,
-        XSIZE0 = N0, XSIZE1 = N1,
-        PSIZE = N2, RSIZE = N3,
-        CORE_SCALE = CORE_SCALE)
+        out,
+        view_7,
+        buf47,
+        buf59,
+        arg107_1,
+        X4=buf61_val,
+        XBLOCK0=1,
+        XBLOCK0_SUB=1,
+        XBLOCK1=N1 // CORE_SCALE,
+        XBLOCK1_SUB=3,
+        PBLOCK=16,
+        RBLOCK=N3,
+        XSIZE0=N0,
+        XSIZE1=N1,
+        PSIZE=N2,
+        RSIZE=N3,
+        CORE_SCALE=CORE_SCALE,
+    )
     return out
+
 
 @impl(npu_meta, "fused_brc_permute_sum")
 def fused_brc_permute_sum_fake(
-    view_7: torch.Tensor,
-    buf47: torch.Tensor,
-    buf59: torch.Tensor,
-    arg107_1: torch.Tensor,
-    buf61: float
+    view_7: torch.Tensor, buf47: torch.Tensor, buf59: torch.Tensor, arg107_1: torch.Tensor, buf61: float
 ) -> torch.Tensor:
     out = torch.empty(view_7.shape, device=view_7.device, dtype=view_7.dtype)
     return out

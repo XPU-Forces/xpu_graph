@@ -1,17 +1,15 @@
+from typing import List, Optional, Tuple
+
 import torch
-from torch import nn, fx
-from torch.fx.node import Node
 import torch.fx as fx
-from typing import Optional, Tuple, List
 import torch_npu
-from xpu_graph.passes.patterns.pattern import Pattern
+from torch import fx, nn
+from torch.fx.node import Node
+
 from xpu_graph.config import OptLevel
-from ...utils.check_ops import (
-    check_div_op,
-    check_expand_op,
-    check_mul_op,
-    check_sum_op,
-)
+from xpu_graph.passes.patterns.pattern import Pattern
+
+from ...utils.check_ops import check_div_op, check_expand_op, check_mul_op, check_sum_op
 
 """
 inputs:
@@ -40,9 +38,11 @@ def torch_func(unsqueeze_2, clamp_min, unsqueeze_3, clamp_min_1):
 
 from .triton_kernel.fused_div_mul_sum import fused_div_mul_sum
 
+
 class DivMulSumOperation(nn.Module):
     def forward(self, div1_input, div1_divisor, div2_input, div2_divisor):
         return torch.ops.torch_npu_triton.fused_div_mul_sum(div1_input, div1_divisor, div2_input, div2_divisor)
+
 
 class FusedDivMulSum(Pattern):
     _opt_level = OptLevel.level2
@@ -69,7 +69,7 @@ class FusedDivMulSum(Pattern):
         sum_node, scalar_val = final_mul.args
         if not (check_sum_op(sum_node)):
             return None
-        if (sum_node.args[1] != [4]):
+        if sum_node.args[1] != [4]:
             return None
 
         mul_node = sum_node.args[0]
@@ -87,12 +87,7 @@ class FusedDivMulSum(Pattern):
             return None
         expand2_node, base2_input, expand2_shape = expand2_info
 
-        return [
-            final_mul, sum_node, mul_node, 
-            div1, expand1_node,
-            div2, expand2_node
-        ]
-
+        return [final_mul, sum_node, mul_node, div1, expand1_node, div2, expand2_node]
 
     def process(self, gm: fx.GraphModule):
         graph = gm.graph
@@ -105,9 +100,7 @@ class FusedDivMulSum(Pattern):
                 continue
             changed = True
 
-            (final_mul, sum_node, mul_node, 
-             div1, expand1_node, 
-             div2, expand2_node) = matched_nodes
+            (final_mul, sum_node, mul_node, div1, expand1_node, div2, expand2_node) = matched_nodes
 
             div1_dividend = div1.args[0]
             div1_base_input = expand1_node.args[0]
@@ -121,11 +114,11 @@ class FusedDivMulSum(Pattern):
                 fused_node = graph.call_module(
                     "npu_triton_fused_div_mul_sum",
                     args=(
-                        div1_dividend,   # unsqueeze_2 的输出
-                        div1_base_input, # clamp_min 原始输入
+                        div1_dividend,  # unsqueeze_2 的输出
+                        div1_base_input,  # clamp_min 原始输入
                         # expand1_shape,   # [10,15,1,4,128]
-                        div2_dividend,   # unsqueeze_3 的输出
-                        div2_base_input, # clamp_min_1 原始输入
+                        div2_dividend,  # unsqueeze_3 的输出
+                        div2_base_input,  # clamp_min_1 原始输入
                         # expand2_shape,   # [10,1,255,4,128]
                         # sum_dims,        # [4]
                         # scalar_val       # 0.5
@@ -134,11 +127,7 @@ class FusedDivMulSum(Pattern):
 
             final_mul.replace_all_uses_with(fused_node)
 
-            nodes_to_remove = [
-                final_mul, sum_node, mul_node,
-                div1, expand1_node,
-                div2, expand2_node
-            ]
+            nodes_to_remove = [final_mul, sum_node, mul_node, div1, expand1_node, div2, expand2_node]
             for n in nodes_to_remove:
                 if len(n.users) == 0:
                     graph.erase_node(n)

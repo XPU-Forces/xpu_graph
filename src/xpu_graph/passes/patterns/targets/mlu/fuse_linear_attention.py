@@ -1,21 +1,22 @@
-import torch
-from torch import nn, fx
-import torch_mlu
 from typing import List, Tuple
+
+import torch
+import torch_mlu
+from torch import fx, nn
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
+
 from ...utils.check_ops import (
-    get_actual_node,
-    get_shape,
+    check_act_op,
     check_div_or_mul_op,
-    check_mask_fill_op,
     check_eq_op,
+    check_mask_fill_op,
     check_repeat_op,
     check_unsqueeze_op,
-    check_act_op,
+    get_actual_node,
+    get_shape,
 )
-
 from .triton_kernel.linear_attention_kernel import attention
 
 
