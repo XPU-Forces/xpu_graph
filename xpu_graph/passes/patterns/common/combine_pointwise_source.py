@@ -102,7 +102,9 @@ class CombinePointwiseSource(Pattern):
                         first_result = min(orig_results)
                         if source_node is not None:
                             for orig_arg in orig_args:
-                                first_result.prepend(orig_arg)
+                                # Note: orig args can only be moved forward
+                                if orig_arg > first_result:
+                                    first_result.prepend(orig_arg)
                         first_result.prepend(combined_arg)
                         first_result.prepend(combined_result)
                         first_result.prepend(split_node)
@@ -113,7 +115,7 @@ class CombinePointwiseSource(Pattern):
                                     "call_function",
                                     operator.getitem,
                                     args=(split_node, combined_idx),
-                                    name=orig_result.name + "_combined",
+                                    name=orig_result.name + "_combo_src",
                                 )
                                 orig_result.replace_all_uses_with(split_result)
                                 graph_module.graph.erase_node(orig_result)

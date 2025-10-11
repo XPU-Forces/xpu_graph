@@ -63,6 +63,14 @@ def fn4_symshape(a):
     return res
 
 
+def fn5(a):
+    a_list = a.split(8, dim=-1)
+    res = a_list[0].sum(dim=-1)
+    for a in a_list:
+        res += (a + 0.1).sum(dim=-1)
+    return res
+
+
 def combine_pointwise_test(xpu_graph_backend, func, is_training=False):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
 
@@ -100,6 +108,7 @@ class TestCombinePointwiseSourceInference:
             fn2,
             fn3_inputs,
             fn4_symshape,
+            fn5,
         ],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
@@ -132,6 +141,7 @@ class TestCombinePointwiseSinkTraining:
             fn2,
             fn3_inputs,
             fn4_symshape,
+            fn5,
         ],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
@@ -147,6 +157,7 @@ class TestCombinePointwiseSinkTraining:
 
 if __name__ == "__main__":
     xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level1, debug=True))
-    combine_pointwise_test(xpu_graph_backend, fn0)
-    combine_pointwise_test(xpu_graph_backend, fn1)
-    combine_pointwise_test(xpu_graph_backend, fn2)
+    # combine_pointwise_test(xpu_graph_backend, fn0)
+    # combine_pointwise_test(xpu_graph_backend, fn1)
+    # combine_pointwise_test(xpu_graph_backend, fn2)
+    combine_pointwise_test(xpu_graph_backend, fn5)
