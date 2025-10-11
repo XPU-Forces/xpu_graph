@@ -83,7 +83,7 @@ class CombinePointwiseSink(Pattern):
                                     "call_function",
                                     operator.getitem,
                                     args=(split_node, combined_idx),
-                                    name=orig_result.name + "_combined",
+                                    name=orig_result.name + "_combo_sink",
                                 )
                                 orig_result.replace_all_uses_with(split_result)
                                 graph_module.graph.erase_node(orig_result)
