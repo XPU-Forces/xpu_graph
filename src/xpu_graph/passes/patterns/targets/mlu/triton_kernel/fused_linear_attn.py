@@ -1,15 +1,15 @@
 import math
+from typing import List
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from typing import List
+
 from .linear_attention import attention
 
 
-@torch.library.custom_op(
-    "torch_mlu_triton::linear_attn", mutates_args=(), device_types="mlu"
-)
+@torch.library.custom_op("torch_mlu_triton::linear_attn", mutates_args=(), device_types="mlu")
 def linear_attn(
     q: torch.Tensor,
     k: torch.Tensor,

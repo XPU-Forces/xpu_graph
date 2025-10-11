@@ -12,7 +12,6 @@ Extra Credits:
 """
 import torch
 import torch_mlu
-
 import triton
 import triton.language as tl
 
@@ -66,20 +65,10 @@ def _attn_fwd_inner(
             bias = None
             if EXPANDED_BIAS:
                 if IS_DIVISIBLE:
-                    bias = tl.load(
-                        BIAS
-                        + off_z * N_CTX * N_CTX
-                        + offs_m[:, None] * N_CTX
-                        + start_n
-                        + offs_n
-                    )
+                    bias = tl.load(BIAS + off_z * N_CTX * N_CTX + offs_m[:, None] * N_CTX + start_n + offs_n)
                 else:
                     bias = tl.load(
-                        BIAS
-                        + off_z * N_CTX * N_CTX
-                        + offs_m[:, None] * N_CTX
-                        + start_n
-                        + offs_n,
+                        BIAS + off_z * N_CTX * N_CTX + offs_m[:, None] * N_CTX + start_n + offs_n,
                         mask=(offs_m < N_CTX)[:, None] & (offs_n < N_CTX)[None, :],
                         other=0.0,
                     )
@@ -264,7 +253,6 @@ def _attn_fwd(
 
 
 class _attention(torch.autograd.Function):
-
     @staticmethod
     def forward(ctx, q, k, v, bias, causal, sm_scale, has_bias, expanded_bias):
         # shape constraints
@@ -278,9 +266,7 @@ class _attention(torch.autograd.Function):
 
         num_warps = 1
         num_stages = 5
-        processor_count = torch.mlu.get_device_properties(
-            torch.mlu.current_device()
-        ).multi_processor_count
+        processor_count = torch.mlu.get_device_properties(torch.mlu.current_device()).multi_processor_count
         grid = (processor_count, 1, 1)
 
         def is_divisible(a, b):
@@ -334,4 +320,3 @@ class _attention(torch.autograd.Function):
 
 
 attention = _attention.apply
-
