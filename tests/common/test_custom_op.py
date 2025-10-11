@@ -75,7 +75,8 @@ class Simple2(torch.nn.Module):
 
     def forward(self, x):
         y = self.fc(x)
-        z = numpy_mul(y, self.scale)
+        z = numpy_mul2(y, self.scale)
+        z = numpy_mul2(z, self.scale)
         return z.sum(dim=-1)
 
 
@@ -135,19 +136,23 @@ def compare_training_with_custom_op(ModCls, backend, nsteps=4, bsz=8, input_dim=
 
 class TestCustom:
     def setup_class(self):
-        train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2, freeze=False)
+        train_config = xpu_graph.XpuGraphConfig(
+            is_training=True, opt_level=OptLevel.level2, freeze=False, fallback_legacy_dispatch=True
+        )
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [Simple, Simple2],
+        [Simple, Simple2, SimpleSwiGLUwithCKPT],
     )
     def test_layernorm_patterns_with_loss_and_grad(self, ReproCls):
         compare_training_with_custom_op(ReproCls, self.train_backend)
 
 
 if __name__ == "__main__":
-    config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True)
+    config = xpu_graph.XpuGraphConfig(
+        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True, fallback_legacy_dispatch=True
+    )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in [SimpleSwiGLUwithCKPT]:
         compare_training_with_custom_op(ModCls, xpu_graph_backend)
