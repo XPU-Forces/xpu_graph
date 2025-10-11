@@ -43,6 +43,7 @@ license-files = ["LICENSE.txt"]
 dev = [
     "pytest >= 7.0.0",
     "pytest-cov >= 6.0.0",
+    "pytest-xdist",
     "setuptools >= 65",
     "build >= 1.2.2",
     "expecttest",
