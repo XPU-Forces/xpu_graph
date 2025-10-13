@@ -48,7 +48,7 @@ jobs:
     name: Run mlu tests
     runs-on: MLU
     container:
-      image: hub.byted.org/ci/xpu_graph:c5672b8705309273fc76f33d6eeefcfd
+      image: hub.byted.org/base/lagrange.torch27.mlu:7532ae44d8c162c8cb5ce81ef8a13c28
       options: --privileged=true --ipc=host --pid=host --user root --network host
     steps:
     - uses: actions/checkout@v4
@@ -77,6 +77,5 @@ jobs:
       with:
         name: mlu-codecov
         fail_ci_if_error: true
-        binary: /usr/local/bin/codecovcli # We have v11.0.3 installed whose binary is still codecovcli and it is called codecov-cli since v11.2.0
         use_pypi: true
         verbose: true
