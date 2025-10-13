@@ -65,7 +65,9 @@ class XpuGraphConfig:
     vendor_compiler_config: Optional[Dict[str, Any]] = None
 
     # Users can enable interceptor to monitor the results of compiled graph
-    enable_interceptor: Optional[str] = None
+    enable_interceptor: bool = False
+
+    # Users can decide not disable specified patterns
     skip_patterns: List[str] = field(default_factory=list)
 
     def _reset_config_with_env(self):
@@ -103,7 +105,7 @@ class XpuGraphConfig:
                     self.vendor_compiler_config = {"mode": vendor_compiler_mode}
 
         if os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor) is not None:
-            self.enable_interceptor = os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor)
+            self.enable_interceptor = get_bool_env_var(__XPU_GRAPH_ENVS__.enable_interceptor, False)
 
         if os.getenv(__XPU_GRAPH_ENVS__.skip_patterns) is not None:
             self.skip_patterns = os.getenv(__XPU_GRAPH_ENVS__.skip_patterns).split(",")
