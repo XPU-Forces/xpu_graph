@@ -16,8 +16,11 @@ class FoldCat(Pattern):
 
     def _get_fold_result(self, gm: fx.GraphModule, src: fx.Node):
         return gm.graph.call_function(
-            torch.ops.aten._to_copy.default,
+            torch.ops.aten.clone.default,
             args=(src,),
+            kwargs={
+                "memory_format": torch.contiguous_format,
+            },
         )
 
     def _get_fold_cat_split_result(self, gm: fx.GraphModule, split_node: fx.Node, cat_node: fx.Node):
@@ -40,6 +43,9 @@ class FoldCat(Pattern):
             return gm.graph.call_function(
                 torch.ops.aten.clone.default,
                 args=(split_node.args[0],),
+                kwargs={
+                    "memory_format": torch.contiguous_format,
+                },
             )
         else:
             return None
