@@ -45,7 +45,10 @@ def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> t
     from xpu_graph.fx_utils import decompose_for_inductor
 
     module = decompose_for_inductor(module, inputs)
-    logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
+    logger.debug(
+        "After decompose_for_inductor, graph like:\n %s",
+        module.print_readable(print_output=False, include_stride=True, include_device=True),
+    )
 
     from torch import _TorchCompileInductorWrapper
     from torch._inductor.compile_fx import compile_fx, compile_fx_inner
