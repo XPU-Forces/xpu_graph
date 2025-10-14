@@ -125,6 +125,7 @@ def ddp_test(ModCls, is_training=True, model_path="ddp_model.pth"):
         assert abs(results1[i] - results2[i]) < 0.01
 
 
+@pytest.mark.exclusive
 class TestDDP:
     @pytest.mark.parametrize(
         "PatternModel",

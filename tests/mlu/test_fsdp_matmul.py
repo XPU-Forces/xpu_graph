@@ -125,6 +125,7 @@ def fsdp_test(ModCls, is_training=True, model_path="fsdp_model.pth"):
         assert abs(results1[i] - results2[i]) < 0.01
 
 
+@pytest.mark.exclusive
 class TestFSDP:
     @pytest.mark.parametrize(
         "PatternModel",
