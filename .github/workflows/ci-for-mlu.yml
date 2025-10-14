@@ -64,13 +64,14 @@ jobs:
       shell: bash
       env:
         COV_OMIT: "xpu_graph/backends/npu.py,xpu_graph/passes/patterns/targets/npu/*"
+      # WARNING(liuyuan): [-n auto] will lead to error (OOM?) and 8 is efficient enough.
       run: |
         export DEV0=$(shuf -n 1 -e 0 2 4 6)
         export DEV1=$(( $DEV0 + 1 ))
         export MLU_VISIBLE_DEVICES=$DEV0,$DEV1
         echo "MLU_VISIBLE_DEVICES: $MLU_VISIBLE_DEVICES"
         echo "Running MLU tests..."
-        python3 -m pytest --cov=xpu_graph tests/common tests/mlu
+        python3 -m pytest --cov=xpu_graph -n 8 tests/common tests/mlu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
