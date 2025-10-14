@@ -55,8 +55,10 @@ jobs:
     - name: Build And Install Wheel Artifact
       shell: bash
       # WARNING(liuyuan): This step is goddamn important for us to keep the release artifact available.
+      # WARNING(liuyuan): [pip uninstall xpu-graph] is to remove the pre-install version of xpu_graph in mlu ci image, which has different structure from the current version.
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
+        pip uninstall xpu-graph -y
         pip install -e '.[dev]'
         python3 -m build .
         pip install dist/*.whl --force-reinstall --no-deps

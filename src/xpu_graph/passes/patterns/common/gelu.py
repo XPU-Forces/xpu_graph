@@ -1,5 +1,6 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern
 
@@ -25,9 +26,7 @@ class Gelu(AutoMatchPattern):
                 return False
 
             with gm.graph.inserting_before(div_node):
-                gelu_node = gm.graph.call_function(
-                    torch.ops.aten.gelu.default, args=(div_node.args[0],)
-                )
+                gelu_node = gm.graph.call_function(torch.ops.aten.gelu.default, args=(div_node.args[0],))
 
             mul2_node.replace_all_uses_with(gelu_node)
         else:
@@ -53,9 +52,7 @@ class Gelu(AutoMatchPattern):
             if add3_node.args[1] != 1.0:
                 return False
             with gm.graph.inserting_before(mul2_node):
-                gelu_node = gm.graph.call_function(
-                    torch.ops.aten.gelu.default, args=(mul2_node.args[0],)
-                )
+                gelu_node = gm.graph.call_function(torch.ops.aten.gelu.default, args=(mul2_node.args[0],))
             mul5_node.replace_all_uses_with(gelu_node)
 
         return True

@@ -1,11 +1,10 @@
 import torch
 import torch.fx as fx
+
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from ..utils.check_ops import (
-    check_unsqueeze_op,
-    check_squeeze_op,
-)
+
+from ..utils.check_ops import check_squeeze_op, check_unsqueeze_op
 
 
 def match(a, b):
