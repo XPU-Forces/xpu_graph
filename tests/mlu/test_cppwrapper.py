@@ -3,7 +3,6 @@ import sys
 import pytest
 import torch
 
-print(sys.path)
 import xpu_graph
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
@@ -49,6 +48,8 @@ class TestMatMul:
         [False, True],
     )
     def test_matmul_patterns(self, caplog, pattern_func, dynamic):
+        print(xpu_graph.__file__)
+        print(sys.path)
         from packaging import version
 
         torch_version = version.parse(torch.__version__[:5])
