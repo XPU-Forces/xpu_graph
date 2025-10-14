@@ -1,9 +1,10 @@
 import math
+from typing import List
+
 import torch
 import torch_mlu
 import triton
 import triton.language as tl
-from typing import List
 
 dtype_dict1 = {
     torch.bfloat16: 1,
@@ -46,17 +47,9 @@ def mlu_triton_sum_cat_3d_kernel(
     for batch_start in tl.range(0, batchs_per_job, BLOCK_BATCH, num_stages=2):
         b_offsets = b_start + batch_start + tl.arange(0, BLOCK_BATCH)
         for i in tl.range(0, INPUT_NUM, num_stages=2):
-            offsets = (
-                b_offsets[:, None, None] * N * m_list[i]
-                + m_offsets[None, :, None] * N
-                + n_offsets[None, None, :]
-            )
-            mask = (b_offsets < B)[:, None, None] & (m_offsets < m_list[i])[
-                None, :, None
-            ]
-            input = tl.load(
-                input_ptrs[i].to(tl.pointer_type(dtype)) + offsets, mask=mask, other=0
-            )
+            offsets = b_offsets[:, None, None] * N * m_list[i] + m_offsets[None, :, None] * N + n_offsets[None, None, :]
+            mask = (b_offsets < B)[:, None, None] & (m_offsets < m_list[i])[None, :, None]
+            input = tl.load(input_ptrs[i].to(tl.pointer_type(dtype)) + offsets, mask=mask, other=0)
             n = min(BLOCK_BATCH, B - batch_start)
             for b in tl.range(0, n, num_stages=1):
                 result = tl.sum(input[b, :, :], 0)
@@ -126,9 +119,7 @@ def mlu_triton_sum_cat_2d_kernel(
         tl.store(output_ptr + output_offsets, output, mask=mask)
 
 
-@torch.library.custom_op(
-    "torch_mlu_triton::fuse_sum_cat_2d", mutates_args={}, device_types="mlu"
-)
+@torch.library.custom_op("torch_mlu_triton::fuse_sum_cat_2d", mutates_args={}, device_types="mlu")
 def fuse_sum_cat_2d(
     inputs: List[torch.Tensor],
     lengths_tensor: torch.Tensor,
@@ -181,9 +172,7 @@ def fuse_sum_cat_2d_fake(
     return torch.empty(len(inputs), dim_0, device=device, dtype=dtype)
 
 
-@torch.library.custom_op(
-    "torch_mlu_triton::fuse_sum_cat_3d", mutates_args=(), device_types="mlu"
-)
+@torch.library.custom_op("torch_mlu_triton::fuse_sum_cat_3d", mutates_args=(), device_types="mlu")
 def fuse_sum_cat_3d(
     inputs: List[torch.Tensor],
     dim_0: int,

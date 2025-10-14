@@ -1,9 +1,9 @@
 import torch
 import torch.fx as fx
-
-from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
-from xpu_graph.fx_utils import FxStage, has_storage
 from torch.multiprocessing.reductions import StorageWeakRef
+
+from xpu_graph.fx_utils import FxStage, has_storage
+from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 
 class FoldToCopy(Pattern):
@@ -21,9 +21,7 @@ class FoldToCopy(Pattern):
         output_node: fx.Node = list(gm.graph.nodes)[-1]
         assert output_node.op == "output"
         output_storages = {
-            StorageWeakRef(n.meta["val"].untyped_storage())
-            for n in output_node.all_input_nodes
-            if has_storage(n)
+            StorageWeakRef(n.meta["val"].untyped_storage()) for n in output_node.all_input_nodes if has_storage(n)
         }
 
         candidates = [
@@ -32,8 +30,7 @@ class FoldToCopy(Pattern):
             if node.op == "call_function"
             and node.target == torch.ops.aten._to_copy.default
             and has_storage(node)
-            and StorageWeakRef(node.meta["val"].untyped_storage())
-            not in output_storages
+            and StorageWeakRef(node.meta["val"].untyped_storage()) not in output_storages
         ]
 
         def _useless_to_copy(copy: fx.Node) -> bool:
@@ -53,8 +50,7 @@ class FoldToCopy(Pattern):
                 return (
                     "tensor_meta" in inp.meta
                     and "tensor_meta" in copy.meta
-                    and inp.meta["tensor_meta"].memory_format
-                    == copy.meta["tensor_meta"].memory_format
+                    and inp.meta["tensor_meta"].memory_format == copy.meta["tensor_meta"].memory_format
                 )
             return True
 
