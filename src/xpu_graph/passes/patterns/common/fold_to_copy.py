@@ -4,7 +4,7 @@ from torch.multiprocessing.reductions import StorageWeakRef
 
 from xpu_graph.fx_utils import FxStage, has_storage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
-from xpu_graph.passes.patterns.utils.check_ops import is_uselesss_copy
+from xpu_graph.passes.patterns.utils.shape_utils import compatible_memory_format
 
 
 class FoldToCopy(Pattern):
@@ -48,7 +48,7 @@ class FoldToCopy(Pattern):
             if "pin_memory" in copy.kwargs or "non_blocking" in copy.kwargs:
                 return False
             if "memory_format" in copy.kwargs:
-                return is_uselesss_copy(inp.meta["val"], copy.kwargs["memory_format"])
+                return compatible_memory_format(inp.meta["val"], copy.kwargs["memory_format"])
             return True
 
         for _to_copy in candidates:

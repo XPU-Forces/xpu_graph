@@ -404,12 +404,3 @@ def find_common_src(nodes, multi_out_op):
     if len(multi_src.meta["val"]) == len(nodes):
         return multi_src
     return None
-
-
-def is_uselesss_copy(inp_tensor: torch.Tensor, copy_format: torch.memory_format) -> bool:
-    # reference： torch/_subclasses/fake_tensor.py: def extract_tensor_metadata
-    return copy_format == torch.preserve_format or (
-        inp_tensor.layout == torch.strided
-        and not inp_tensor._has_symbolic_sizes_strides
-        and inp_tensor.is_contiguous(memory_format=copy_format)
-    )
