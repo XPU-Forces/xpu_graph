@@ -72,7 +72,8 @@ jobs:
       # WARNING(liuyuan): [-n auto] will lead to error (OOM?) and 8 is efficient enough.
       run: |
         echo "Running npu tests..."
-        python3 -m pytest --cov=xpu_graph -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
+        python3 -m pytest --cov=xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
+        python3 -m pytest --cov=xpu_graph --cov-append -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
