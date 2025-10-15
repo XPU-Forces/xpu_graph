@@ -7,7 +7,7 @@ import torch.fx as fx
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
 from .check_ops import check_op
-from .shape_utils import SymShapeManager, same_shape
+from .shape_utils import SymShapeManager, same_shape, same_shape_except_dim
 
 
 def _fetch_combinable_ops_idx(config_str):
@@ -57,16 +57,46 @@ class ComboManager:
         self.shape_mgr = shape_mgr
 
     def check_compatible_shape(self, shape0, shape1):
-        if self.concat_dim is None:
-            return same_shape(shape0, shape1)
-        elif -len(shape0) <= self.concat_dim < len(shape0) and -len(shape1) <= self.concat_dim < len(shape1):
-            shape0 = list(shape0)
-            shape1 = list(shape1)
-            shape0[self.concat_dim] = 1
-            shape1[self.concat_dim] = 1
-            return same_shape(shape0, shape1)
-        else:
+        if len(shape0) != len(shape1):
             return False
+
+        ndim = len(shape0)
+        if self.concat_dim is not None:
+            return -ndim <= self.concat_dim < ndim and same_shape_except_dim(shape0, shape1, self.concat_dim)
+        if same_shape(shape0, shape1):
+            return True
+        # find extra chance to concat shapes
+        for maybe_concat_dim in range(ndim):
+            if same_shape_except_dim(shape0, shape1, maybe_concat_dim):
+                return True
+        return False
+
+    def _is_unbacked_symshape(self, shape, dim):
+        if isinstance(shape[dim], torch.SymInt):
+            if self.shape_mgr is None or self.shape_mgr.get_shape_val(shape[dim]) is None:
+                return True
+        return False
+
+    def _find_max_concat_list(self, candidate_nodes):
+        n0 = candidate_nodes[0]
+        ndim = len(n0.meta["val"].shape)
+        max_concat_dim = 0
+        max_concat_list = []
+        for maybe_concat_dim in range(ndim):
+            # symbolic shape cannot be concated as split_with_sizes needs concrete shape
+            if self._is_unbacked_symshape(n0.meta["val"].shape, maybe_concat_dim):
+                continue
+            cur_list = [n0]
+            for n in candidate_nodes[1:]:
+                if same_shape_except_dim(n0.meta["val"].shape, n.meta["val"].shape, maybe_concat_dim):
+                    # symbolic shape cannot be concated as split_with_sizes needs concrete shape
+                    if self._is_unbacked_symshape(n.meta["val"].shape, maybe_concat_dim):
+                        continue
+                    cur_list.append(n)
+            if len(cur_list) > len(max_concat_list):
+                max_concat_dim = maybe_concat_dim
+                max_concat_list = cur_list
+        return max_concat_dim, max_concat_list
 
     def try_add_candidate(self, result_node):
         if (
@@ -83,11 +113,9 @@ class ComboManager:
         if not same_shape(combined_value.shape, result_node.meta["val"].shape):
             return False
 
-        if self.concat_dim is not None:
-            if isinstance(combined_value.shape[self.concat_dim], torch.SymInt):
-                # symbolic shape cannot be concated as split_with_sizes needs concrete shape
-                if self.shape_mgr is None or self.shape_mgr.get_shape_val(combined_value) is None:
-                    return False
+        if self.concat_dim is not None and self._is_unbacked_symshape(combined_value.shape, self.concat_dim):
+            # symbolic shape cannot be concated as split_with_sizes needs concrete shape
+            return False
 
         other_args_kwargs = (
             tuple(result_node.args[: self.combo_argidx]) + tuple(result_node.args[self.combo_argidx + 1 :]),
@@ -117,18 +145,23 @@ class ComboManager:
     def generate_combined_results(self):
         replace_groups = []
         for other_args_kwargs, combinable_lists in self.shared_to_combinelists.items():
-            for _, orig_results in combinable_lists:
+            for _, candidate_results in combinable_lists:
+                if self.extra_shape_check:
+                    concat_dim, orig_results = self._find_max_concat_list(candidate_results)
+                else:
+                    orig_results = candidate_results
+                    concat_dim = self.concat_dim
                 if len(orig_results) < COMBINE_WIDTH:
                     continue
                 orig_args = [orig_result.args[self.combo_argidx] for orig_result in orig_results]
                 do_stack = True
-                if self.concat_dim is not None:
+                if concat_dim is not None:
                     # Note: for concats, if all concated shapes are same,
                     #       we should use stack instead to avoid non-broadcastable cases
                     for orig_result in orig_results[1:]:
                         if not same_shape(
-                            orig_result.meta["val"].shape[self.concat_dim],
-                            orig_results[0].meta["val"].shape[self.concat_dim],
+                            orig_result.meta["val"].shape[concat_dim],
+                            orig_results[0].meta["val"].shape[concat_dim],
                         ):
                             do_stack = False
                             break
@@ -139,12 +172,12 @@ class ComboManager:
                         args=(orig_args,),
                     )
                 else:
-                    combined_sizes = [result.meta["val"].shape[self.concat_dim] for result in orig_results]
+                    combined_sizes = [result.meta["val"].shape[concat_dim] for result in orig_results]
                     combined_sizes = self.shape_mgr.rebind_shape(combined_sizes)
                     if any(s is None for s in combined_sizes):
                         continue
                     combined_arg = self.graph_module.graph.call_function(
-                        torch.ops.aten.cat.default, args=(orig_args,), kwargs={"dim": self.concat_dim}
+                        torch.ops.aten.cat.default, args=(orig_args,), kwargs={"dim": concat_dim}
                     )
 
                 shared_args, shared_kwargs = other_args_kwargs
@@ -162,7 +195,7 @@ class ComboManager:
                     split_node = self.graph_module.graph.call_function(
                         torch.ops.aten.split_with_sizes.default,
                         args=(combined_result, combined_sizes),
-                        kwargs={"dim": self.concat_dim},
+                        kwargs={"dim": concat_dim},
                     )
 
                 replace_groups.append((orig_args, orig_results, combined_arg, combined_result, split_node))

@@ -38,3 +38,11 @@ def same_shape(shape, other):
     if isinstance(other, (torch.Size, tuple)):
         other = list(other)
     return statically_known_true(sym_eq(shape, other))
+
+
+def same_shape_except_dim(shape0, shape1, dim):
+    shape0 = list(shape0)
+    shape1 = list(shape1)
+    shape0[dim] = 1
+    shape1[dim] = 1
+    return same_shape(shape0, shape1)

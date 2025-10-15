@@ -41,6 +41,19 @@ def fn0_output(inputs, slice_):
     return slice_1, where_0, where_1, where_2, where_3
 
 
+def fn0_output_varlen(inputs, slice_):
+    slice_1 = slice_[:, 0:32]
+    slice_2 = slice_[:, 10118:10182]
+    slice_4 = slice_[:, 10579:10611]
+    slice_5 = slice_[:, 11032:11096]
+    slice_6 = slice_[:, 11445:11477]
+    where_0 = inputs * slice_2
+    where_1 = inputs * slice_4
+    where_2 = inputs * slice_5
+    where_3 = inputs * slice_6
+    return slice_1, where_0, where_1, where_2, where_3
+
+
 def fn1(inputs, slice_):
     slice_1 = slice_[:, 0:4]
     slice_2 = slice_[:, 11984:11988]
@@ -254,6 +267,7 @@ class TestCombinePointwiseSinkInference:
         [
             fn0_concat_varlen,
             fn0_output,
+            fn0_output_varlen,
             fn1,
             fn2_concat_varlen,
             fn3,
@@ -287,6 +301,7 @@ class TestCombinePointwiseSinkTraining:
         [
             fn0_concat_varlen,
             fn0_output,
+            fn0_output_varlen,
             fn1,
             fn5_symshape,
         ],
@@ -298,7 +313,7 @@ class TestCombinePointwiseSinkTraining:
             assert "Pattern.CombinePointwiseSink changed graph" not in caplog.text
         else:
             assert caplog.text.count("Pattern.CombinePointwiseSink changed graph") == 2
-        if "concat_varlen" in pattern_func.__name__:
+        if "varlen" in pattern_func.__name__:
             assert "aten.stack.default" not in caplog.text
 
 
