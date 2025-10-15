@@ -85,7 +85,7 @@ def dispatch_graph(gm, example_inputs, *, stage, decompositions=None):
     if decompositions is not None:
         aot_config.decompositions = decompositions
 
-    flat_fn = create_functional_call(gm, params_spec, params_len)
+    flat_fn = create_functional_call(gm, params_spec, params_len, store_orig_mod=True)
 
     ctx = nullcontext if stage == FxStage.pregrad else torch.no_grad
     with ctx():
