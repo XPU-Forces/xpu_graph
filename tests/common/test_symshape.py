@@ -37,5 +37,5 @@ class TestSymShape:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level2))
+    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True))
     sinkview_test2(xpu_graph_backend)
