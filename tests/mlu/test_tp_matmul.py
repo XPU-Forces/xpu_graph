@@ -143,6 +143,7 @@ def tp_test(ModCls, is_training=True, model_path="tp_model.pth"):
         assert abs(results1[i] - results2[i]) < 0.01
 
 
+@pytest.mark.exclusive
 class TestTP:
     @pytest.mark.parametrize(
         "PatternModel",
