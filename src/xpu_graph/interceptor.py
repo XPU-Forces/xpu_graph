@@ -29,7 +29,7 @@ def intercept(target_fn, *, golden_fn, fw_metadata, is_training, mark=0, config_
         else:
             logger.warning(f"Invalid key: {key}")
 
-    impure = fw_metadata.num_mutated_inp_runtime_indices > 0
+    impure = fw_metadata is None or fw_metadata.num_mutated_inp_runtime_indices > 0
 
     if is_training:
         return AutogradInterceptor(golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs).guard(

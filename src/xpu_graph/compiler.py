@@ -7,7 +7,12 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import SerializeWrapper, XpuGraphCache, default_cache
 from .config import OptLevel, Target, XpuGraphConfig
-from .fx_utils import FxStage, dispatch_graph
+from .fx_utils import (
+    FxStage,
+    dispatch_graph,
+    fakify_tensors,
+    find_hop_nodes_or_subclass_inputs,
+)
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
@@ -89,10 +94,7 @@ class XpuGraph:
             nodes_statistics = NodesStatistics()
 
             # Create fake inputs for optimization
-            from torch._guards import detect_fake_mode
-
-            fake_mode = detect_fake_mode(fake_inputs)
-            fake_mode.allow_non_fake_inputs = True
+            fake_mode, fake_inputs = fakify_tensors(fake_inputs)
 
             with fake_mode:
                 if self._config.enable_cache:
@@ -151,7 +153,32 @@ class XpuGraph:
 
             return wrapped
 
-        if self._config.is_training:
+        fallback_dispatch = False
+        if self._config.fallback_legacy_dispatch:
+            fallback_dispatch = False
+            hop_nodes, subclass_tensors = find_hop_nodes_or_subclass_inputs(dynamo_gm, example_inputs)
+            if len(hop_nodes) > 0:
+                logger.warning(f"Higher order operators detected: {', '.join(str(op) for op in hop_nodes)}.")
+                fallback_dispatch = True
+            if len(subclass_tensors) > 0:
+                logger.warning(f"Subclass inputs detected: {', '.join(str(cls) for cls in subclass_tensors)}.")
+                fallback_dispatch = True
+
+        if fallback_dispatch:
+            logger.debug(f"before compile: graph like:\n {dynamo_gm.graph}")
+            if self._config.is_training:
+                xpu_gm = aot_autograd(
+                    fw_compiler=_staged_compiler(FxStage.forward),
+                    bw_compiler=_staged_compiler(FxStage.backward),
+                    keep_inference_input_mutations=True,
+                )(dynamo_gm, example_inputs)
+            else:
+                xpu_gm = aot_autograd(
+                    fw_compiler=_staged_compiler(FxStage.inference),
+                    keep_inference_input_mutations=True,
+                )(dynamo_gm, example_inputs)
+            fw_metadata = None
+        elif self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well

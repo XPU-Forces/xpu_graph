@@ -10,6 +10,13 @@ def fn0(a):
     return output
 
 
+def fn0_strided(input):
+    x = input.T
+    x = torch.stack([x], dim=0)
+    x = x.view(-1)
+    return x
+
+
 def fn1(a):
     output = torch.stack([a], dim=1)
     return output
@@ -56,6 +63,7 @@ class TestStack:
         "pattern_func",
         [
             fn0,
+            fn0_strided,
             fn1,
             fn2,
             fn3,
