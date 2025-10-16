@@ -13,7 +13,10 @@ def mlu_compile(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
     with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
         module = decompose_for_inductor(module, example_inputs)
-    logger.debug(f"After decompose_for_inductor, graph like:\n {module.graph}")
+    logger.debug(
+        "After decompose_for_inductor, graph like:\n %s",
+        module.print_readable(print_output=False, include_stride=True, include_device=True),
+    )
 
     is_inference = config_dict.get("is_inference", False)
     is_backward = config_dict.get("is_backward", False)

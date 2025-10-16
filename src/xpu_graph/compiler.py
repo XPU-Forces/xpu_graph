@@ -45,13 +45,19 @@ def optimize_graph(gm, sample_inputs, config=None):
     fake_inputs = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in sample_inputs]
 
     with fake_mode:
-        logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
+        logger.debug(
+            "before xpu_optimize_graph, graph like:\n %s",
+            gm.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
         logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
 
         pass_manager = PassManager(config)
         xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
 
-        logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
+        logger.debug(
+            "after xpu_optimize_graph, graph like:\n %s",
+            xpu_optimized.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
         logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
 
     return xpu_optimized
@@ -98,7 +104,7 @@ class XpuGraph:
                         return cached_compiled
 
                 # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
-                original_gm_graph = str(gm.graph)
+                original_gm_graph = gm.print_readable(print_output=False, include_stride=True, include_device=True)
                 with local_logger("before"):
                     logger.debug(f"before xpu_graph, graph like:\n {original_gm_graph}")
                     logger.info(f"xpu_graph passes start {stage}...")
@@ -107,12 +113,15 @@ class XpuGraph:
                 xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
                 nodes_statistics.insert_statistics("after xpu_graph", xpu_compiled)
 
+                compiled_gm_graph = xpu_compiled.print_readable(
+                    print_output=False, include_stride=True, include_device=True
+                )
                 with local_logger("after"):
                     logger.info("xpu_graph passes complete")
-                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
+                    logger.debug(f"after xpu_graph, graph like:\n {compiled_gm_graph}")
                     logger.debug(
                         "Final difference after optimizations by xpu_graph:%s\n",
-                        GitLikeDiffer(original_gm_graph, xpu_compiled.graph),
+                        GitLikeDiffer(original_gm_graph, compiled_gm_graph),
                     )
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
@@ -173,11 +182,17 @@ class XpuGraph:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well
-            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+            logger.debug(
+                "before decompose: graph like:\n %s",
+                dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+            )
             logger.info("decompose graph start...")
             dispatched_gm, fake_inputs, fw_metadata = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.pregrad)
             logger.info("decompose graph complete")
-            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+            logger.debug(
+                "after decompose, graph like:\n %s",
+                dispatched_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+            )
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
@@ -187,11 +202,17 @@ class XpuGraph:
             )(pregrad_gm, fake_inputs)
 
         else:
-            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+            logger.debug(
+                "before decompose: graph like:\n %s",
+                dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+            )
             logger.info("decompose graph start...")
             dispatched_gm, fake_inputs, fw_metadata = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
             logger.info("decompose graph complete")
-            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+            logger.debug(
+                "after decompose, graph like:\n %s",
+                dispatched_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+            )
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
