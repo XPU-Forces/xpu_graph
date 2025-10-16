@@ -10,6 +10,13 @@ def fn0(a):
     return output + 100
 
 
+def fn0_strided(a):
+    a = a.permute(2, 1, 0, 3)
+    output = torch.sum(a, dim=1)
+    output = output.view(-1)
+    return output + 100
+
+
 def fn1(a):
     output = torch.sum(a, dim=3, keepdim=True)
     return output
@@ -59,6 +66,7 @@ class TestReduce:
         "pattern_func",
         [
             fn0,
+            fn0_strided,
             fn1,
             fn2,
             fn3,
