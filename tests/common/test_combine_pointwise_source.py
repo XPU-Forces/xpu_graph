@@ -54,7 +54,11 @@ def fn2(a):
 
 
 def fn3_inputs(x1, x2, x3, x4):
-    return x1 * 0.1 + x2 * 0.1 + x3 * 0.1 + x4
+    return (x1 * 0.1).sum(dim=-1) + (x2 * 0.1).sum(dim=-1) + (x3 * 0.1).sum(dim=-1) + x4.sum(dim=-1)
+
+
+def fn3_inputs_varlen(x1, x2, x3, x4):
+    return (x1 * 0.1).sum(dim=-1) + (x2 * 0.1).sum(dim=-1) + (x3 * 0.1).sum(dim=-1) + x4.sum(dim=-1)
 
 
 def fn4_symshape(a):
@@ -81,6 +85,8 @@ def combine_pointwise_test(xpu_graph_backend, func, is_training=False):
 
         if func == fn3_inputs:
             inputs = torch.reshape(inputs, [batch, 16, 4]).unbind(dim=-1)
+        elif func == fn3_inputs_varlen:
+            inputs = torch.split_with_sizes(inputs, [10, 10, 20, inputs.size(-1) - 40], dim=-1)
         else:
             inputs = (inputs,)
 
@@ -107,6 +113,7 @@ class TestCombinePointwiseSourceInference:
             fn1,
             fn2,
             fn3_inputs,
+            fn3_inputs_varlen,
             fn4_symshape,
             fn5,
         ],
@@ -140,6 +147,7 @@ class TestCombinePointwiseSinkTraining:
             fn1,
             fn2,
             fn3_inputs,
+            fn3_inputs_varlen,
             fn4_symshape,
             fn5,
         ],
@@ -151,7 +159,7 @@ class TestCombinePointwiseSinkTraining:
             assert "Pattern.CombinePointwiseSource changed graph" not in caplog.text
         else:
             assert caplog.text.count("Pattern.CombinePointwiseSource changed graph") == 2
-        if "split_varlen" in pattern_func.__name__:
+        if "varlen" in pattern_func.__name__:
             assert "aten.stack.default" not in caplog.text
 
 
