@@ -186,7 +186,8 @@ class XpuGraphCache:
         config: XpuGraphConfig,
         stage: FxStage,
     ):
-        key = f"{gm}-{fake_inputs}-{config}-{stage}"
+        gm_str = gm.print_readable(print_output=False, include_stride=True, include_device=True)
+        key = f"{gm_str}-{fake_inputs}-{config}-{stage}"
         logger.debug(f"Cache Key readable: \n{key}")
         hashkey = hashlib.md5(key.encode()).hexdigest()
         logger.info(f"Cache Key: {hashkey}")

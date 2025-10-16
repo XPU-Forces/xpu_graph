@@ -31,4 +31,4 @@
 - 增加AddN pattern，将多次add融合为stack sum。 #248
 
 ## Bug修复与其他改动
--
+- 优化日志打印。#423
