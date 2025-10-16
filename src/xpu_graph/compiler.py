@@ -165,7 +165,10 @@ class XpuGraph:
                 fallback_dispatch = True
 
         if fallback_dispatch:
-            logger.debug(f"before compile: graph like:\n {dynamo_gm.graph}")
+            logger.debug(
+                "before compile: graph like:\n %s",
+                dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+            )
             if self._config.is_training:
                 xpu_gm = aot_autograd(
                     fw_compiler=_staged_compiler(FxStage.forward),
