@@ -31,4 +31,5 @@
 - 增加AddN pattern，将多次add融合为stack sum。 #248
 
 ## Bug修复与其他改动
-- 优化日志打印。#423
+- 优化日志打印。 #423
+- 修复fold pass导致中间结果stride不一致的问题。 #413

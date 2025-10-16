@@ -5,30 +5,48 @@ import xpu_graph
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 
-def can_fold_test(xpu_graph, dynamic):
+def can_fold_test(xpu_graph):
     def _can_fold(x):
         y = torch.ops.aten._to_copy.default(x)
         return x + y
 
-    x = torch.randn(128, 64)
+    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=None)
 
-    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=dynamic)
-    expect = _can_fold(x)
-    res = compiled(x)
-    assert is_similar(expect, res)
+    for bs in [8, 20, 80]:
+        x = torch.randn(bs, 64)
+        expect = _can_fold(x)
+        res = compiled(x)
+        assert is_similar(expect, res)
 
 
-def cannot_fold_test(xpu_graph, dynamic):
+def cannot_fold_test(xpu_graph):
     def _cannot_fold(x):
         y = torch.ops.aten._to_copy.default(x)
         return y
 
-    x = torch.randn(10, 10)
+    compiled = torch.compile(_cannot_fold, backend=xpu_graph, dynamic=None)
+    for bs in [8, 20, 100]:
+        x = torch.randn(bs, 10)
+        expect = _cannot_fold(x)
+        res = compiled(x)
+        assert is_similar(expect, res)
 
-    compiled = torch.compile(_cannot_fold, backend=xpu_graph, dynamic=dynamic)
-    expect = _cannot_fold(x)
-    res = compiled(x)
-    assert is_similar(expect, res)
+
+def cannot_fold_test2(xpu_graph):
+    def _can_fold(x):
+        bsz = x.size(0)
+        y = x.T
+        y = torch.ops.aten._to_copy.default(y, memory_format=torch.contiguous_format)
+        y = y.view(bsz, 12, 64)
+        return x + y
+
+    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=None)
+
+    for bs in [8, 20, 100]:
+        x = torch.randn(bs, 12, 64)
+        expect = _can_fold(x)
+        res = compiled(x)
+        assert is_similar(expect, res)
 
 
 class TestFoldToCopy:
@@ -36,17 +54,22 @@ class TestFoldToCopy:
         config = xpu_graph.config.XpuGraphConfig(is_training=False)
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
-    @pytest.mark.parametrize("dynamic", [False, True])
-    def test_can_fold_case(self, caplog, dynamic):
+    @pytest.mark.parametrize(
+        "test_func",
+        [
+            can_fold_test,
+            cannot_fold_test,
+            cannot_fold_test2,
+        ],
+    )
+    def test_can_fold_case(self, caplog, test_func):
         with need_xpu_graph_logs():
-            can_fold_test(self.xpu_graph, dynamic)
-            assert "Pattern.FoldToCopy changed graph" in caplog.text
-
-    @pytest.mark.parametrize("dynamic", [False, True])
-    def test_cannot_fold_case(self, caplog, dynamic):
-        with need_xpu_graph_logs():
-            cannot_fold_test(self.xpu_graph, dynamic)
-            assert "Pattern.FoldToCopy changed graph" not in caplog.text
+            test_func(self.xpu_graph)
+            if test_func.__name__.startswith("can_fold"):
+                assert caplog.text.count("Pattern.FoldToCopy changed graph") == 2
+            else:
+                assert "Pattern.FoldToCopy changed graph" not in caplog.text
+            assert caplog.text.count("xpu_graph passes start FxStage.inference") == 2
 
 
 if __name__ == "__main__":
