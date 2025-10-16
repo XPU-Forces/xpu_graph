@@ -28,6 +28,13 @@ def fn1(input):
     return torch.cat([input], dim=1)
 
 
+def fn1_strided(input):
+    x = input.T
+    x = torch.cat([x], dim=0)
+    x = x.view(-1)
+    return x
+
+
 def fn2(a):
     outputs = a.split([2, 5, a.shape[-1] - 7], dim=-1)
     output = torch.cat(outputs, dim=-1)
@@ -74,7 +81,13 @@ class TestFoldCat:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn1, fn2, fn2_xfail, fn2_xfail2],
+        [
+            fn1,
+            fn1_strided,
+            fn2,
+            fn2_xfail,
+            fn2_xfail2,
+        ],
     )
     @pytest.mark.parametrize("dynamic", [False, True])
     def test_cat_patterns(self, caplog, pattern_func, dynamic):
@@ -91,3 +104,4 @@ if __name__ == "__main__":
     xpu_graph = xpu_graph.compiler.XpuGraph(config)
     cat_cat_test(xpu_graph, fn0)
     cat_test(xpu_graph, fn1)
+    cat_test(xpu_graph, fn1_strided)
