@@ -13,6 +13,7 @@ class BMM(torch.nn.Module):
         return torch.matmul(x, self.weight)
 
 
+@pytest.mark.exclusive
 class TestMemPoolReuse:
     def setup_method(self):
         self.model = BMM().npu()
