@@ -4,6 +4,7 @@ from torch.multiprocessing.reductions import StorageWeakRef
 
 from xpu_graph.fx_utils import FxStage, has_storage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.shape_utils import compatible_memory_format
 
 
 class FoldClone(Pattern):
@@ -26,16 +27,12 @@ class FoldClone(Pattern):
             and StorageWeakRef(node.meta["val"].untyped_storage()) not in output_storages
         ]
 
-        def _is_alias_of_output(node, output_storages):
-            return StorageWeakRef(node.meta["val"].untyped_storage()) in output_storages
-
         for clone in candidates:
             inp = clone.args[0]
-            if "tensor_meta" not in inp.meta:
+            if "val" not in inp.meta or not isinstance(inp.meta["val"], torch.Tensor):
                 continue
-            org_memoryformat = inp.meta["tensor_meta"].memory_format
-            target_memoryformat = clone.kwargs["memory_format"] if "memory_format" in clone.kwargs else org_memoryformat
-            if org_memoryformat == target_memoryformat:
+            target_memoryformat = clone.kwargs.get("memory_format", torch.preserve_format)
+            if compatible_memory_format(inp.meta["val"], target_memoryformat):
                 changed = True
                 clone.replace_all_uses_with(inp)
                 gm.graph.erase_node(clone)

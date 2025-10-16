@@ -4,15 +4,9 @@ import random
 import numpy as np
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch_mlu
-from torch import nn, optim
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch import nn
+from torch.distributed.device_mesh import init_device_mesh
 from torch.utils.data import DataLoader, Dataset
-
-import xpu_graph
-from xpu_graph.config import OptLevel
 
 
 def set_seed(seed):
@@ -21,9 +15,6 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.mlu.manual_seed(seed)
     torch.mlu.manual_seed_all(seed)
-
-
-set_seed(12)
 
 
 class RandomDataset(Dataset):
@@ -39,13 +30,26 @@ class RandomDataset(Dataset):
 
 
 class MatMulModel(nn.Module):
-    def __init__(self, in_features=10):
+    def __init__(self, in_features=64):
         super(MatMulModel, self).__init__()
         self.weight = nn.Parameter(torch.randn(in_features, in_features))
         self.bias = nn.Parameter(torch.randn(in_features))
 
     def forward(self, x):
         return torch.matmul(x, self.weight) + self.bias
+
+
+class MainModel(nn.Module):
+    def __init__(self, in_features=64):
+        super(MainModel, self).__init__()
+        self.inner = nn.Sequential(
+            nn.Linear(in_features=in_features, out_features=2 * in_features),
+            nn.ReLU(),
+            nn.Linear(in_features=2 * in_features, out_features=in_features),
+        )
+
+    def forward(self, x):
+        return self.inner(x)
 
 
 def set_dist_env():
@@ -65,10 +69,22 @@ def set_dist_env():
     print(f'Setting master: {os.environ["MASTER_ADDR"]}:{os.environ["MASTER_PORT"]}')
 
 
-def train_setup(rank, world_size):
-    dist.init_process_group("cncl", rank=rank, world_size=world_size)
+def dist_setup(rank, world_size, mesh_shape=None, mesh_dim_names=None):
+    set_seed(12)
+    if mesh_shape is None:
+        mesh_shape = (world_size,)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    device_mesh = init_device_mesh("mlu", mesh_shape, mesh_dim_names=mesh_dim_names)
     torch.mlu.set_device(rank)
+    return device_mesh
 
 
 def cleanup():
     dist.destroy_process_group()
+
+
+def get_dp_dataloader(rank, world_size):
+    dataset = RandomDataset(size=64, length=1024)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    return dataloader
