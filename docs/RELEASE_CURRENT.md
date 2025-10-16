@@ -29,6 +29,7 @@
   目前我们仍然兼容原来的选项写法，但接下来三个版本后，我们将废弃原有的`use_custom_pool`字段，并不再新增npu compiler选项字段，请参考官方的选项用法。 #399
 - 增加对横向融合pattern的支持，可以将多个无依赖的pointwise算子融合成一次调用，减少host开销。 #390
 - 增加AddN pattern，将多次add融合为stack sum。 #248
+- 在存在高阶op和subclass tensor的情况下，使用aot_autograd来进行编译，以避免dispatch失败。 #191
 
 ## Bug修复与其他改动
 - 优化日志打印。#423
