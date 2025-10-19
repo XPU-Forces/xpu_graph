@@ -4,7 +4,6 @@ from torch.multiprocessing.reductions import StorageWeakRef
 
 from xpu_graph.fx_utils import FxStage, has_storage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.shape_utils import compatible_memory_format
 
 
 class FoldClone(Pattern):
