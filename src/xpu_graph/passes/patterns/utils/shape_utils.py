@@ -1,11 +1,6 @@
 import sympy
 import torch
-from torch._prims_common import is_contiguous_for_memory_format
-from torch.fx.experimental.symbolic_shapes import (
-    GuardOnDataDependentSymNode,
-    statically_known_true,
-    sym_eq,
-)
+from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
 
 from xpu_graph.utils import logger
 

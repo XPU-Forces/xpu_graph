@@ -22,9 +22,6 @@ class FoldStack(Pattern):
         copy = gm.graph.call_function(
             torch.ops.aten.clone.default,
             args=(src,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
         )
         view = gm.graph.call_function(torch.ops.aten.unsqueeze.default, args=(copy, dim))
         return view
@@ -49,9 +46,6 @@ class FoldStack(Pattern):
             return gm.graph.call_function(
                 torch.ops.aten.clone.default,
                 args=(unbind_node.args[0],),
-                kwargs={
-                    "memory_format": torch.contiguous_format,
-                },
             )
         else:
             return None

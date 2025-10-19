@@ -28,18 +28,8 @@ def get_binary_fold_result(
             },
         )
     else:
-        if inp.meta["val"].dtype == target_meta["val"].dtype:
-            cast = inp
-        else:
-            cast = gm.graph.call_function(
-                torch.ops.aten._to_copy.default,
-                args=(inp,),
-                kwargs={
-                    "dtype": target_meta["val"].dtype,
-                },
-            )
         if same_shape(inp.meta["val"].shape, target_meta["val"].shape):
-            expand = cast
+            expand = inp
         else:
             if any(isinstance(s, torch.SymInt) for s in target_meta["val"].shape):
                 # FIXME: use shape env to get the real shape
@@ -47,15 +37,21 @@ def get_binary_fold_result(
             expand = gm.graph.call_function(
                 torch.ops.aten.expand.default,
                 args=(
-                    cast,
+                    inp,
                     target_meta["val"].shape,
                 ),
             )
-        copy = gm.graph.call_function(
-            torch.ops.aten.clone.default,
-            args=(expand,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
-        )
+        if inp.meta["val"].dtype != target_meta["val"].dtype:
+            copy = gm.graph.call_function(
+                torch.ops.aten._to_copy.default,
+                args=(expand,),
+                kwargs={
+                    "dtype": target_meta["val"].dtype,
+                },
+            )
+        else:
+            copy = gm.graph.call_function(
+                torch.ops.aten.clone.default,
+                args=(expand,),
+            )
         return copy

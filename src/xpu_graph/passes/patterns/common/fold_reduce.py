@@ -23,9 +23,6 @@ class FoldReduce(Pattern):
         copy = gm.graph.call_function(
             torch.ops.aten.clone.default,
             args=(src,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
         )
         if keep_dim:
             return copy

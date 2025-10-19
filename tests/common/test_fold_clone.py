@@ -19,56 +19,29 @@ def can_fold_test(xpu_graph):
         assert is_similar(expect, res)
 
 
-def can_fold_test_contiguous(xpu_graph):
-    def _can_fold(x):
-        y = torch.ops.aten.clone.default(x, memory_format=torch.contiguous_format)
-        return x + y
-
-    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=None)
-
-    for bs in [8, 20, 80]:
-        x = torch.randn(bs, 4, 16).contiguous()
-        expect = _can_fold(x)
-        res = compiled(x)
-        assert is_similar(expect, res)
-
-
-def can_fold_test_channels_last(xpu_graph):
-    def _can_fold(x):
-        y = torch.ops.aten.clone.default(x, memory_format=torch.channels_last)
-        return x + y
-
-    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=None)
-
-    for bs in [8, 20, 80]:
-        x = torch.randn(bs, 4, 16, 16).contiguous(memory_format=torch.channels_last)
-        expect = _can_fold(x)
-        res = compiled(x)
-        assert is_similar(expect, res)
-
-
-def can_fold_test_channels_last3d(xpu_graph):
-    def _can_fold(x):
-        y = torch.ops.aten.clone.default(x, memory_format=torch.channels_last_3d)
-        return x + y
-
-    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=None)
-    for bs in [8, 20, 80]:
-        x = torch.randn(bs, 4, 10, 10, 10).contiguous(memory_format=torch.channels_last_3d)
-        expect = _can_fold(x)
-        res = compiled(x)
-        assert is_similar(expect, res)
-
-
 def cannot_fold_test(xpu_graph):
     def _cannot_fold(x):
-        y = torch.ops.aten.clone.default(x, memory_format=torch.contiguous_format)
+        y = torch.ops.aten.clone.default(x)
         return y
 
     compiled = torch.compile(_cannot_fold, backend=xpu_graph, dynamic=None)
     for bs in [8, 20, 80]:
         x = torch.randn(bs, 64)
         expect = _cannot_fold(x)
+        res = compiled(x)
+        assert is_similar(expect, res)
+
+
+def cannot_fold_test1(xpu_graph):
+    def _can_fold(x):
+        y = torch.ops.aten.clone.default(x, memory_format=torch.contiguous_format)
+        return x + y
+
+    compiled = torch.compile(_can_fold, backend=xpu_graph, dynamic=None)
+
+    for bs in [8, 20, 80]:
+        x = torch.randn(bs, 4, 4, 16).contiguous(memory_format=torch.channels_last)
+        expect = _can_fold(x)
         res = compiled(x)
         assert is_similar(expect, res)
 
@@ -98,10 +71,8 @@ class TestFoldToCopy:
         "test_func",
         [
             can_fold_test,
-            can_fold_test_contiguous,
-            can_fold_test_channels_last,
-            can_fold_test_channels_last3d,
             cannot_fold_test,
+            cannot_fold_test1,
             cannot_fold_test2,
         ],
     )

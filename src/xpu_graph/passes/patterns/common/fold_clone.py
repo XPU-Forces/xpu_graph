@@ -31,8 +31,11 @@ class FoldClone(Pattern):
             inp = clone.args[0]
             if "val" not in inp.meta or not isinstance(inp.meta["val"], torch.Tensor):
                 continue
+            # Note(chenyifan):
+            #   We do not check memory_format compability for now, as input strides may get changed after other passes
+            #   Thus, only preserve_format is allowed to fold; format-specified clone is always enforced
             target_memoryformat = clone.kwargs.get("memory_format", torch.preserve_format)
-            if compatible_memory_format(inp.meta["val"], target_memoryformat):
+            if target_memoryformat == torch.preserve_format:
                 changed = True
                 clone.replace_all_uses_with(inp)
                 gm.graph.erase_node(clone)

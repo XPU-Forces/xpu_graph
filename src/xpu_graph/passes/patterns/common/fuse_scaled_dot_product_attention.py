@@ -180,19 +180,6 @@ class FusedSDPA(Pattern):
                     torch.ops.aten.transpose.int,
                     args=(k, -1, -2),
                 )
-                q = graph_module.graph.call_function(
-                    torch.ops.aten.view.default,
-                    args=(q, (batch_size, num_heads, q_len, qk_dim)),
-                )
-                k = graph_module.graph.call_function(
-                    torch.ops.aten.view.default,
-                    args=(k, (batch_size, num_heads, kv_len, qk_dim)),
-                )
-                v = graph_module.graph.call_function(
-                    torch.ops.aten.view.default,
-                    args=(v, (batch_size, num_heads, kv_len, v_dim)),
-                )
-
                 # Note: force contiguous for SDP-backend compatibility
                 q = graph_module.graph.call_function(
                     torch.ops.aten.clone.default,
@@ -208,6 +195,19 @@ class FusedSDPA(Pattern):
                     torch.ops.aten.clone.default,
                     args=(v,),
                     kwargs={"memory_format": torch.contiguous_format},
+                )
+
+                q = graph_module.graph.call_function(
+                    torch.ops.aten.reshape.default,
+                    args=(q, (batch_size, num_heads, q_len, qk_dim)),
+                )
+                k = graph_module.graph.call_function(
+                    torch.ops.aten.reshape.default,
+                    args=(k, (batch_size, num_heads, kv_len, qk_dim)),
+                )
+                v = graph_module.graph.call_function(
+                    torch.ops.aten.reshape.default,
+                    args=(v, (batch_size, num_heads, kv_len, v_dim)),
                 )
 
                 if attn_mask is not None and not is_add:
@@ -233,7 +233,7 @@ class FusedSDPA(Pattern):
                         kwargs={"attn_mask": attn_mask, "scale": scale},
                     )
                 view = graph_module.graph.call_function(
-                    torch.ops.aten.view.default,
+                    torch.ops.aten.reshape.default,
                     args=(fused, tuple(sym_shape_manager.rebind_shape(node.meta["val"].shape))),
                 )
             node.replace_all_uses_with(view)
