@@ -11,7 +11,8 @@ from .fx_utils import (
     FxStage,
     dispatch_graph,
     fakify_tensors,
-    find_hop_nodes_or_subclass_inputs,
+    find_hop_nodes,
+    find_subclass_inputs,
 )
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
@@ -156,10 +157,12 @@ class XpuGraph:
         fallback_dispatch = False
         if self._config.fallback_legacy_dispatch:
             fallback_dispatch = False
-            hop_nodes, subclass_tensors = find_hop_nodes_or_subclass_inputs(dynamo_gm, example_inputs)
+            hop_nodes = find_hop_nodes(dynamo_gm)
             if len(hop_nodes) > 0:
                 logger.warning(f"Higher order operators detected: {', '.join(str(op) for op in hop_nodes)}.")
                 fallback_dispatch = True
+
+            subclass_tensors = find_subclass_inputs(example_inputs)
             if len(subclass_tensors) > 0:
                 logger.warning(f"Subclass inputs detected: {', '.join(str(cls) for cls in subclass_tensors)}.")
                 fallback_dispatch = True

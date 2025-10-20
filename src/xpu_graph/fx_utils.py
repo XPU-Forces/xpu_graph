@@ -388,23 +388,40 @@ def _get_wrapped_constant(node: fx.Node):
         assert False, "Cannot fetch wrapped constant from node: {}".format(node)
 
 
-def find_hop_nodes_or_subclass_inputs(gm: fx.GraphModule, inputs):
+def _is_hop_node(node: fx.Node) -> bool:
+    """Check if the node is a higher-order operator."""
+    if node.op == "call_function":
+        return hasattr(node.target, "namespace") and node.target.namespace == "higher_order"
+    if node.op == "call_module":
+        # Note: it must be a allow-in-graph module, skip any pregrad operations on it
+        return True
+    return False
+
+
+def find_hop_nodes(gm: fx.GraphModule):
     """Check if the graph module contains higher-order operators and subclass inputs."""
 
     hops = {}
     graph = gm.graph
     for node in graph.nodes:
-        if node.op == "call_function":
-            if hasattr(node.target, "namespace") and node.target.namespace == "higher_order":
-                if node.target not in hops:
-                    hops[node.target] = []
-                hops[node.target].append(node)
+        if _is_hop_node(node):
+            if node.target not in hops:
+                hops[node.target] = []
+            hops[node.target].append(node)
+    return hops
 
+
+def _is_subclass_input(i):
+    return isinstance(i, torch.Tensor) and is_traceable_wrapper_subclass_type(type(i))
+
+
+def find_subclass_inputs(inputs):
+    """Check if the graph module contains subclass inputs."""
     subclasses = {}
     for i in inputs:
-        if isinstance(i, torch.Tensor) and is_traceable_wrapper_subclass_type(type(i)):
+        if _is_subclass_input(i):
             if type(i) not in subclasses:
                 subclasses[type(i)] = []
             subclasses[type(i)].append(i)
 
-    return hops, subclasses
+    return subclasses
