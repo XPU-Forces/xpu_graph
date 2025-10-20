@@ -9,6 +9,7 @@ from torch.utils import _pytree as pytree
 
 from xpu_graph.config import Target
 from xpu_graph.fx_utils import FxStage, dispatch_graph
+from xpu_graph.passes.view_to_reshape import view_to_reshape
 from xpu_graph.utils import logger
 
 from .pattern import Pattern
@@ -38,6 +39,8 @@ class PluginPattern(Pattern):
         self._eager_pattern, _, _ = dispatch_graph(
             symbolic_trace(eager_func), example_inputs, stage=self._current_stage
         )
+        # Note: Replace every view op with reshape op in the eager pattern, because target graph has already replaced view ops.
+        view_to_reshape(self._eager_pattern)
         self._replacement = symbolic_trace(replacement)
 
         self._filter_list = list(filter_list) if filter_list is not None else []

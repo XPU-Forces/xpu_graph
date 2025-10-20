@@ -26,6 +26,11 @@ class PassManager:
         if RemoveAssertions._opt_level <= self._config.opt_level:
             self._passes.append(RemoveAssertions())
 
+        from .view_to_reshape import ViewToReshape
+
+        if ViewToReshape._opt_level <= self._config.opt_level:
+            self._passes.append(ViewToReshape())
+
         from .dce import Dce
 
         if Dce._opt_level <= self._config.opt_level:

@@ -16,7 +16,7 @@ class FoldCat(Pattern):
 
     def _get_fold_result(self, gm: fx.GraphModule, src: fx.Node):
         return gm.graph.call_function(
-            torch.ops.aten._to_copy.default,
+            torch.ops.aten.clone.default,
             args=(src,),
         )
 

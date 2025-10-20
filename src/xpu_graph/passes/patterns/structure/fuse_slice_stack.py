@@ -93,7 +93,7 @@ def fuse_mixed_ops_and_stack(graph_module: fx.GraphModule):
         with graph_module.graph.inserting_before(node):
             batch_node = graph_module.graph.call_method("size", args=(slice_node, 0))
             reshape_node = graph_module.graph.call_function(
-                torch.ops.aten.view.default,
+                torch.ops.aten.reshape.default,
                 args=(slice_node, (batch_node, len(slice_param), -1)),
             )
             # skip trans is the next node is sum, and change sum dim
