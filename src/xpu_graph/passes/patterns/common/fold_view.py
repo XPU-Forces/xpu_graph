@@ -23,6 +23,7 @@ class FoldView0(Pattern):
         view_tup = (
             torch.ops.aten.view.default,
             torch.ops.aten._unsafe_view.default,
+            torch.ops.aten.reshape.default,
         )
         candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in view_tup]
 
@@ -41,6 +42,7 @@ class FoldView0(Pattern):
 _view_like_ops = (
     torch.ops.aten.view.default,
     torch.ops.aten._unsafe_view.default,
+    torch.ops.aten.reshape.default,
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
@@ -60,6 +62,7 @@ class FoldView1(Pattern):
         view_tup = (
             torch.ops.aten.view.default,
             torch.ops.aten._unsafe_view.default,
+            torch.ops.aten.reshape.default,
         )
         candidates = [node for node in gm.graph.nodes if node.op == "call_function" and node.target in view_tup]
 

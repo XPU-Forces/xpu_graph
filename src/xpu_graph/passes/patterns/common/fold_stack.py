@@ -20,7 +20,7 @@ class FoldStack(Pattern):
 
     def _get_fold_result(self, gm: fx.GraphModule, src: fx.Node, dim: int):
         copy = gm.graph.call_function(
-            torch.ops.aten._to_copy.default,
+            torch.ops.aten.clone.default,
             args=(src,),
         )
         view = gm.graph.call_function(torch.ops.aten.unsqueeze.default, args=(copy, dim))

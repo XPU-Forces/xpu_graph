@@ -47,11 +47,7 @@ class FoldToCopy(Pattern):
             if "pin_memory" in copy.kwargs or "non_blocking" in copy.kwargs:
                 return False
             if "memory_format" in copy.kwargs:
-                return (
-                    "tensor_meta" in inp.meta
-                    and "tensor_meta" in copy.meta
-                    and inp.meta["tensor_meta"].memory_format == copy.meta["tensor_meta"].memory_format
-                )
+                return copy.kwargs["memory_format"] == torch.preserve_format
             return True
 
         for _to_copy in candidates:

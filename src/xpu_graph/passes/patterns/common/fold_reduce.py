@@ -21,7 +21,7 @@ class FoldReduce(Pattern):
 
     def _get_fold_result(self, gm: fx.GraphModule, src, dims: List[int], keep_dim: bool) -> fx.Node:
         copy = gm.graph.call_function(
-            torch.ops.aten._to_copy.default,
+            torch.ops.aten.clone.default,
             args=(src,),
         )
         if keep_dim:
