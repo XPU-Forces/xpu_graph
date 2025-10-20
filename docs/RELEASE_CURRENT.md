@@ -33,4 +33,4 @@
 
 ## Bug修复与其他改动
 - 优化日志打印。 #423
-- 修复fold pass导致中间结果stride不一致的问题。 #413
+- 修复fold pass带来的stride变化导致view失败的问题，将所有view操作替换为reshape。 #413
