@@ -33,7 +33,7 @@ class TestTrainingWithPartiioner:
         ],
     )
     def test_training(self, caplog, monkeypatch, partition_fn):
-        monkeypatch.setattr(xpu_graph.XpuGraphConfig, "partition_fn", partition_fn)
+        monkeypatch.setenv("XPUGRAPH_PARTITIONER", partition_fn)
 
         with need_xpu_graph_logs():
             train_config = xpu_graph.XpuGraphConfig(
