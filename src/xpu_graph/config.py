@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
@@ -74,7 +74,7 @@ class XpuGraphConfig:
     fallback_legacy_dispatch: bool = False
 
     # Users can specify which partition function to use for training
-    partition_fn: Optional[Callable] = None
+    partition_fn: Optional[Union[Callable, str]] = None
 
     def _reset_config_with_env(self):
         import os
@@ -122,28 +122,7 @@ class XpuGraphConfig:
             )
 
         if os.getenv(__XPU_GRAPH_ENVS__.partition_fn) is not None:
-            fqn = os.getenv(__XPU_GRAPH_ENVS__.partition_fn)
-            if fqn.lower() == "default":
-                from torch._functorch.partitioners import default_partition
-
-                self.partition_fn = default_partition
-            elif fqn.lower() == "mincut":
-                from torch._functorch.partitioners import (
-                    min_cut_rematerialization_partition,
-                )
-
-                self.partition_fn = min_cut_rematerialization_partition
-            else:
-                try:
-                    import importlib
-
-                    mod_name, func_name = fqn.rsplit(".", 1)
-                    module = importlib.import_module(mod_name)
-                    func = getattr(module, func_name)
-                    self.partition_fn = func
-                except Exception:
-                    warnings.warn(f"Failed to import partition function {fqn}, use default partition function")
-                    self.partition_fn = None
+            self.partition_fn = get_partition_fn(os.getenv(__XPU_GRAPH_ENVS__.partition_fn))
 
 
 cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)
@@ -172,3 +151,29 @@ def get_dump_dir():
         os.environ[__XPU_GRAPH_ENVS__.dump_dir] = dump_path
         logger.debug(f"Use {dump_path} as default dump path")
     return dump_path
+
+
+def get_partition_fn(fqn):
+    if not isinstance(fqn, str):
+        return fqn
+    from torch._functorch.partitioners import (
+        default_partition,
+        min_cut_rematerialization_partition,
+    )
+
+    if fqn.lower() == "default":
+        return default_partition
+    elif fqn.lower() == "mincut":
+        return min_cut_rematerialization_partition
+    else:
+        try:
+            import importlib
+
+            mod_name, func_name = fqn.rsplit(".", 1)
+            module = importlib.import_module(mod_name)
+            func = getattr(module, func_name)
+            assert isinstance(func, Callable), f"Partition function {fqn} is not a callable object"
+            return func
+        except Exception:
+            warnings.warn(f"Failed to import partition function {fqn}, use default partition function")
+            return None

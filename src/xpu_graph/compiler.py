@@ -6,7 +6,7 @@ from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import SerializeWrapper, XpuGraphCache, default_cache
-from .config import OptLevel, Target, XpuGraphConfig
+from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
     dispatch_graph,
@@ -177,8 +177,8 @@ class XpuGraph:
                 kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
                 kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
                 kwargs["keep_inference_input_mutations"] = True
-                if self._config.partition_fn is not None:
-                    kwargs["partition_fn"] = self._config.partition_fn
+                if partition_fn := get_partition_fn(self._config.partition_fn):
+                    kwargs["partition_fn"] = partition_fn
             else:
                 kwargs["fw_compiler"] = _staged_compiler(FxStage.inference)
                 kwargs["keep_inference_input_mutations"] = True
@@ -205,8 +205,8 @@ class XpuGraph:
             kwargs = {}
             kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
             kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
-            if self._config.partition_fn is not None:
-                kwargs["partition_fn"] = self._config.partition_fn
+            if partition_fn := get_partition_fn(self._config.partition_fn):
+                kwargs["partition_fn"] = partition_fn
             xpu_gm = aot_autograd(**kwargs)(pregrad_gm, fake_inputs)
 
         else:

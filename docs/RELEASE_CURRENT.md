@@ -11,7 +11,12 @@
 -
 
 ## 主要特性与改进
-- 支持训练阶段指定partition_fn，可以通过参数`partition_fn`或环境变量`XPUGRAPH_PARTITIONER`指定。 #430
+- 支持训练阶段指定计算图前反向拆分策略，可以通过参数`partition_fn`指定，也可以通过环境变量`XPUGRAPH_PARTITIONER`指定。 #430
+    * `"DEFAULT"`: 使用与eager行为一致的前反向拆分（`torch._functorch.partitioners.default_partition_fn`）
+    * `"MINCUT"`: 使用显存优化的前反向拆分 (`torch._functorch.partitioners.min_cut_rematerialization_partition`)
+    * 也可以指定自定义的partition_fn实现定制的前反向拆分策略（通过环境变量指定时使用函数的fqn进行指定）
+    * 未指定时效果同`"DEFAULT"`
+
 
 ## Bug修复与其他改动
 -
