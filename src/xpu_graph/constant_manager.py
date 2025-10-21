@@ -52,7 +52,7 @@ def _get_tensor_hash(tensor: torch.Tensor) -> str:
 
         # TODO(liuyuan): evaluta the performance.
         io_buffer = io.BytesIO()
-        torch.save(tensor, io_buffer)
+        torch.save(tensor.detach(), io_buffer)
         tensor_bytes = io_buffer.getvalue()
 
         content_hash = hashlib.sha256(tensor_bytes).hexdigest()
