@@ -30,6 +30,7 @@ class TestTrainingWithPartiioner:
             "MINCUT",
             "DEFAULT",
             "torch._functorch.partitioners.min_cut_rematerialization_partition",
+            "dummy",
         ],
     )
     def test_training(self, caplog, monkeypatch, partition_fn):
