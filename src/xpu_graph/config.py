@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
@@ -73,6 +73,9 @@ class XpuGraphConfig:
     # Whether to use legacy dispatchers in case of higher-order operators or subclass-tensors
     fallback_legacy_dispatch: bool = False
 
+    # Users can specify which partition function to use for training
+    partition_fn: Optional[Callable] = None
+
     def _reset_config_with_env(self):
         import os
 
@@ -117,6 +120,30 @@ class XpuGraphConfig:
             self.fallback_legacy_dispatch = get_bool_env_var(
                 __XPU_GRAPH_ENVS__.fallback_legacy_dispatch, self.fallback_legacy_dispatch
             )
+
+        if os.getenv(__XPU_GRAPH_ENVS__.partition_fn) is not None:
+            fqn = os.getenv(__XPU_GRAPH_ENVS__.partition_fn)
+            if fqn.lower() == "default":
+                from torch._functorch.partitioners import default_partition
+
+                self.partition_fn = default_partition
+            elif fqn.lower() == "mincut":
+                from torch._functorch.partitioners import (
+                    min_cut_rematerialization_partition,
+                )
+
+                self.partition_fn = min_cut_rematerialization_partition
+            else:
+                try:
+                    import importlib
+
+                    mod_name, func_name = fqn.rsplit(".", 1)
+                    module = importlib.import_module(mod_name)
+                    func = getattr(module, func_name)
+                    self.partition_fn = func
+                except Exception:
+                    warnings.warn(f"Failed to import partition function {fqn}, use default partition function")
+                    self.partition_fn = None
 
 
 cache_path = os.getenv(__XPU_GRAPH_ENVS__.cache_dir)

@@ -172,17 +172,17 @@ class XpuGraph:
                 "before compile: graph like:\n %s",
                 dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
             )
+            kwargs = {}
             if self._config.is_training:
-                xpu_gm = aot_autograd(
-                    fw_compiler=_staged_compiler(FxStage.forward),
-                    bw_compiler=_staged_compiler(FxStage.backward),
-                    keep_inference_input_mutations=True,
-                )(dynamo_gm, example_inputs)
+                kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
+                kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
+                kwargs["keep_inference_input_mutations"] = True
+                if self._config.partition_fn is not None:
+                    kwargs["partition_fn"] = self._config.partition_fn
             else:
-                xpu_gm = aot_autograd(
-                    fw_compiler=_staged_compiler(FxStage.inference),
-                    keep_inference_input_mutations=True,
-                )(dynamo_gm, example_inputs)
+                kwargs["fw_compiler"] = _staged_compiler(FxStage.inference)
+                kwargs["keep_inference_input_mutations"] = True
+            xpu_gm = aot_autograd(**kwargs)(dynamo_gm, example_inputs)
             fw_metadata = None
         elif self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
@@ -202,10 +202,12 @@ class XpuGraph:
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
-            xpu_gm = aot_autograd(
-                fw_compiler=_staged_compiler(FxStage.forward),
-                bw_compiler=_staged_compiler(FxStage.backward),
-            )(pregrad_gm, fake_inputs)
+            kwargs = {}
+            kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
+            kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
+            if self._config.partition_fn is not None:
+                kwargs["partition_fn"] = self._config.partition_fn
+            xpu_gm = aot_autograd(**kwargs)(pregrad_gm, fake_inputs)
 
         else:
             logger.debug(
