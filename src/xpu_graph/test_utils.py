@@ -1,6 +1,7 @@
 import logging
 import time
 from contextlib import contextmanager
+from functools import cache
 
 import torch
 from torch.testing._internal.common_utils import TestCase
@@ -136,3 +137,49 @@ def timeit(func, *args, **kwargs):
         return result, time.time() - start
 
     return wrap
+
+
+@cache
+def list_torch_dtypes(skip_func=None):
+    dtypes = []
+    for attr_name in dir(torch):
+        attr = getattr(torch, attr_name)
+        if isinstance(attr, torch.dtype) and not attr_name.startswith("_"):
+            if skip_func and skip_func(attr_name, attr):
+                continue
+            dtypes.append(attr)
+    return dtypes
+
+
+def common_torch_dtypes():
+    dtypes = (
+        torch.bfloat16,
+        torch.bool,
+        torch.float64,
+        torch.float32,
+        torch.float16,
+        torch.float32,
+        torch.float64,
+        torch.float16,
+        torch.int32,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.int8,
+        torch.int64,
+        torch.int16,
+        torch.uint16,
+        torch.uint32,
+        torch.uint64,
+        torch.uint8,
+    )
+    return dtypes
+
+
+def naive_permutation(list_lhs, list_rhs, skip_func: callable = None):
+    for lhs in list_lhs:
+        for rhs in list_rhs:
+            if skip_func and skip_func(lhs, rhs):
+                continue
+            yield (lhs, rhs)
+            yield (rhs, lhs)

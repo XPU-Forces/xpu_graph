@@ -2,7 +2,14 @@ import pytest
 import torch
 
 from xpu_graph import XpuGraph, XpuGraphConfig
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.test_utils import (
+    common_torch_dtypes,
+    is_similar,
+    list_torch_dtypes,
+    naive_permutation,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 
 def constant_folding_with_reload_test(xpu_graph_backend):
@@ -115,9 +122,9 @@ class FoldFullLikeTo(torch.nn.Module):
         super().__init__()
 
     @torch.no_grad()
-    def forward(self, x):
-        const_tensor = torch.full_like(x, 2.0, dtype=torch.float32)
-        casted_const = const_tensor.to(torch.int32)
+    def forward(self, x, src_dtype=torch.float32, dst_dtype=torch.int32):
+        const_tensor = torch.full_like(x, 2.0, dtype=src_dtype)
+        casted_const = const_tensor.to(dst_dtype)
         return x.to(torch.int32) * 2 + casted_const
 
 
@@ -259,6 +266,27 @@ class TestConstantFolding:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=True)
             result = compiled_mod(*inputs)
+
+        assert is_similar(result, expect), f"Failed for {testcase_class.__name__}"
+        assert "Optimizer.ConstantFolding" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "src_dtype, dst_dtype",
+        naive_permutation(
+            common_torch_dtypes()[:9],
+            common_torch_dtypes()[9:],
+            # NOTE(liuyuan): RuntimeError: Promotion for uint16, uint32, uint64 types is not supported
+            lambda x, y: x == y or any(ele in (torch.uint16, torch.uint32, torch.uint64) for ele in (x, y)),
+        ),
+    )
+    def test_multiple_dtype(self, caplog, src_dtype, dst_dtype):
+        inputs = torch.rand(128, 128)
+        testcase_class = FoldFullLikeTo
+        mod = testcase_class()
+        expect = mod(inputs, src_dtype, dst_dtype)
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            compiled_mod = torch.compile(mod, backend=self.xpu_graph_backend, dynamic=True)
+            result = compiled_mod(inputs, src_dtype, dst_dtype)
 
         assert is_similar(result, expect), f"Failed for {testcase_class.__name__}"
         assert "Optimizer.ConstantFolding" not in caplog.text

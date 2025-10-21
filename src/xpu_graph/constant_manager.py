@@ -48,7 +48,12 @@ def _get_tensor_hash(tensor: torch.Tensor) -> str:
         )
         meta_hash = hashlib.sha256(str(meta).encode()).hexdigest()
 
-        tensor_bytes = tensor.cpu().numpy().tobytes()
+        import io
+
+        # TODO(liuyuan): evaluta the performance.
+        io_buffer = io.BytesIO()
+        torch.save(tensor, io_buffer)
+        tensor_bytes = io_buffer.getvalue()
 
         content_hash = hashlib.sha256(tensor_bytes).hexdigest()
 
