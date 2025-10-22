@@ -143,10 +143,10 @@ class XpuGraph:
                         **self._config.vendor_compiler_config,
                     )
 
-                xpu_compiled = SerializeWrapper(xpu_compiled)
+                    xpu_compiled = SerializeWrapper(xpu_compiled)
 
-                if self._config.enable_cache:
-                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                    # if self._config.enable_cache:
+                    #     xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
 
             return xpu_compiled
 
