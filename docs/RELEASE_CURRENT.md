@@ -1,4 +1,4 @@
-# Release 0.5.2
+# Release 0.6.0
 
 ## 主要依赖库版本描述
 - python 3.9 或者更高
@@ -11,26 +11,12 @@
 -
 
 ## 主要特性与改进
-- 现在你可以通过结构化字典的方式，将npu compiler的选项设置透传到过去，例如：
-  - ```
-    vendor_cfg = {'mode': 'reduce-overhead', 'aclgraph_config': {'use_custom_pool': mem_pool_handl}}
-    xpu_cfg =  XpuGraphConfig(
-                is_training=False,
-                target=Target.npu,
-                vendor_compiler_config=vendor_cfg)
-    # This also works for now and will be deprecated after THREE versions.
-    vendor_cfg = {'mode': 'reduce-overhead', 'use_custom_pool': mem_pool_handl}
-    xpu_cfg =  XpuGraphConfig(
-                is_training=False,
-                target=Target.npu,
-                vendor_compiler_config=vendor_cfg)
+- 支持训练阶段指定计算图前反向拆分策略，可以通过参数`partition_fn`指定，也可以通过环境变量`XPUGRAPH_PARTITIONER`指定。 #430
+    * `"DEFAULT"`: 使用与eager行为一致的前反向拆分（`torch._functorch.partitioners.default_partition_fn`）
+    * `"MINCUT"`: 使用显存优化的前反向拆分 (`torch._functorch.partitioners.min_cut_rematerialization_partition`)
+    * 也可以指定自定义的partition_fn实现定制的前反向拆分策略（通过环境变量指定时使用函数的fqn进行指定）
+    * 未指定时效果同`"DEFAULT"`
 
-    ```
-  目前我们仍然兼容原来的选项写法，但接下来三个版本后，我们将废弃原有的`use_custom_pool`字段，并不再新增npu compiler选项字段，请参考官方的选项用法。 #399
-- 增加对横向融合pattern的支持，可以将多个无依赖的pointwise算子融合成一次调用，减少host开销。 #390
-- 增加AddN pattern，将多次add融合为stack sum。 #248
-- 在存在高阶op和subclass tensor的情况下，使用aot_autograd来进行编译，以避免dispatch失败。 #191
 
 ## Bug修复与其他改动
-- 优化日志打印。 #423
-- 修复fold pass带来的stride变化导致view失败的问题，将所有view操作替换为reshape。 #413
+-
