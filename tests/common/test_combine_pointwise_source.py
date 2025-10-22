@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import torch
 
@@ -122,7 +124,7 @@ class TestCombinePointwiseSourceInference:
             assert "aten.stack.default" not in caplog.text
 
 
-class TestCombinePointwiseSinkTraining:
+class TestCombinePointwiseSourceTraining:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
@@ -143,6 +145,10 @@ class TestCombinePointwiseSinkTraining:
             fn4_symshape,
             fn5,
         ],
+    )
+    @pytest.mark.skipif(
+        os.environ.get("XPUGRAPH_FALLBACK_LEGACY_DISPATCH", "1") == "0",
+        reason="Pregrad passes will be replaced with joint passes",
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):

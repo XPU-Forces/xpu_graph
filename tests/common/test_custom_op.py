@@ -152,10 +152,11 @@ class TestCustomFallbackTraining:
     def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             compare_training_with_custom_op(ReproCls, self.train_backend)
-        if ReproCls == SimpleWitCustomOp:
-            assert "Higher order operators detected" not in caplog.text
-        else:
-            assert "Higher order operators detected" in caplog.text
+        if self.train_backend._config.fallback_legacy_dispatch:
+            if ReproCls == SimpleWitCustomOp:
+                assert "Higher order operators detected" not in caplog.text
+            else:
+                assert "Higher order operators detected" in caplog.text
 
 
 def compare_inference_with_custom_op(ModCls, backend, nbatches=4, bsz=8, input_dim=16):
