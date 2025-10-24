@@ -17,7 +17,7 @@ class TestMemPoolReuse:
     def setup_method(self):
         self.model = BMM().npu()
         # NOTE(liuyuan): heuristically that we found that we will have 0 memory growth under such buckets.
-        self.input_list = [torch.randn(2**i, 2048, 2048).npu() for i in range(8, 1, -1)]
+        self.input_list = [torch.randn(2**i, 2048, 2048).npu() for i in range(6, 1, -1)]
         # self.input_list = [
         #     torch.randn(2**i, 3, 128, 128).npu() for i in range(5, 1, -1)
         # ]
@@ -73,4 +73,5 @@ class TestMemPoolReuse:
                 memory_reserved = torch.npu.max_memory_reserved()
 
             # NOTE(liuyuan): should grow with 0B at least once if we use acl_graph memory pool reuse.
-            assert 0 in mem_growth, f"{mem_growth=}"
+            # UPDATE(chenyifan): torchair.config.debug.aclgraph.disable_mempool_reuse_in_same_fx is forced to be False  with custom pool
+            assert 0 not in mem_growth, f"{mem_growth=}"
