@@ -1,7 +1,7 @@
+import os
+
 import pytest
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -102,6 +102,10 @@ class TestLayerNorm:
     @pytest.mark.parametrize(
         "pattern_func",
         [naive_layer_norm, complex_func],
+    )
+    @pytest.mark.skipif(
+        os.environ.get("XPUGRAPH_FALLBACK_LEGACY_DISPATCH", "1") == "0",
+        reason="Pregrad passes will be replaced with joint passes",
     )
     def test_layernrom_patterns_with_loss_and_grad(self, caplog, pattern_func, act_dtype, param_dtype, grad_dtype):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
