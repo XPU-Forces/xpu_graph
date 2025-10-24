@@ -9,11 +9,11 @@
 **/*mlu*/** @zhangjihang-BD chenyifan.42@bytedance.com
 
 # NPU Reviewer
-**/*npu* wangmingfa@bytedance.com liuyuan.leo@bytedance.com
-**/*npu*/** wangmingfa@bytedance.com liuyuan.leo@bytedance.com
+**/*npu* liuyuan.leo@bytedance.com zhaowenshuo.oo@bytedance.com
+**/*npu*/** liuyuan.leo@bytedance.com zhaowenshuo.oo@bytedance.com
 
 # Plugin Pattern Reviewer
 xpu_graph/passes/patterns/plugin_pattern.py liuyuan.leo@bytedance.com
 
 # Github Config Reviewer
-.github/* wangmingfa@bytedance.com liuyuan.leo@bytedance.com
+.github/* chenyifan.42@bytedance.com liuyuan.leo@bytedance.com

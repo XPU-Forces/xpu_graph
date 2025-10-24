@@ -10,6 +10,13 @@ def fn0(a):
     return output + 100
 
 
+def fn0_strided(a):
+    a = a.permute(2, 1, 0, 3)
+    output = torch.sum(a, dim=1)
+    output = output.view(-1)
+    return output + 100
+
+
 def fn1(a):
     output = torch.sum(a, dim=3, keepdim=True)
     return output
@@ -35,8 +42,14 @@ def fn5(a):
     return output
 
 
-def reduce_test(xpu_graph, func):
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+def fn6(a):
+    a = torch.sum(a, dim=1, keepdim=True)
+    a = torch.sum(a, dim=2, keepdim=True)
+    return a
+
+
+def reduce_test(xpu_graph, func, dynamic):
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 1, 64, 1)
     res = func(a)
     res1 = compiled(a)
@@ -53,20 +66,24 @@ class TestReduce:
         "pattern_func",
         [
             fn0,
+            fn0_strided,
             fn1,
             fn2,
             fn3,
             fn4,
+            fn6,
         ],
     )
-    def test_reduce_patterns(self, caplog, pattern_func):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_reduce_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            reduce_test(self.xpu_graph, pattern_func)
+            reduce_test(self.xpu_graph, pattern_func, dynamic)
         assert "Pattern.FoldReduce changed graph" in caplog.text
 
-    def test_reduce_none_patterns(self, caplog):
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_reduce_none_patterns(self, caplog, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            compiled = torch.compile(fn5, backend=self.xpu_graph, dynamic=False)
+            compiled = torch.compile(fn5, backend=self.xpu_graph, dynamic=dynamic)
             a = torch.randn(1, 1, 1, 1)
             res = fn5(a)
             res1 = compiled(a)

@@ -10,11 +10,6 @@ from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph
 DEVICE = "mlu"
 dtype = torch.half
 
-B = 1
-Eqk, Ev = 64, 64
-Sq, Skv = 38, 38
-Hq, Hkv = 32, 32
-
 
 class _sdpa_pattern_tensor_scale:
     @staticmethod
@@ -23,7 +18,7 @@ class _sdpa_pattern_tensor_scale:
         return torch.matmul(query, key.transpose(-2, -1)).div(inv_scale).softmax(dim=-1).matmul(value)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -38,7 +33,7 @@ class _sdpa_pattern_1:
         return torch.matmul(query, key.transpose(-2, -1)).div(inv_scale).softmax(dim=-1).matmul(value)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -58,8 +53,8 @@ class _sdpa_pattern_1_1:
         )
 
     @staticmethod
-    def gen(dtype, DEVICE):
-        return _sdpa_pattern_1.gen(dtype, DEVICE)
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
+        return _sdpa_pattern_1.gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev)
 
 
 class _sdpa_pattern_2:
@@ -68,7 +63,7 @@ class _sdpa_pattern_2:
         return torch.matmul(query, key.transpose(-2, -1)).mul(scale_factor).softmax(dim=-1).matmul(value)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -106,7 +101,7 @@ class _sdpa_pattern_5:
         return attn_weight @ value
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -122,7 +117,7 @@ class _sdpa_pattern_5_1:
         return attn_weight @ value
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -133,7 +128,7 @@ class _sdpa_pattern_5_2:
     fn = _sdpa_pattern_5.fn
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         # qkv:3d, mask:4d
         q = torch.randn(Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
@@ -150,7 +145,7 @@ class _sdpa_pattern_6:
         return attn_weight @ value
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -186,7 +181,7 @@ class _sdpa_pattern_7:
         return attn_weight @ v
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Sq, Hq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Skv, Hkv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Skv, Hkv, Ev, dtype=dtype, device=DEVICE)
@@ -253,7 +248,7 @@ class _sdpa_pattern_11:
         return torch.matmul(q, k.transpose(-2, -1)).div(inv_scale).softmax(dim=-1).matmul(v)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Sq, Hq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Skv, Hkv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Skv, Hkv, Ev, dtype=dtype, device=DEVICE)
@@ -283,7 +278,7 @@ class _sdpa_pattern_13:
         return torch.bmm(attn_weight, value)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -301,7 +296,7 @@ class _sdpa_pattern_14:
         return (torch.matmul(q, k.transpose(-2, -1)).div(inv_scale) + attn_mask).softmax(dim=-1).matmul(v)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Sq, Hq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Skv, Hkv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Skv, Hkv, Ev, dtype=dtype, device=DEVICE)
@@ -329,7 +324,7 @@ class _sdpa_pattern_15:
         return torch.softmax(scores.masked_fill(attn_mask, fill_value), dim=-1) @ v
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Sq, Hq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Skv, Hkv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Skv, Hkv, Ev, dtype=dtype, device=DEVICE)
@@ -456,7 +451,7 @@ class _sdpa_pattern_18:
         )
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Sq, Hq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Skv, Hkv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Skv, Hkv, Ev, dtype=dtype, device=DEVICE)
@@ -483,7 +478,7 @@ class _sdpa_pattern_19:
         return torch.nn.functional.dropout(attn_weights, dropout_p).matmul(value)
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Sq, Hq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Skv, Hkv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Skv, Hkv, Ev, dtype=dtype, device=DEVICE)
@@ -504,7 +499,7 @@ class _sdpa_pattern_transformer_1:
         return attn_output
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -526,7 +521,7 @@ class _sdpa_pattern_transformer_2:
         return attn_output
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -547,7 +542,7 @@ class _sdpa_pattern_transformer_3:
         return attn_output
 
     @staticmethod
-    def gen(dtype, DEVICE):
+    def gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev):
         q = torch.randn(B, Hq, Sq, Eqk, dtype=dtype, device=DEVICE)
         k = torch.randn(B, Hkv, Skv, Eqk, dtype=dtype, device=DEVICE)
         v = torch.randn(B, Hkv, Skv, Ev, dtype=dtype, device=DEVICE)
@@ -557,12 +552,17 @@ class _sdpa_pattern_transformer_3:
 
 def fa_test(xpu_graph_backend, pattern):
     func = pattern.fn
-    args = pattern.gen(dtype, DEVICE)
-    res1 = func(*args)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
-    res = compiled(*args)
+    Eqk, Ev = 64, 64
+    Sq, Skv = 38, 38
+    Hq, Hkv = 32, 32
 
-    is_similar(res.cpu().float(), res1.cpu().float())
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
+    for B in [1, 2, 4]:
+        args = pattern.gen(dtype, DEVICE, B, Sq, Skv, Hq, Hkv, Eqk, Ev)
+        res = compiled(*args)
+        res1 = func(*args)
+
+        is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestFA:
