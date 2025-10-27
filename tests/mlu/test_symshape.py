@@ -1,7 +1,5 @@
 import pytest
 import torch
-import torch.nn.functional as F
-import torch_mlu
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -36,7 +34,7 @@ def fn_view(inp, mask, query):
 
 def fn_test(xpu_graph_backend, func):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
-    for bsz in [80, 100]:
+    for bsz in [8, 80, 100]:
         inp = torch.randn((bsz, 1024, 32), device=device, dtype=data_type)
         mask = (torch.arange(bsz).unsqueeze(1) >= torch.arange(1024).unsqueeze(0)).to(device).to(torch.int32)
         query = torch.randn(2, 32, device=device, dtype=data_type)
@@ -63,7 +61,7 @@ class TestSymShape:
         with need_xpu_graph_logs():
             fn_test(self.xpu_graph_backend, pattern_func)
 
-        assert "Pattern.FoldView1 changed graph" in caplog.text
+        assert caplog.text.count("Pattern.FoldView1 changed graph") == 2
 
 
 if __name__ == "__main__":
