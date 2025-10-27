@@ -208,10 +208,11 @@ def fn3(arg41_1):
     return (sum_1, sum_2, sum_3, sum_4)
 
 
-def stack_test(xpu_graph_backend, func):
+def stack_test(xpu_graph_backend, func, dynamic=True):
     for batch in (10, 512, 31):
         a = torch.rand(batch, 43106).to(device=device)
-        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
         res = compiled(a)
         res1 = func(a)
         for i in range(len(res)):
@@ -229,17 +230,18 @@ class TestSliceStackSum:
         )
 
     @pytest.mark.parametrize(
-        "pattern_func",
+        "pattern_func,dynamic",
         [
-            fn0,
-            fn1,
-            fn2,
-            fn3,
+            (fn0, False),
+            (fn1, True),
+            (fn2, False),
+            (fn3, True),
+            (fn3, False),
         ],
     )
-    def test_slice_patterns(self, caplog, pattern_func):
+    def test_slice_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            stack_test(self.xpu_graph_backend, pattern_func)
+            stack_test(self.xpu_graph_backend, pattern_func, dynamic)
         assert "Pattern.FusedSliceStackSum changed graph" in caplog.text
         if pattern_func in [fn3]:
             assert "Pattern.ComboSum3dInp changed graph" in caplog.text
@@ -249,6 +251,6 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=False,
         opt_level=OptLevel.level2,
-        debug=False,
+        debug=True,
     )
-    stack_test(xpu_graph_backend, fn3)
+    stack_test(xpu_graph_backend, fn0, dynamic=False)

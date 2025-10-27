@@ -3,6 +3,9 @@
 [run]
 omit =
     ${COV_OMIT}
+concurrency = multiprocessing
+parallel = true
+sigterm = true
 
 [report]
 skip_empty = True

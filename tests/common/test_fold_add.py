@@ -17,6 +17,14 @@ def add_tensor_dyn(x):
     return 42 + torch.zeros_like(x)
 
 
+def add_tensor_shape(x):
+    return x + torch.zeros_like(x.unsqueeze(-1))
+
+
+def add_tensor_seq(x):
+    return x + torch.zeros_like(x) + 0
+
+
 def can_fold_test(xpu_graph, func, x, dynamic):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     expect = func(x)
@@ -31,7 +39,10 @@ class TestFoldAdd:
 
     x = torch.rand(100)
 
-    @pytest.mark.parametrize("func, x", [(add_scalar_zero, x), (add_tensor_zero, x), (add_tensor_dyn, x)])
+    @pytest.mark.parametrize(
+        "func, x",
+        [(add_scalar_zero, x), (add_tensor_zero, x), (add_tensor_dyn, x), (add_tensor_shape, x), (add_tensor_seq, x)],
+    )
     def test_can_fold_case(self, caplog, func, x):
         with need_xpu_graph_logs():
             can_fold_test(self.xpu_graph, func, x, dynamic=False)
@@ -45,11 +56,14 @@ class TestFoldAddDynamic:
 
     x = torch.rand(100)
 
-    @pytest.mark.parametrize("func, x", [(add_scalar_zero, x), (add_tensor_zero, x), (add_tensor_dyn, x)])
+    @pytest.mark.parametrize(
+        "func, x",
+        [(add_scalar_zero, x), (add_tensor_zero, x), (add_tensor_dyn, x), (add_tensor_shape, x), (add_tensor_seq, x)],
+    )
     def test_can_fold_case(self, caplog, func, x):
         with need_xpu_graph_logs():
             can_fold_test(self.xpu_graph, func, x, dynamic=True)
-            if func in [add_tensor_dyn]:
+            if func in [add_tensor_dyn, add_tensor_shape]:
                 assert "Pattern.FoldAdd0 changed graph" not in caplog.text
             else:
                 assert "Pattern.FoldAdd0 changed graph" in caplog.text

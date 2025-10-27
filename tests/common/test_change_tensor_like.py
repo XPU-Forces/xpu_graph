@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
@@ -15,7 +16,17 @@ def fn1(a):
 
 
 def fn2(a):
-    output = torch.ones_like(a)
+    output = torch.full_like(a, 42)
+    return output
+
+
+def fn2_dtype(a):
+    output = torch.full_like(a, 42, dtype=torch.int32)
+    return output
+
+
+def fn2_device(a):
+    output = torch.full_like(a, 42, device=torch._utils._get_available_device_type())
     return output
 
 
@@ -36,8 +47,8 @@ def fn3(a):
     return output
 
 
-def tensorlike_test(xpu_graph, func):
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=None)
+def tensorlike_test(xpu_graph, func, dynamic=None):
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=dynamic)
     a = torch.randn(128, 64)
     res = func(a)
     res1 = compiled(a)
@@ -56,14 +67,15 @@ class TestTensorLike:
             fn0,
             fn1,
             fn2,
+            fn2_device,
+            fn2_dtype,
             fn3,
         ],
     )
     def test_tensorlike_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
-            tensorlike_test(self.xpu_graph, pattern_func)
-        if pattern_func not in [fn3]:
-            assert "Pattern.ChangeTensorLike changed graph" in caplog.text
+            tensorlike_test(self.xpu_graph, pattern_func, dynamic=True)
+        assert "Pattern.ChangeTensorLike changed graph" in caplog.text
 
 
 if __name__ == "__main__":

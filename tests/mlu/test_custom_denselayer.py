@@ -133,9 +133,10 @@ def matmul_test(xpu_graph_backend, func):
     if func in [fn0, fn1, fn2, fn3, fn12]:
         bias = None
     res = func(inputs, weight, bias)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=True)
     res1 = compiled(inputs, weight, bias)
-    is_similar(res.cpu().float(), res1.cpu().float())
+    assert is_similar(res.cpu().float(), res1.cpu().float())
 
 
 class TestMatMul:
@@ -180,10 +181,10 @@ class TestMatMul:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, debug=True)
-    matmul_test(xpu_graph_backend, fn1)
+    # matmul_test(xpu_graph_backend, fn1)
     matmul_test(xpu_graph_backend, fn6)
-    matmul_test(xpu_graph_backend, fn9)
-    matmul_test(xpu_graph_backend, fn20)
-    matmul_test(xpu_graph_backend, fn17)
-    matmul_test(xpu_graph_backend, fn18)
-    matmul_test(xpu_graph_backend, fn19)
+    # matmul_test(xpu_graph_backend, fn9)
+    # matmul_test(xpu_graph_backend, fn20)
+    # matmul_test(xpu_graph_backend, fn17)
+    # matmul_test(xpu_graph_backend, fn18)
+    # matmul_test(xpu_graph_backend, fn19)

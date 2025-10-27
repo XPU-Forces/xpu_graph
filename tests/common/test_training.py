@@ -2,9 +2,9 @@ import pytest
 import torch
 
 import xpu_graph
-from tests.common.test_models import all_models, compare_training
+from tests.common.test_models import SimpleModel, all_models, compare_training
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.test_utils import need_xpu_graph_logs
 
 device = "cpu"
 data_type = torch.float32
@@ -23,20 +23,28 @@ class TestTraining:
         compare_training(device, data_type, ReproCls, self.train_backend)
 
 
-class TestTrainingWithInterceptor:
-    def setup_class(self):
-        train_config = xpu_graph.XpuGraphConfig(
-            is_training=True, opt_level=OptLevel.level1, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
-        )
-        self.train_backend = xpu_graph.XpuGraph(train_config)
-
+class TestTrainingWithPartiioner:
     @pytest.mark.parametrize(
-        "ReproCls",
-        all_models,
+        "partition_fn",
+        [
+            "MINCUT",
+            "DEFAULT",
+            "torch._functorch.partitioners.min_cut_rematerialization_partition",
+            "dummy",
+        ],
     )
-    def test_training(self, caplog, ReproCls):
+    def test_training(self, caplog, monkeypatch, partition_fn):
+        monkeypatch.setenv("XPUGRAPH_PARTITIONER", partition_fn)
+
         with need_xpu_graph_logs():
-            compare_training(device, data_type, ReproCls, self.train_backend)
+            train_config = xpu_graph.XpuGraphConfig(
+                is_training=True,
+                opt_level=OptLevel.level1,
+                freeze=False,
+                enable_interceptor="rtol=1e-6,atol=1e-5",
+            )
+            train_backend = xpu_graph.XpuGraph(train_config)
+            compare_training(device, data_type, SimpleModel, train_backend)
         assert "Monitored forward" in caplog.text
         assert "Monitored backward" in caplog.text
         assert "diverges" not in caplog.text

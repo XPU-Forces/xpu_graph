@@ -1,4 +1,4 @@
-# Release 0.5.0
+# Release 0.6.0
 
 ## 主要依赖库版本描述
 - python 3.9 或者更高
@@ -8,17 +8,15 @@
 - [triton-x] 3.2.0 或者更高
 
 ## 重大变动
-- 新增运行时精度监控 (#272)，可以在运行时将编译产物的前反向精度与优化前的fx graph进行对比，帮助用户定位精度问题
-- 补充 Apache 2.0 协议 (#379)
+-
 
 ## 主要特性与改进
-- 优化 slicelike folding pattern：#366
-  - 消除 noop-slice（Pattern: y = slice(x, dim, 0, len(x)(or inf)) -> Becomes: y = x）
-  - 消除 noop-slicescatter（Pattern: y = slice_scatter(base, view, ...) -> Becomes: y = view）
-- 优化 dense 类 pattern: #279
-  - 增加 addmm, baddbmm, SDP attention 融合（ common pattern ）
-  - 优化 denselayer structure pattern，支持后端特化的 matmul/bmm + add + activation 后融合
-  - 优化 densetower structure pattern，支持后端特化的多层 FFN 融合
+- 支持训练阶段指定计算图前反向拆分策略，可以通过参数`partition_fn`指定，也可以通过环境变量`XPUGRAPH_PARTITIONER`指定。 #430
+    * `"DEFAULT"`: 使用与eager行为一致的前反向拆分（`torch._functorch.partitioners.default_partition_fn`）
+    * `"MINCUT"`: 使用显存优化的前反向拆分 (`torch._functorch.partitioners.min_cut_rematerialization_partition`)
+    * 也可以指定自定义的partition_fn实现定制的前反向拆分策略（通过环境变量指定时使用函数的fqn进行指定）
+    * 未指定时效果同`"DEFAULT"`
+
 
 ## Bug修复与其他改动
-- 修复 mlu inductor 的 cpp_wrapper 设置，并避免默认值覆盖 TORCHINDUCTOR_CPP_WRAPPER 环境变量
+-

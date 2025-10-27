@@ -93,7 +93,7 @@ def fn12(inputs, weight, residual):
     return output.view(1, 5, 32, 256)
 
 
-def bmm_test(xpu_graph_backend, func):
+def bmm_test(xpu_graph_backend, func, dynamic=True):
     input_a = torch.randn((5, 32, 128), device=device, dtype=data_type)
     input_b = torch.randn((5, 128, 256), device=device, dtype=data_type)
     bias = None
@@ -104,7 +104,8 @@ def bmm_test(xpu_graph_backend, func):
         bias = residual
 
     res = func(input_a, input_b, bias)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
     res1 = compiled(input_a, input_b, bias)
     is_similar(res.cpu().float(), res1.cpu().float())
 
@@ -114,26 +115,26 @@ class TestBMM:
         self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
-        "pattern_func",
+        "pattern_func,dynamic",
         [
-            fn0,
-            fn1,
-            fn2,
-            fn3,
-            fn4,
-            fn5,
-            fn6,
-            fn7,
-            fn8,
-            fn9,
-            fn10,
-            fn11,
-            fn12,
+            (fn0, True),
+            (fn1, False),
+            (fn2, True),
+            (fn3, True),
+            (fn4, False),
+            (fn5, True),
+            (fn6, False),
+            (fn7, True),
+            (fn8, True),
+            (fn9, False),
+            (fn10, True),
+            (fn11, False),
+            (fn12, True),
         ],
     )
-    def test_bmm_patterns(self, caplog, pattern_func):
+    def test_bmm_patterns(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            bmm_test(self.xpu_graph_backend, pattern_func)
+            bmm_test(self.xpu_graph_backend, pattern_func, dynamic)
         if pattern_func in [fn1, fn2, fn4, fn5, fn8, fn9, fn11, fn12]:
             assert "Pattern.FusedBAddBMM changed graph" in caplog.text
         else:

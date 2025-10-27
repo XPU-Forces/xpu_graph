@@ -3,13 +3,12 @@ import json
 import os
 import sys
 from functools import cache, partialmethod
+from os.path import dirname, join
 from typing import AnyStr, List
 
 import urllib3
 
-__XPU_GRAPH_DIR__ = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "xpu_graph"
-)
+__XPU_GRAPH_DIR__ = join(dirname(dirname(dirname(dirname(__file__)))), join("src", "xpu_graph"))
 sys.path.append(__XPU_GRAPH_DIR__)
 
 from version import __version__
@@ -26,7 +25,7 @@ parser.add_argument(
     default=__version__,
     help="",
 )
-parser.add_argument("--repo", type=str, default="BD-Seed-HHW/xpu_graph", help="")
+parser.add_argument("--repo", type=str, default="XPU-Forces/xpu_graph", help="")
 parser.add_argument("--actions", type=str, choices=__ACTIONS__.keys(), default="release", help="")
 
 
