@@ -21,16 +21,16 @@ class Model(torch.nn.Module):
 class TestCompiledFxArtifacts:
     def setup_method(self):
         torch.npu.set_device(0)
-
-    def test_dump_and_load_artifacts(self):
-        config = XpuGraphConfig(
+        self.model = Model().npu()
+        self.config = XpuGraphConfig(
             False,
             target=Target.npu,
             freeze=True,
             debug=True,
             vendor_compiler_config={"compiler": "ge", "mode": "reduce-overhead"},
         )
-        xpu_backend = XpuGraph(config)
+
+    def test_dump_and_load_artifacts(self):
         """
         The NPU backend (xpu_graph/backends/npu.py) needs to add the compiler call
         in the definition of ge_compiler before the function return:
@@ -47,7 +47,8 @@ class TestCompiledFxArtifacts:
         
         ...
         """
-        compiled_model = torch.compile(Model.npu(), backend=xpu_backend, dynamic=False, fullgraph=True)
+        xpu_backend = XpuGraph(self.config)
+        compiled_model = torch.compile(self.model, backend=xpu_backend, dynamic=False, fullgraph=True)
 
         x = torch.tensor([1.0]).npu()
         y = torch.tensor([2.0]).npu()
@@ -55,15 +56,15 @@ class TestCompiledFxArtifacts:
         z = compiled_model(x, y)
 
         compiled_model_from_artifacts = None
-        with open('test_artifacts.pkl', 'wb') as file:
+        with open('test_artifacts.pkl', 'rb') as file:
             artifacts = pickle.load(file)
-            compiled_model_from_artifacts = torchair.npx_fx_compiler._CompiledFxGraph.load_artifacts(artifacts)
+            compiled_model_from_artifacts = torchair.npu_fx_compiler._CompiledFxGraph.load_artifacts(artifacts)
 
-        assert compiled_model_from_artifacts != None
+        assert compiled_model_from_artifacts is not None
 
         another_z = compiled_model_from_artifacts(x, y)
 
-        assert another_z == z
+        assert another_z[0] == z
 
 
 if __name__ == "__main__":
