@@ -11,35 +11,25 @@ data_type = torch.float32
 aten = torch.ops.aten
 
 
-def fn_view(inp, mask, query):
+def fn_view(query):
     """
     This is a mimic process of unpadding + target_attention + padding
     Assure capture_dynamic_output_shape_ops=True for putting dynamic-shape in FxGraph
     """
-    bsz, seq, dim = inp.shape
-    qnum = query.shape[0]
 
-    # 0. concat the query token and input token, and their padding masks
-    cat_seq = torch.cat([query.unsqueeze(0).expand(bsz, -1, -1), inp], dim=1)
-    qmask = torch.ones([bsz, qnum], device=inp.device, dtype=torch.int32)
-    cat_mask = torch.cat([qmask, mask], dim=1)
+    bsz, qnum, dim = query.shape
+
+    padding_mask = torch.ones([bsz, qnum], device=query.device, dtype=torch.int32)
 
     # 1. the unpadding part, reshape the padding mask 1D as the select mask, concat all unpadded sequences allong the seq dim
-    zmask = torch.reshape(cat_mask, [-1])
-    zindices = torch.nonzero(zmask)
-    out = torch.reshape(cat_seq, [-1, cat_seq.size(2)])[zindices].squeeze(1)
-
-    # 2. unpadding the source mask as well (0 for query token, 1 for input token), to extract target tokens later
-    mask0 = torch.zeros([bsz, qnum], device=inp.device, dtype=torch.int32)
-    mask1 = torch.ones([bsz, seq], device=inp.device, dtype=torch.int32)
-    source_mask = torch.cat([mask0, mask1], dim=1)
-    unpad_out_mask = torch.reshape(source_mask, [-1])[zindices].squeeze(1)
-
-    # 3. (skip the attention part). Extract the query token output.
-    query_pos = torch.nonzero(torch.eq(unpad_out_mask, 0))
+    flat_mask = torch.reshape(padding_mask, [-1])
+    unpad_indices = torch.nonzero(flat_mask).squeeze(1)
+    unpad_query = torch.reshape(query, [-1, dim])[unpad_indices]
+    # 2. (skip the nested_concat\targeet_attention\nested_split part).
+    # 3. the repadding part, repad the query outs
     #   By human knowledge we known the query mask is the same as the num of query tokens, but
-    #   dynamo cannot infer this out directly. Thus, this reshape performs as an assertion
-    query_out = out[query_pos].squeeze(1).reshape(bsz, qnum, dim)
+    #   dynamo cannot infer this out directly. Thus, this reshape performs as a shape assertion
+    query_out = unpad_query.reshape(bsz, qnum, dim)
 
     return query_out.view(-1, qnum * dim)
 
@@ -48,11 +38,9 @@ def fn_view(inp, mask, query):
 def fn_test(xpu_graph_backend, func):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=None)
     for bsz in [8, 80, 100]:
-        inp = torch.randn((bsz, 1024, 32), device=device, dtype=data_type)
-        mask = (torch.arange(bsz).unsqueeze(1) >= torch.arange(1024).unsqueeze(0)).to(device).to(torch.int32)
-        query = torch.randn(2, 32, device=device, dtype=data_type)
-        res = func(inp, mask, query)
-        res1 = compiled(inp, mask, query)
+        query = torch.randn(bsz, 2, 32, device=device, dtype=data_type)
+        res = func(query)
+        res1 = compiled(query)
         assert is_similar(res.cpu().float(), res1.cpu().float())
 
 
