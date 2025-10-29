@@ -92,12 +92,18 @@ def _is_unaffined_layernorm(
     return True, (input, eps)
 
 
-def _is_unbiased_layernorm(node: fx.Node):
+def _is_unbiased_layernorm(node: fx.Node, maybe_layernorm_nodes=None):
     if check_mul_op(node):
         arg0 = node.args[0]
         arg1 = node.args[1]
 
         def _is_unaffined(node):
+            if maybe_layernorm_nodes is not None:
+                return (
+                    node in maybe_layernorm_nodes
+                    and maybe_layernorm_nodes[node][1] is None
+                    and maybe_layernorm_nodes[node][2] is None
+                )
             if not isinstance(node, fx.Node) or node.op != "call_module":
                 return False
             target_mod = getattr(node.graph.owning_module, node.target)
@@ -115,12 +121,14 @@ def _is_unbiased_layernorm(node: fx.Node):
     return False, None
 
 
-def _is_layernorm(node: fx.Node):
+def _is_layernorm(node: fx.Node, maybe_layernorm_nodes=None):
     if check_add_op(node):
         arg0 = node.args[0]
         arg1 = node.args[1]
 
         def _is_unbiased(node):
+            if maybe_layernorm_nodes is not None:
+                return node in maybe_layernorm_nodes and maybe_layernorm_nodes[node][2] is None
             if not isinstance(node, fx.Node) or node.op != "call_module":
                 return False
             target_mod = getattr(node.graph.owning_module, node.target)
@@ -210,6 +218,82 @@ class FusedLayerNorm(Pattern):
                 changed = True
 
         return changed
+
+
+from torch._inductor.pattern_matcher import joint_fwd_bwd
+from torch.fx.experimental.optimization import extract_subgraph
+from torch.fx.subgraph_rewriter import replace_pattern
+
+
+class FusedLayerNormJoint(Pattern):
+    _opt_level = OptLevel.level2
+    _support_stages = [FxStage.joint]
+
+    def process(self, graph_module):
+        is_modified = False
+        _maybe_layernorm_nodes = {}
+        for node in graph_module.graph.nodes:
+            # print(node.format_node())
+            # breakpoint()
+            if node.meta.get("partitioner_tag", None) == "is_backward":
+                continue
+            matched, params = _is_unaffined_layernorm(node)
+            if matched:
+                input, eps = params
+                _maybe_layernorm_nodes[node] = (input, None, None, eps)
+                continue
+            matched, params = _is_unbiased_layernorm(node, _maybe_layernorm_nodes)
+            if matched:
+                unaffined, weight = params
+                input, _, _, eps = _maybe_layernorm_nodes.pop(unaffined)
+                _maybe_layernorm_nodes[node] = (input, weight, None, eps)
+                continue
+            matched, params = _is_layernorm(node, _maybe_layernorm_nodes)
+            if matched:
+                unbiased, bias = params
+                input, weight, _, eps = _maybe_layernorm_nodes.pop(unbiased)
+                _maybe_layernorm_nodes[node] = (input, weight, bias, eps)
+                continue
+        print(_maybe_layernorm_nodes)
+
+        def _extract_medium_nodes(maybe_layernorm_result, maybe_layernorm_args):
+            mediums = []
+            explored_nodes = [maybe_layernorm_result]
+            while len(explored_nodes) > 0:
+                cur_node = explored_nodes.pop(0)
+                for prev_node in cur_node.args:
+                    if not isinstance(prev_node, fx.Node):
+                        continue
+                    if prev_node in maybe_layernorm_args or prev_node in mediums:
+                        continue
+                    mediums.append(prev_node)
+                    explored_nodes.append(prev_node)
+            return mediums
+
+        for layernorm_node, params in _maybe_layernorm_nodes.items():
+            input, weight, bias, eps = params
+            mediums = _extract_medium_nodes(layernorm_node, [input, weight, bias])
+            fw_inp_nodes = [p for p in params if isinstance(p, fx.Node)]
+            fw_pat = extract_subgraph(
+                graph_module,
+                nodes=sorted(mediums) + [layernorm_node],
+                inputs=fw_inp_nodes,
+                outputs=[layernorm_node],
+            )
+            fw_inps = [inp_node.meta["val"].detach().requires_grad_() for inp_node in fw_inp_nodes]
+            # fw_inps[0].requires_grad = False
+            joint_pat = joint_fwd_bwd(fw_pat, args=fw_inps)
+
+            def target_fn(inp, weight, bias):
+                return torch.nn.functional.layer_norm(inp, inp.shape[-1:], weight, bias, eps)
+
+            joint_target = joint_fwd_bwd(target_fn, args=fw_inps)
+            joint_pat.print_readable()
+            joint_target.print_readable()
+            matched = replace_pattern(graph_module, joint_pat, joint_target)
+            if len(matched) > 0:
+                is_modified = True
+        return is_modified
 
 
 class RemoveLayerNormCast(Pattern):

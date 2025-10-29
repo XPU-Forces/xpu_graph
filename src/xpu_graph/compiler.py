@@ -231,6 +231,10 @@ class XpuGraph:
         return xpu_gm, fw_metadata
 
     def _dispatch_and_compile(self, dynamo_gm, example_inputs, *args, **kwargs):
+        logger.debug(
+            "before compile: graph like:\n %s",
+            dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
         kwargs = {}
         kwargs["keep_inference_input_mutations"] = True
         if self._config.is_training:
