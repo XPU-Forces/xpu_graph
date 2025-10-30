@@ -1,7 +1,7 @@
+import os
+
 import pytest
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -142,6 +142,10 @@ class TestRMSNorm:
             True,
             False,
         ],
+    )
+    @pytest.mark.skipif(
+        os.environ.get("XPUGRAPH_FALLBACK_LEGACY_DISPATCH", "1") == "0",
+        reason="Pregrad passes will be replaced with joint passes",
     )
     def test_rmsnorm_patterns_with_loss_and_grad(
         self, caplog, pattern_func, input_dtype, weight_dtype, grad_dtype, dynamic
