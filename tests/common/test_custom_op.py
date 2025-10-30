@@ -149,7 +149,7 @@ class TestCustomFallbackTraining:
             SimpleSwiGLUwithCKPT,
         ],
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
+    def test_custom_op(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             compare_training_with_custom_op(ReproCls, self.train_backend)
         if ReproCls == SimpleWitCustomOp:
@@ -189,7 +189,7 @@ class TestCustomFallbackInference:
             SimpleSwiGLUwithCKPT,
         ],
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
+    def test_custom_op(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             compare_inference_with_custom_op(ReproCls, self.inference_backend)
         assert "Higher order operators detected" not in caplog.text
