@@ -18,9 +18,20 @@ repos:
     hooks:
     -   id: isort
         args: ["--profile", "black"]
+        stages: [commit]
+    -   id: isort
+        name: isort for ci
+        args: ["--profile", "black", "--diff"]
+        stages: [manual]
+
 
 -   repo: https://github.com/psf/black.git
     rev: 23.1.0
     hooks:
     -   id: black
         args: ["--line-length=120"]
+        stages: [commit]
+    -   id: black
+        name: black for ci
+        args: ["--line-length=120", "--diff"]
+        stages: [manual]

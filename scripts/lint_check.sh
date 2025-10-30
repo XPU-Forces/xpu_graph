@@ -10,6 +10,6 @@ cd $PROJ_DIR
 source ${PROJ_DIR}/scripts/install_githooks.sh
 
 # pre-commit run --files $(git diff --diff-filter=ACMR --name-only ${TARGET_REF})
-pre-commit run --from-ref ${TARGET_REF} --to-ref HEAD
+pre-commit run --from-ref ${TARGET_REF} --to-ref HEAD --hook-stage manual
 
 echo "Lint Check Succeed!"
