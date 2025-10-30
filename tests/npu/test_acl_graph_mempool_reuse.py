@@ -4,6 +4,16 @@ import torch
 from xpu_graph import Target, XpuGraph, XpuGraphConfig
 
 
+@pytest.fixture(autouse=True)
+def reset_npu_mempool():
+    try:
+        torch.npu.empty_cache()
+        yield
+    finally:
+        pass
+        torch.npu.empty_cache()
+
+
 class BMM(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -74,4 +84,5 @@ class TestMemPoolReuse:
                 memory_reserved = torch.npu.max_memory_reserved()
 
             # NOTE(liuyuan): should grow with 0B at least once if we use acl_graph memory pool reuse.
-            assert 0 in mem_growth, f"{mem_growth=}"
+            # UPDATE(chenyifan): torchair.config.debug.aclgraph.disable_mempool_reuse_in_same_fx is forced to be False  with custom pool
+            assert 0 not in mem_growth, f"{mem_growth=}"
