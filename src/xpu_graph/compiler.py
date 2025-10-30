@@ -237,28 +237,25 @@ class XpuGraph:
         )
         kwargs = {}
         kwargs["keep_inference_input_mutations"] = True
-        if self._config.is_training:
-            kwargs["fw_compiler"] = self._get_compiler(FxStage.forward)
-            kwargs["bw_compiler"] = self._get_compiler(FxStage.backward)
+        kwargs["fw_compiler"] = self._get_compiler(FxStage.forward)
+        kwargs["bw_compiler"] = self._get_compiler(FxStage.backward)
 
-            def partition_fn(joint_gm, joint_args, *, num_fwd_outputs):
-                new_joint_gm = self._get_compiler(FxStage.joint)(joint_gm, joint_args)
+        def partition_fn(joint_gm, joint_args, *, num_fwd_outputs):
+            new_joint_gm = self._get_compiler(FxStage.joint)(joint_gm, joint_args)
 
-                from torch._functorch.partitioners import default_partition
+            from torch._functorch.partitioners import default_partition
 
-                partition_fn = get_partition_fn(self._config.partition_fn) or default_partition
+            partition_fn = get_partition_fn(self._config.partition_fn) or default_partition
 
-                return partition_fn(new_joint_gm, joint_args, num_fwd_outputs=num_fwd_outputs)
+            return partition_fn(new_joint_gm, joint_args, num_fwd_outputs=num_fwd_outputs)
 
-            kwargs["partition_fn"] = partition_fn
+        kwargs["partition_fn"] = partition_fn
+        if self._config.freeze:
+            kwargs["inference_compiler"] = functools.partial(
+                freeze_compile, dynamo_gm, inner_compiler=self._get_compiler(FxStage.inference)
+            )
         else:
-            # Note(chenyifan): use fw_compiler instead of inference compiler in case eager context is not correctly set
-            if self._config.freeze:
-                kwargs["fw_compiler"] = functools.partial(
-                    freeze_compile, dynamo_gm, inner_compiler=self._get_compiler(FxStage.inference)
-                )
-            else:
-                kwargs["fw_compiler"] = self._get_compiler(FxStage.inference)
+            kwargs["inference_compiler"] = self._get_compiler(FxStage.inference)
 
         compiled = aot_autograd(**kwargs)(dynamo_gm, example_inputs)
 
