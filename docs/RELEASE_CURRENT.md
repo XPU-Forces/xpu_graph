@@ -19,4 +19,5 @@
 
 
 ## Bug修复与其他改动
--
+- 修复fold_view导致view shape推导在inductor内失效的问题。 #435
+- 修复常量折叠无法处理特定dtype的tensor的问题。 #428
