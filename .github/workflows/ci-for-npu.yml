@@ -62,9 +62,12 @@ jobs:
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
-        pip install -e '.[dev]'
-        python3 -m build .
-        pip install dist/*.whl --force-reinstall --no-deps
+        pip install uv
+        uv python install 3.10 --default
+        uv sync --extra dev --extra npu
+        . .venv/bin/activate
+        python -m build .
+        uv pip install dist/*.whl --force-reinstall --no-deps
     - name: Running npu tests
       shell: bash
       env:
@@ -72,8 +75,9 @@ jobs:
       # WARNING(liuyuan): [-n auto] will lead to error (OOM?) and 8 is efficient enough.
       run: |
         echo "Running npu tests..."
-        python3 -m pytest --cov=xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
-        python3 -m pytest --cov=xpu_graph --cov-append -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
+        . .venv/bin/activate
+        pytest --cov=xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
+        pytest --cov=xpu_graph --cov-append -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -1,9 +1,11 @@
 import difflib
 import functools
+import importlib
 import logging
 import os
 import sys
 import time
+from typing import List, Tuple, Union
 
 import torch
 
@@ -224,3 +226,38 @@ def recursive_set_obj(src_dict: dict, tgt_obj):
                     setattr(tgt_obj, k, v)
                 except Exception as e:
                     raise e
+
+
+class PolyBackendDispatcher:
+    # WARNING(liuyuan): The class member [_anchor_class] and [_registrations] should not start with "__". In short, "_" is protected and "__" is private.
+    def __init_subclass__(
+        cls,
+        backend: Union["Target", List["Target"], Tuple["Target"]] = None,
+        anchor_class: type = None,
+    ):
+        assert not hasattr(cls, "_anchor_class"), "The class already has anchor class yet."
+        if anchor_class and not hasattr(anchor_class, "_registrations"):
+            anchor_class._registrations = {}
+
+        if backend:
+            if not isinstance(backend, (tuple, list)):
+                backend = (backend,)
+            for backend in backend:
+                assert backend not in anchor_class._registrations
+                anchor_class._registrations[backend] = cls
+                cls._anchor_class = anchor_class
+
+    def __class_getitem__(cls, key: "Target"):
+        if hasattr(cls, "_registrations"):
+            if key and key in cls._registrations:
+                cls = cls._registrations[key]
+        return cls
+
+
+class AutoloadDispatcher(PolyBackendDispatcher):
+    def __class_getitem__(cls, target: "Target"):
+        try:
+            importlib.import_module(f"xpu_graph.backends.{target.value}", __package__)
+        except Exception as e:
+            logger.warning(f"{target.value} is not found, use the default registrations")
+        return super().__class_getitem__(target)

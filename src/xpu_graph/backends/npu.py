@@ -1,8 +1,38 @@
+import os
+import pickle
+from functools import cache
 from typing import Dict
 
 import torch
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.fx.graph_module import GraphModule
 
+from xpu_graph.cache import SerializableArtifact
+from xpu_graph.config import Target, get_cache_dir
+from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger, recursive_set_obj
+
+
+class NpuSerializableArtifact(SerializableArtifact):
+    def __init__(self, artifact):
+        assert hasattr(artifact, "dump_artifacts")
+        super().__init__(artifact)
+
+    def _serialize(self):
+        return (self._artifact.dump_artifacts(),)
+
+    @staticmethod
+    def _deserialize(artifact):
+        from torchair.npu_fx_compiler import _CompiledFxGraph
+
+        return __class__(_CompiledFxGraph.load_artifacts(artifact))
+
+
+def has_triton_kernel(gm: GraphModule):
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and getattr(node.target, "namespace", "dummy") == "torch_npu_triton":
+            return True
+    return False
 
 
 def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
@@ -35,8 +65,21 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
         if mempool := config_dict.get("use_custom_pool", None):
             config.aclgraph_config.use_custom_pool = mempool
 
-    npu_backend = tng.get_npu_backend(compiler_config=config)
+    npu_backend = tng.get_compiler(compiler_config=config)
+
+    from torchair._utils import get_npu_default_decompositions
+
+    module = make_fx(
+        module,
+        decomposition_table=get_npu_default_decompositions(),
+        tracing_mode="fake",
+        record_module_stack=True,
+    )(*example_inputs)
+
     compiled_module = npu_backend(module, example_inputs)
+
+    if not has_triton_kernel(module):
+        compiled_module = NpuSerializableArtifact(compiled_module)
 
     return compiled_module
 
@@ -65,6 +108,8 @@ def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> t
 
     with torch._inductor.config.patch(inductor_backend.config):
         compiled_func = compile_fx_inner(module, inputs, is_inference=is_inference, is_backward=is_backward)
+
+    compiled_func._xpu_graph_mark_npu_inductor_compilation = True
 
     return compiled_func
 

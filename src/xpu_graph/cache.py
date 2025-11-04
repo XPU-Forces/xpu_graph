@@ -2,10 +2,11 @@ import hashlib
 import importlib
 import os
 import pickle
-from abc import ABC, abstractmethod
-from contextlib import contextmanager, nullcontext
+from abc import ABC, abstractclassmethod, abstractmethod
+from functools import wraps
 from os import PathLike
 from typing import Union
+from contextlib import contextmanager, nullcontext
 
 import torch
 from torch._dynamo.convert_frame import compile_lock
@@ -15,9 +16,9 @@ from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
 from torch.utils._python_dispatch import _disable_current_modes
 
-from .config import XpuGraphConfig, get_cache_dir
+from .config import Target, XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
-from .utils import logger
+from .utils import PolyBackendDispatcher, logger
 
 
 class _ArgWrapper:
@@ -68,6 +69,7 @@ class SerializableArtifact(ABC):
 
     @abstractmethod
     def convert_to_bytes(self) -> bytes:
+        # TODO(liuyuan): For performance, try to make it as a zero copy byte strings.
         """
         Convert artifact to bytes. The return value should be artifact_bytes,
         which can rebuild the artifact via rebuild_from_bytes.
@@ -89,7 +91,6 @@ def temp_disable_tracing_envs():
         tracing_context = TracingContext.try_get()
         with tracing_context.patch(fake_mode=None) if tracing_context else nullcontext():
             yield
-
 
 class SerializableGraphModule(SerializableArtifact):
     def __init__(self, artifact):
@@ -278,20 +279,17 @@ class XpuGraphLocalCache(XpuGraphCache):
 
         artifact_path = self._artifact_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
-        artifact_bytes = value.convert_to_bytes()
         with open(artifact_path, "wb+") as f:
-            pickle.dump((value.rebuild_from_bytes, artifact_bytes), f)
+            pickle.dump(value, f)
         with open(artifact_path, "rb") as f:
-            rebuild_from_bytes, artifact_bytes = pickle.load(f)
-        return rebuild_from_bytes(artifact_bytes)
+            return pickle.load(f)
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)
         if os.path.isfile(artifact_path):
             logger.info(f"Use cache in location: {artifact_path}")
             with open(artifact_path, "rb") as f:
-                rebuild_from_bytes, artifact_bytes = pickle.load(f)
-                return rebuild_from_bytes(artifact_bytes)
+                return pickle.load(f)
         else:
             return None
 
