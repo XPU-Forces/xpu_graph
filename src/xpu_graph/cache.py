@@ -29,9 +29,9 @@ else:
 from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
 
-from .config import XpuGraphConfig, get_cache_dir
+from .config import Target, XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
-from .utils import logger
+from .utils import PolyBackendDispatcher, logger
 
 
 class _ArgWrapper:
@@ -218,7 +218,20 @@ class SerializableCompiledFxGraph(SerializableArtifact):
         return __class__(compiled_fn)
 
 
-class XpuGraphCache:
+import importlib
+
+
+class AutoloadDispatcher(PolyBackendDispatcher):
+    def __class_getitem__(cls, target: Target):
+        try:
+            importlib.import_module(f"xpu_graph.backends.{target.value}", __package__)
+        except Exception as e:
+            logger.warning(f"{target.value}_compiler not found, return gm")
+            raise e
+        return super().__class_getitem__(target)
+
+
+class XpuGraphCache(AutoloadDispatcher):
     """A base cache class does not store any thing"""
 
     def cache_key(

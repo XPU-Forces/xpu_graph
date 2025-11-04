@@ -1,8 +1,46 @@
+import os
+import pickle
+from functools import cache
 from typing import Dict
 
 import torch
 
+from xpu_graph.cache import XpuGraphCache
+from xpu_graph.config import Target, get_cache_dir
 from xpu_graph.utils import logger, recursive_set_obj
+
+
+class XpuGraphCacheForNpu(XpuGraphCache, backend=Target.npu, anchor_class=XpuGraphCache):
+    def __init__(self):
+        super().__init__()
+        self._path = os.path.abspath(get_cache_dir())
+        os.makedirs(self._path, exist_ok=True)
+
+    def save_gm(self, key, value, expire=None):
+        artifact_path = self._graph_path(key)
+        logger.info(f"Save cache in location: {artifact_path}")
+        artifact = value.dump_artifacts()
+        with open(artifact_path, "wb") as f:
+            pickle.dump(artifact, f)
+
+    def load_gm(self, key):
+        from torchair.npu_fx_compiler._CompiledFxGraph import load_artifacts
+
+        artifact_path = self._graph_path(key)
+        logger.info(f"Use cache in location: {artifact_path}")
+        with open(artifact_path, "rb") as f:
+            artifact = pickle.load(f)
+            return load_artifacts(artifact)
+
+    def delete_gm(self, key):
+        if key in self.cache:
+            del self.cache[key]
+
+    @cache
+    def _graph_path(self, key):
+        fname = f"xpugraph_{key}.pt"
+        artifact_cache = os.path.join(self._path, fname)
+        return artifact_cache
 
 
 def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
