@@ -226,8 +226,7 @@ class AutoloadDispatcher(PolyBackendDispatcher):
         try:
             importlib.import_module(f"xpu_graph.backends.{target.value}", __package__)
         except Exception as e:
-            logger.warning(f"{target.value}_compiler not found, return gm")
-            raise e
+            logger.warning(f"{target.value} is not found, use the default registrations")
         return super().__class_getitem__(target)
 
 
