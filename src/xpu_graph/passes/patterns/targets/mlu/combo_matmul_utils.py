@@ -7,6 +7,12 @@ from torch import fx, nn
 from ...utils.check_ops import check_act_op, get_shape
 from ...utils.combo_utils import get_ancestors
 
+from ...utils.check_ops import (  # get_shape,
+    check_trans_op,
+    check_t_op,
+    check_permute_op,
+)
+
 
 def has_mm_dependency(a, b):
     all_a = a.input1_ancestors + a.input2_ancestors + a.bias_ancestors
@@ -22,9 +28,32 @@ def has_mm_dependency(a, b):
 
 
 def check_trans_input(node):
-    if node.op == "call_function" and node.target == torch.ops.aten.t.default:
-        return True
-    return False
+    final_trans = False
+    while True:
+        is_trans, node = check_input(node)
+        if is_trans:
+            final_trans = final_trans != True
+        else:
+            break
+    return final_trans, node
+
+
+def check_input(node):
+    weight_trans = False
+    if check_trans_op(node):
+        trans_param = (node.args[1], node.args[2])
+        if trans_param in [(0, 1), (1, 0), (-2, -1), (-1, -2)]:
+            weight_trans = True
+            node = node.args[0]
+    elif check_permute_op(node):
+        trans_param = node.args[1]
+        if trans_param in [[0, 1], [1, 0], [-2, -1], [-1, -2]]:
+            weight_trans = True
+            node = node.args[0]
+    elif check_t_op(node):
+        weight_trans = True
+        node = node.args[0]
+    return weight_trans, node
 
 
 class MMNodeDesc:
@@ -55,24 +84,16 @@ class MMNodeDesc:
         self.node = node
 
     def set_input1(self, input1):
-        if check_trans_input(input1):
-            self.input1_trans = True
-            self.input1 = input1.args[0]
-        else:
-            self.input1 = input1
-        self.input1_shape = get_shape(input1)
+        self.input1_trans, self.input1 = check_trans_input(input1)
+        self.input1_shape = get_shape(self.input1)
         if self.input1_shape == None:
             return False
         self.input1_ancestors = get_ancestors(self.input1)
         return True
 
     def set_input2(self, input2):
-        if check_trans_input(input2):
-            self.input2_trans = True
-            self.input2 = input2.args[0]
-        else:
-            self.input2 = input2
-        self.input2_shape = get_shape(input2)
+        self.input2_trans, self.input2 = check_trans_input(input2)
+        self.input2_shape = get_shape(self.input2)
         if self.input2_shape == None:
             return False
         self.input2_ancestors = get_ancestors(self.input2)
@@ -112,7 +133,7 @@ def get_node_desc(node):
         # TODO(JYJ):Remove restrictions
         trans_b = node.args[2]
         if trans_b == True:
-            return None
+            input2 = input2.args[0]
         if isinstance(bias, (int, float)):
             return None
         act = node.args[4]
@@ -136,4 +157,5 @@ def get_node_desc(node):
             if is_act:
                 mm_desc.extra_match = True
                 mm_desc.set_act(act_str)
+
     return mm_desc
