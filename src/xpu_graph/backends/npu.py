@@ -4,6 +4,8 @@ import torch
 
 from xpu_graph.utils import logger, recursive_set_obj
 
+__DEFAULT_VENDOR_CONFIG__ = {"compiler": "ge", "mode": "reduce-overhead"}
+
 
 def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
     import torch.fx as fx
