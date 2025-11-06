@@ -1,5 +1,5 @@
 import importlib
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 import torch
 
@@ -8,7 +8,13 @@ from xpu_graph.utils import logger
 
 
 def vendor_compiler(
-    gm: torch.fx.GraphModule, fake_inputs: list, target: Target, **config_dict: Dict[str, Any]
+    gm: torch.fx.GraphModule,
+    fake_inputs: list,
+    target: Target,
+    *,
+    is_inference: bool = False,
+    is_backward: bool = False,
+    **config_dict: Dict[str, Any],
 ) -> Callable:
     try:
         target_mod = importlib.import_module(f".{target.value}", __package__)
@@ -18,6 +24,6 @@ def vendor_compiler(
 
     compile_fn = getattr(target_mod, f"{target.value}_compile")
     logger.info(f"{target.value}_compile start...")
-    xpu_compiled = compile_fn(gm, fake_inputs, **config_dict)
+    xpu_compiled = compile_fn(gm, fake_inputs, is_inference=is_inference, is_backward=is_backward, **config_dict)
     logger.info(f"{target.value}_compile complete")
     return xpu_compiled
