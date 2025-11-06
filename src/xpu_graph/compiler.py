@@ -75,13 +75,12 @@ class XpuGraph:
         # Setup logging based on config
         setup_logger(self._config.debug)
 
-        if self._config.target == Target.npu and self._config.vendor_compiler_config is not None:
-            if (
-                self._config.vendor_compiler_config
-                == {}  # NOTE(liuyuan): default npu vendor config is enable ge compiler.
-                or self._config.vendor_compiler_config.get("compiler", None) == "ge"
-            ):
-                self._config.enable_cache = False
+        if (
+            self._config.target == Target.npu
+            and self._config.vendor_compiler_config is not None
+            and self._config.vendor_compiler_config.get("compiler", "ge") == "ge"
+        ):
+            self._config.enable_cache = False
             logger.warning("Target NPU ge-compiler does not support cache.")
 
         self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None

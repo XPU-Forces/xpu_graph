@@ -4,8 +4,6 @@ import torch
 
 from xpu_graph.utils import logger, recursive_set_obj
 
-__DEFAULT_VENDOR_CONFIG__ = {"compiler": "ge", "mode": "reduce-overhead"}
-
 
 def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
     import torch.fx as fx
@@ -19,16 +17,16 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
     config = CompilerConfig()
     recursive_set_obj(config_dict, config)
-    if config_dict.get("mode", None) == "reduce-overhead":
-        config.mode = config_dict["mode"]
+    if (mode := config_dict.get("mode", "reduce-overhead")) == "reduce-overhead":
+        config.mode = mode
         from torch import SymInt
 
         for ele in example_inputs:
             if isinstance(ele, SymInt):
                 raise TypeError("ACL Graph does not support dynamic shape!!")
 
-        if config_dict.get("use_custom_pool", None):
-            config.aclgraph_config.use_custom_pool = config_dict["use_custom_pool"]
+        if mempool := config_dict.get("use_custom_pool", None):
+            config.aclgraph_config.use_custom_pool = mempool
     else:
         """
         TODO(zhangjihang): We have to use this, cause some case we have to use GE
@@ -71,7 +69,7 @@ def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> t
 
 
 def npu_compile(module: torch.nn.Module, inputs, **config_dict: Dict) -> torch.nn.Module:
-    compiler = config_dict.get("compiler", "inductor")
+    compiler = config_dict.get("compiler", "ge")
     if compiler == "ge":
         return ge_compiler(module, inputs, **config_dict)
     else:
