@@ -21,16 +21,16 @@ def ge_compiler(
 
     config = CompilerConfig()
     recursive_set_obj(config_dict, config)
-    if config_dict.get("mode", None) == "reduce-overhead":
-        config.mode = config_dict["mode"]
+    if (mode := config_dict.get("mode", "reduce-overhead")) == "reduce-overhead":
+        config.mode = mode
         from torch import SymInt
 
         for ele in example_inputs:
             if isinstance(ele, SymInt):
                 raise TypeError("ACL Graph does not support dynamic shape!!")
 
-        if config_dict.get("use_custom_pool", None):
-            config.aclgraph_config.use_custom_pool = config_dict["use_custom_pool"]
+        if mempool := config_dict.get("use_custom_pool", None):
+            config.aclgraph_config.use_custom_pool = mempool
     else:
         """
         TODO(zhangjihang): We have to use this, cause some case we have to use GE
@@ -84,7 +84,7 @@ def npu_compile(
     is_backward: bool = False,
     **config_dict: Dict,
 ) -> torch.nn.Module:
-    compiler = config_dict.get("compiler", "inductor")
+    compiler = config_dict.get("compiler", "ge")
     if compiler == "ge":
         assert is_inference, "Currently, we use ge only for inference."
         return ge_compiler(module, inputs, **config_dict)
