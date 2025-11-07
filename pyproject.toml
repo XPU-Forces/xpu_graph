@@ -61,6 +61,7 @@ npu = [
     "protobuf",
     "byted-triton-x",
     "pybind11",
+    "cmake",
 ]
 
 

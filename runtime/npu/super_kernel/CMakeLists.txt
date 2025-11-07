@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 project(super_kernel_launcher LANGUAGES CXX)
+# WARNING(liuyuan):
+# DEFINED $ENV{ASCEND_HOME_PATH} DOES NOT work under PIP ioslation building.
+set(ASCEND_SDK_PATH /usr/local/Ascend)
+if (DEFINED $ENV{ASCEND_HOME_PATH})
+  set(ASCEND_SDK_PATH $ENV(ASCEND_HOME_PATH))
+endif()
+
+if (NOT EXISTS ${ASCEND_SDK_PATH})
+  message(WARNING "This is not an environment with Ascend SDK.")
+  return()
+endif()
 
 execute_process(COMMAND bash -c "which c++" OUTPUT_VARIABLE CXX_PATH RESULT_VARIABLE _RET_CODE)
 if (NOT _RET_CODE MATCHES 0)
@@ -51,6 +62,7 @@ execute_process(COMMAND ${Python_EXECUTABLE} "-c" "import os; import torch; \
   RESULT_VARIABLE _RET_CODE
   OUTPUT_VARIABLE TORCH_DIR)
 if (NOT _RET_CODE MATCHES 0)
+  message(AUTHOR_WARNING "If you're using [pip install -e .] under virtualenv and uv, don't forget the [--no-build-isolation] for the corrent virtual environment.")
   message(FATAL_ERROR "NO Torch found.")
 endif()
 set(Torch_DIR ${TORCH_DIR}/share/cmake/Torch)
