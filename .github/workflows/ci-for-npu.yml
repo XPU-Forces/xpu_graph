@@ -62,7 +62,7 @@ jobs:
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
-        pip install -e '.[dev]'
+        pip install -e '.[dev,npu]'
         python3 -m build .
         pip install dist/*.whl --force-reinstall --no-deps
     - name: Running npu tests

@@ -44,6 +44,7 @@ dev = [
     "pytest >= 7.0.0",
     "pytest-cov >= 6.0.0",
     "pytest-xdist",
+    "pytest-datafiles",
     "setuptools >= 65",
     "build >= 1.2.2",
     "expecttest",
@@ -60,12 +61,21 @@ npu = [
     "protobuf",
     "byted-triton-x",
     "pybind11",
+    "cmake",
 ]
 
 
 [project.urls]
 Homepage = "https://github.com/XPU-Forces/xpu_graph"
 Issues = "https://github.com/XPU-Forces/xpu_graph/issues"
+
+[tool.setuptools]
+ext-modules = [
+  {name = "xpu_graph.super_kernel_launcher", sources = ["runtime/npu/super_kernel/CMakeLists.txt", "runtime/npu/super_kernel/super_kernel_launcher.cpp.in"]}
+]
+
+[tool.setuptools.cmdclass]
+build_ext = "build.build_ext"
 
 [tool.setuptools.dynamic]
 version = {attr = "xpu_graph.version.__version__"}

@@ -1,0 +1,101 @@
+#include <algorithm>
+#include <unordered_map>
+#include <iostream>
+#include <stdio.h>
+
+#include <pybind11/pybind11.h>
+#include <torch/extension.h>
+// #include <torch/torch.h>
+// #include <torch/python.h>
+#include <torch/csrc/utils/pybind.h>
+
+#include "acl/acl.h"
+// #include "aclrtlaunch_add_custom.h"
+// #include "torch_npu/csrc/core/npu/NPUStream.h"
+// #include "torch_npu/csrc/npu/Stream.h"
+
+namespace py = pybind11;
+
+#define CHECK_ACL(x)                                                                  \
+  do {                                                                                \
+    aclError __ret = x;                                                               \
+    if (__ret != ACL_ERROR_NONE) {                                                    \
+      std::cerr << __FILE__ << ":" << __LINE__ << " aclError:" << __ret << std::endl; \
+      abort();                                                                        \
+    }                                                                                 \
+  } while (0);
+
+namespace {
+using FnHdlKey = std::tuple<const std::string, const std::string>;
+// template struct std::less<FnHdlKey> {
+//   bool operator(const FnHdlKey& lhs, const FnHdlKey& rhs) {
+//     return (std::get<0>(lhs) + std::get<1>(lhs)) < (std::get<0>(rhs), std::get<1>(rhs));
+//   }
+// }
+struct KeyHasher: public std::unary_function<FnHdlKey, std::size_t> {
+  std::size_t operator()(const FnHdlKey& key) const {
+    return std::hash<std::string>()(std::get<0>(key) + std::get<1>(key));
+  }
+};
+std::unordered_map<FnHdlKey, aclrtFuncHandle, KeyHasher>
+    __FUNC_HANDLES__;
+
+inline void launch_super_kernel(uint32_t block_dim, const std::vector<void*>& args, aclrtStream stream,
+                                aclrtFuncHandle fhdl) {
+  aclrtArgsHandle ahdl;
+  CHECK_ACL(aclrtKernelArgsInit(fhdl, &ahdl));
+  aclrtParamHandle phdl;
+  CHECK_ACL(aclrtKernelArgsAppend(ahdl, const_cast<void**>((args.data())),
+                                  args.size() * sizeof(args[0]), &phdl));
+  CHECK_ACL(aclrtKernelArgsFinalize(ahdl));
+  CHECK_ACL(aclrtLaunchKernelWithConfig(fhdl, block_dim, stream, nullptr, ahdl, nullptr));
+}
+} // namespace
+
+namespace xpu_graph {
+
+std::vector<at::Tensor> xpu_graph_super_kernel(const std::vector<at::Tensor>& inputs,
+                                               const std::vector<at::Tensor>& outputs,
+                                               long int stream, const std::string& obj_file,
+                                               const std::string& sym_name) {
+  py::gil_scoped_release release;
+
+  std::vector<void*> args;
+  args.reserve(inputs.size() + outputs.size());
+
+  std::transform(inputs.begin(), inputs.end(), std::back_inserter(args),
+                 [](const at::Tensor& tensor) { return tensor.data_ptr(); });
+  std::transform(outputs.begin(), outputs.end(), std::back_inserter(args),
+                 [](const at::Tensor& tensor) { return tensor.data_ptr(); });
+  if (args.empty()){
+    return {};
+  }
+
+  aclrtBinHandle bhdl = nullptr;
+  aclrtFuncHandle fhdl = nullptr;
+
+  auto const key = std::make_tuple(obj_file, sym_name);
+
+  if (__FUNC_HANDLES__.count(key)){
+    fhdl = __FUNC_HANDLES__[key];
+  } else{
+    std::cout << "Loding " << sym_name << " from " << obj_file << std::endl;
+    CHECK_ACL(aclrtBinaryLoadFromFile(obj_file.c_str(), nullptr, &bhdl));
+    CHECK_ACL(aclrtBinaryGetFunction(bhdl, sym_name.c_str(), &fhdl));
+  }
+
+  if (fhdl == nullptr) {
+    return {};
+  }
+
+  launch_super_kernel(40, args, reinterpret_cast<aclrtStream>(stream), fhdl);
+
+  return outputs;
+}
+
+} // namespace xpu_graph
+
+PYBIND11_MODULE(@PROJECT_NAME@, m) {
+  m.def("xpu_graph_super_kernel", &xpu_graph::xpu_graph_super_kernel,
+        "A function to launch super kernel.");
+}
