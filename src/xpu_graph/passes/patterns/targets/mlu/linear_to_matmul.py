@@ -1,16 +1,7 @@
-from functools import cache
-from typing import Callable
-
 import torch
 
-from xpu_graph import (
-    XpuGraph,
-    register_plugin_pattern,
-    register_this_as_pattern_constraint,
-    register_this_as_plugin_pattern,
-)
-from xpu_graph.config import Target, XpuGraphConfig
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
+from xpu_graph import register_this_as_plugin_pattern
+from xpu_graph.config import Target
 
 
 def linear_replace(x, w):
