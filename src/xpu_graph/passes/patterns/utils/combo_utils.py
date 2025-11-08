@@ -29,16 +29,19 @@ def _fetch_combinable_ops_idx(config_str):
     return extra_combinable_ops_idx
 
 
-DEFAULT_COMBINE_WIDTH = "3"
+DEFAULT_COMBINE_POI_WIDTH = "3"
 DEFAULT_COMBINABLE_POI_OP_IDX = "aten.mul.Tensor:0,1;aten.add.Tensor:0,1;aten.where.self:1,2;"
 
-COMBINE_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, DEFAULT_COMBINE_WIDTH)), 2)
+COMBINE_POI_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, DEFAULT_COMBINE_POI_WIDTH)), 2)
 COMBINABLE_POI_OP_IDX = _fetch_combinable_ops_idx(
     DEFAULT_COMBINABLE_POI_OP_IDX + os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_ops_idx, "")
 )
 
+DEFAULT_COMBINE_MM_WIDTH = "4"
+COMBINE_MM_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.matmul_combine_width, DEFAULT_COMBINE_MM_WIDTH)), 4)
 
-class ComboManager:
+
+class ComboPoiManager:
     def __init__(
         self,
         gm: fx.GraphModule,
@@ -118,7 +121,7 @@ class ComboManager:
         replace_groups = []
         for other_args_kwargs, combinable_lists in self.shared_to_combinelists.items():
             for _, orig_results in combinable_lists:
-                if len(orig_results) < COMBINE_WIDTH:
+                if len(orig_results) < COMBINE_POI_WIDTH:
                     continue
                 orig_args = [orig_result.args[self.combo_argidx] for orig_result in orig_results]
                 do_stack = True
@@ -169,21 +172,9 @@ class ComboManager:
         return replace_groups
 
 
-def find_last_node_in_list(gm: fx.GraphModule, node_list: list[fx.Node]) -> fx.Node:
-    """
-    Given a list of nodes, find the one that appears last in the graph's topological order.
-    """
-    node_set = set(node_list)  # Faster lookup
-    last_node = None
-
-    for node in gm.graph.nodes:
-        if node in node_set:
-            last_node = node  # Update when we see a matching node
-
-    return last_node
-
-
-def partly_topo_sort(gm: fx.Graph, node: fx.Node):
+def partially_topo_sort(node: fx.Node, insert_after: Optional[fx.Node] = None):
+    if insert_after is None or insert_after < node:
+        insert_after = node
     import queue
 
     que = queue.Queue()
@@ -192,7 +183,7 @@ def partly_topo_sort(gm: fx.Graph, node: fx.Node):
         cur = que.get()
         for user in cur.users:
             if user < cur:
-                cur.append(user)
+                insert_after.append(user)
                 que.put(user)
 
 

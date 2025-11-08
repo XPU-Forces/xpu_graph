@@ -1,17 +1,16 @@
 from typing import Optional, Tuple, Union
 
 import torch
-import torch_mlu
-from torch import fx, nn
-
-from ...utils.check_ops import check_act_op, get_shape
-from ...utils.combo_utils import get_ancestors
+import torch.fx as fx
 
 from ...utils.check_ops import (  # get_shape,
-    check_trans_op,
-    check_t_op,
+    check_act_op,
     check_permute_op,
+    check_t_op,
+    check_trans_op,
+    get_shape,
 )
+from ...utils.combo_utils import get_ancestors
 
 
 def has_mm_dependency(a, b):
@@ -64,13 +63,13 @@ class MMNodeDesc:
 
     def __init__(self) -> None:
         # The fx.Node itself (typically an mm or addmm operation)
-        self.node: Optional[NodeType] = None
-        self.input1: Optional[NodeType] = None
-        self.input2: Optional[NodeType] = None
-        self.bias: Optional[Union[NodeType, int, float]] = None
-        self.input1_shape: Optional[TensorShape] = None
-        self.input2_shape: Optional[TensorShape] = None
-        self.bias_shape: Optional[TensorShape] = None
+        self.node: Optional[fx.Node] = None
+        self.input1: Optional[fx.Node] = None
+        self.input2: Optional[fx.Node] = None
+        self.bias: Optional[Union[fx.Node, int, float]] = None
+        self.input1_shape: Optional[torch.Size] = None
+        self.input2_shape: Optional[torch.Size] = None
+        self.bias_shape: Optional[torch.Size] = None
         # Activation function string (default "none")
         self.act: str = "none"
         self.input1_ancestors = []
