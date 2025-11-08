@@ -1,6 +1,6 @@
 import pytest
 import torch
-import torch_mlu
+import torch.nn.functional as F
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -71,6 +71,15 @@ def fn6(inputs, weight_list, bias_list):
     return outputs_original
 
 
+def fn7(inputs, weight_list, bias_list):
+    input_list = inputs.split(inputs.shape[0] // len(weight_list), dim=0)
+    input_list = [i.squeeze(0) for i in input_list]
+    outputs_original = []
+    for input, weight in zip(input_list, weight_list):
+        outputs_original.append(torch.relu(F.linear(input, weight.T)))
+    return outputs_original
+
+
 def create_input(func, M, N, K):
     T = 8
     inputs = None
@@ -79,33 +88,21 @@ def create_input(func, M, N, K):
     if func in [fn0, fn2, fn4, fn5]:
         M, N, K = 5, 8, 7
         inputs = torch.randn((1, M, N), device=device, dtype=data_type)
-        weight_list = [
-            torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)
-        ]
+        weight_list = [torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)]
         if func == fn4:
-            bias_list = [
-                torch.randn((K), device=device, dtype=data_type) for _ in range(T)
-            ]
+            bias_list = [torch.randn((K), device=device, dtype=data_type) for _ in range(T)]
         else:
-            bias_list = [
-                torch.randn((M, K), device=device, dtype=data_type) for _ in range(T)
-            ]
+            bias_list = [torch.randn((M, K), device=device, dtype=data_type) for _ in range(T)]
     if func in [fn1, fn3]:
         S = 3
         M, N, K = 5, 6, 7
         inputs = torch.randn((S, M, N), device=device, dtype=data_type)
-        weight_list = [
-            torch.randn((S, N, K), device=device, dtype=data_type) for _ in range(T)
-        ]
-        bias_list = [
-            torch.randn((S, M, K), device=device, dtype=data_type) for _ in range(T)
-        ]
-    if func == fn6:
+        weight_list = [torch.randn((S, N, K), device=device, dtype=data_type) for _ in range(T)]
+        bias_list = [torch.randn((S, M, K), device=device, dtype=data_type) for _ in range(T)]
+    if func in [fn6, fn7]:
         M, N, K = 5, 8, 7
         inputs = torch.randn((T, M, N), device=device, dtype=data_type)
-        weight_list = [
-            torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)
-        ]
+        weight_list = [torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)]
         bias_list = None
     return inputs, weight_list, bias_list
 
@@ -135,10 +132,7 @@ def combine_matmul_test_with_loss_and_grad(xpu_graph_backend, func, dynamic=True
 
     with torch.no_grad():
         temp_outputs = func(inputs, weight_list, bias_list)
-    grad_outputs = [
-        torch.randn_like(output, device=device, dtype=data_type)
-        for output in temp_outputs
-    ]
+    grad_outputs = [torch.randn_like(output, device=device, dtype=data_type) for output in temp_outputs]
 
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
 
@@ -175,19 +169,17 @@ def combine_matmul_test_with_loss_and_grad(xpu_graph_backend, func, dynamic=True
         elif grad0 is None and grad1 is None:
             continue  # 都是None，正常
         else:
-            raise AssertionError(
-                f"梯度 {i} 的存在性不匹配: {grad0 is not None} vs {grad1 is not None}"
-            )
+            raise AssertionError(f"梯度 {i} 的存在性不匹配: {grad0 is not None} vs {grad1 is not None}")
 
 
 class TestCombineMatMul:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2
-        )
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
         self.train_backend = xpu_graph.mlu_compiler(
-            is_training=True, opt_level=OptLevel.level2,
+            is_training=True,
+            opt_level=OptLevel.level2,
         )
+
     @pytest.mark.parametrize(
         "dynamic",
         [
@@ -205,13 +197,35 @@ class TestCombineMatMul:
             fn4,
             fn5,
             fn6,
+            fn7,
         ],
     )
-    def test_matmul_patterns(self, caplog, pattern_func, dynamic):
+    def test_matmul_patterns_inference(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             combine_matmul_test(self.xpu_graph_backend, pattern_func, dynamic)
             assert "Pattern.FusedCombineMatMul changed graph" in caplog.text
 
+    @pytest.mark.parametrize(
+        "dynamic",
+        [
+            True,
+            False,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [
+            fn0,
+            fn1,
+            fn2,
+            fn3,
+            fn4,
+            fn5,
+            fn6,
+            fn7,
+        ],
+    )
+    def test_matmul_patterns_training(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
             combine_matmul_test_with_loss_and_grad(self.train_backend, pattern_func, dynamic)
             assert "Pattern.FusedCombineMatMul changed graph" in caplog.text
@@ -221,22 +235,15 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=True,
         opt_level=OptLevel.level2,
-        debug=False,
+        debug=True,
         vendor_compiler_config=None,
     )
     combine_matmul_test_with_loss_and_grad(xpu_graph_backend, fn6, dynamic=True)
-    '''
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False,
-        opt_level=OptLevel.level2,
-        debug=False,
-        vendor_compiler_config=None,
-    )
-    combine_matmul_test(xpu_graph_backend, fn0)
-    combine_matmul_test(xpu_graph_backend, fn1)
-    combine_matmul_test(xpu_graph_backend, fn2)
-    combine_matmul_test(xpu_graph_backend, fn3)
-    combine_matmul_test(xpu_graph_backend, fn4)
-    combine_matmul_test(xpu_graph_backend, fn5)
-    combine_matmul_test(xpu_graph_backend, fn6)
-    '''
+
+    # xpu_graph_backend = xpu_graph.mlu_compiler(
+    #     is_training=False,
+    #     opt_level=OptLevel.level2,
+    #     debug=True,
+    #     vendor_compiler_config=None,
+    # )
+    # combine_matmul_test(xpu_graph_backend, fn3, dynamic=False)

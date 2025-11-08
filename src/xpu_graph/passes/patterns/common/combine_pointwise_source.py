@@ -8,7 +8,11 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ..utils.check_ops import check_op, get_input_node
-from ..utils.combo_utils import COMBINABLE_POI_OP_IDX, COMBINE_WIDTH, ComboManager
+from ..utils.combo_utils import (
+    COMBINABLE_POI_OP_IDX,
+    COMBINE_POI_WIDTH,
+    ComboPoiManager,
+)
 from ..utils.shape_utils import SymShapeManager
 
 aten = torch.ops.aten
@@ -44,7 +48,7 @@ class CombinePointwiseSource(Pattern):
                 candidates = [user for user in node.users if user.target == operator.getitem]
                 candidates.sort(key=lambda x: x.args[1])
                 # Note: Since it is after CSE, the getitem nodes should be unique
-                if len(candidates) < COMBINE_WIDTH:
+                if len(candidates) < COMBINE_POI_WIDTH:
                     continue
             else:
                 continue
@@ -69,7 +73,7 @@ class CombinePointwiseSource(Pattern):
             for node in graph_module.graph.nodes
             if node.op == "placeholder" and "val" in node.meta and isinstance(node.meta["val"], torch.Tensor)
         ]
-        if len(placeholders) >= COMBINE_WIDTH:
+        if len(placeholders) >= COMBINE_POI_WIDTH:
             changed = self.process_candidates(graph_module, None, placeholders, None, shape_manager) or changed
 
         return changed
@@ -80,7 +84,7 @@ class CombinePointwiseSource(Pattern):
 
         for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
             for combinable_argidx in combinable_argidxs:
-                combo_manager = ComboManager(
+                combo_manager = ComboPoiManager(
                     graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check, shape_manager
                 )
                 for cand in candidates:
