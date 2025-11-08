@@ -19,6 +19,7 @@ __all__ = [
     "register_this_as_plugin_pattern",
     "register_this_as_pattern_constraint",
     "deregister_plugin_patterns",
+    "enable_plugin_patterns",
 ]
 
 
@@ -267,3 +268,17 @@ def deregister_plugin_patterns(func_or_func_name: Union[Callable, AnyStr], targe
             if func_name in target_patterns:
                 del target_patterns[func_name]
                 logger.debug("Deregister pattern %s successfully.", func_name)
+
+
+@contextmanager
+# WARNING(liuyuan): NOT Thread safe but GIL does not care.
+def enable_plugin_patterns():
+    global __CONTEXTUAL_PATTERN_RECORDER__
+    old_recorder = __CONTEXTUAL_PATTERN_RECORDER__
+    __CONTEXTUAL_PATTERN_RECORDER__ = []
+    try:
+        yield
+    finally:
+        for func in __CONTEXTUAL_PATTERN_RECORDER__:
+            deregister_plugin_patterns(func)
+        __CONTEXTUAL_PATTERN_RECORDER__ = old_recorder
