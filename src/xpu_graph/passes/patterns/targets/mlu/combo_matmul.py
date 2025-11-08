@@ -21,11 +21,8 @@ def all_same_tensor(tensor_list):
 
 
 class FusedCombineBmm(nn.Module):
-    def forward(self, input_list, weight_list, bias_list, act: str, trans_a: bool, trans_b: bool):
-        use_groupgemm = True
-        output = None
-
-        if len(input_list[0].shape) == 2 and use_groupgemm:
+    def forward(self, input_list, weight_list, bias_list, act: str, trans_a: bool, trans_b: bool, use_groupgemm: bool):
+        if use_groupgemm:
             output = self.forward_groupgemm(input_list, weight_list, bias_list, trans_a, trans_b)
         else:
             output = self.forward_bmm(input_list, weight_list, bias_list, trans_a, trans_b)
@@ -98,71 +95,12 @@ class FusedCombineBmm(nn.Module):
         return output
 
 
-def replace_node(graph_module, mm_descs):
-    new_input = [desc.input1 for desc in mm_descs]
-    new_weight = [desc.input2 for desc in mm_descs]
-    new_bias = [desc.bias for desc in mm_descs]
-    trans_a = mm_descs[0].input1_trans
-    trans_b = mm_descs[0].input2_trans
-    act = mm_descs[0].act
-
-    last_node = max(desc.node for desc in mm_descs if isinstance(desc.node, fx.Node))
-    with graph_module.graph.inserting_before(last_node):
-        new_node = graph_module.graph.call_module(
-            "fused_combo_bmm",
-            args=(new_input, new_weight, new_bias, act, trans_a, trans_b),
-        )
-        unbind_node = graph_module.graph.call_function(torch.ops.aten.unbind.int, args=(new_node,))
-        new_nodes = []
-        for idx in range(len(mm_descs)):
-            new_n = graph_module.graph.call_function(operator.getitem, args=(unbind_node, idx))
-            new_nodes.append(new_n)
-
-        for desc, new_n in zip(mm_descs, new_nodes):
-            if desc.extra_match == True:
-                next_node = next(iter(desc.node.users))
-                next_node.replace_all_uses_with(new_n)
-            else:
-                desc.node.replace_all_uses_with(new_n)
-            partially_topo_sort(new_n, insert_after=new_nodes[-1])
-
-
-def combo_matmul(graph_module, candidates, sym_shape_manager, combine_mm_width):
-    changed = False
-    group_by_shape = {}
-    # split mm by input&weight&bias's shape and activation mode
-    for n in candidates:
-        mm_desc = get_node_desc(n)
-        if mm_desc == None:
-            continue
-
-        key = (
-            mm_desc.input1_trans,
-            mm_desc.input2_trans,
-            tuple(sym_shape_manager.rebind_shape(mm_desc.input1_shape)),
-            tuple(sym_shape_manager.rebind_shape(mm_desc.input2_shape)),
-            ((None if mm_desc.bias == None else tuple(sym_shape_manager.rebind_shape(mm_desc.bias_shape))),),
-            mm_desc.act,
-        )
-        if key not in group_by_shape:
-            group_by_shape[key] = []
-        group_by_shape[key].append(mm_desc)
-
-    for key1, group_nodes in group_by_shape.items():
-        group_by_input = find_dep(group_nodes, has_mm_dependency)
-        for mm_descs in group_by_input:
-            if len(mm_descs) < combine_mm_width:
-                continue
-            changed = True
-            replace_node(graph_module, mm_descs)
-    return changed
-
-
 class FusedCombineMatMul(Pattern):
     _opt_level = OptLevel.level2
     _pattern_group = PatternGroup.GROUP1
     _support_stages = [
         FxStage.inference,
+        FxStage.pregrad,
         # FxStage.forward,
         # FxStage.backward,
     ]
@@ -175,8 +113,10 @@ class FusedCombineMatMul(Pattern):
         # split mm by difference module
         target_module = [
             torch.ops.aten.mm.default,
+            torch.ops.aten.matmul.default,
             torch.ops.aten.bmm.default,
             torch.ops.aten.addmm.default,
+            torch.ops.aten.linear.default,
             "custom_batch_dense_layer_replacement",
             "custom_dense_layer_replacement",
         ]
@@ -188,6 +128,68 @@ class FusedCombineMatMul(Pattern):
             ]
             if len(candidates) < COMBINE_MM_WIDTH:
                 continue
-            changed = changed | combo_matmul(graph_module, candidates, sym_shape_manager, COMBINE_MM_WIDTH)
+            changed = changed | self.combo_matmul(graph_module, candidates, sym_shape_manager, COMBINE_MM_WIDTH)
 
+        return changed
+
+    def replace_node(self, graph_module, mm_descs):
+        new_input = [desc.input1 for desc in mm_descs]
+        new_weight = [desc.input2 for desc in mm_descs]
+        new_bias = [desc.bias for desc in mm_descs]
+        trans_a = mm_descs[0].input1_trans
+        trans_b = mm_descs[0].input2_trans
+        act = mm_descs[0].act
+
+        last_node = max(desc.node for desc in mm_descs if isinstance(desc.node, fx.Node))
+        with graph_module.graph.inserting_before(last_node):
+            if self._current_stage == FxStage.inference and len(new_input[0].meta["val"].shape) == 2:
+                use_groupgemm = True
+            else:
+                use_groupgemm = False
+            new_node = graph_module.graph.call_module(
+                "fused_combo_bmm",
+                args=(new_input, new_weight, new_bias, act, trans_a, trans_b, use_groupgemm),
+            )
+            unbind_node = graph_module.graph.call_function(torch.ops.aten.unbind.int, args=(new_node,))
+            new_nodes = []
+            for idx in range(len(mm_descs)):
+                new_n = graph_module.graph.call_function(operator.getitem, args=(unbind_node, idx))
+                new_nodes.append(new_n)
+
+            for desc, new_n in zip(mm_descs, new_nodes):
+                if desc.extra_match == True:
+                    next_node = next(iter(desc.node.users))
+                    next_node.replace_all_uses_with(new_n)
+                else:
+                    desc.node.replace_all_uses_with(new_n)
+                partially_topo_sort(new_n, insert_after=new_nodes[-1])
+
+    def combo_matmul(self, graph_module, candidates, sym_shape_manager, combine_mm_width):
+        changed = False
+        group_by_shape = {}
+        # split mm by input&weight&bias's shape and activation mode
+        for n in candidates:
+            mm_desc = get_node_desc(n)
+            if mm_desc == None:
+                continue
+
+            key = (
+                mm_desc.input1_trans,
+                mm_desc.input2_trans,
+                tuple(sym_shape_manager.rebind_shape(mm_desc.input1_shape)),
+                tuple(sym_shape_manager.rebind_shape(mm_desc.input2_shape)),
+                ((None if mm_desc.bias == None else tuple(sym_shape_manager.rebind_shape(mm_desc.bias_shape))),),
+                mm_desc.act,
+            )
+            if key not in group_by_shape:
+                group_by_shape[key] = []
+            group_by_shape[key].append(mm_desc)
+
+        for group_nodes in group_by_shape.values():
+            group_by_input = find_dep(group_nodes, has_mm_dependency)
+            for mm_descs in group_by_input:
+                if len(mm_descs) < combine_mm_width:
+                    continue
+                changed = True
+                self.replace_node(graph_module, mm_descs)
         return changed

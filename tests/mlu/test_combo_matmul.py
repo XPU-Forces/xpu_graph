@@ -1,6 +1,6 @@
 import pytest
 import torch
-import torch_mlu
+import torch.nn.functional as F
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -71,6 +71,15 @@ def fn6(inputs, weight_list, bias_list):
     return outputs_original
 
 
+def fn7(inputs, weight_list, bias_list):
+    input_list = inputs.split(inputs.shape[0] // len(weight_list), dim=0)
+    input_list = [i.squeeze(0) for i in input_list]
+    outputs_original = []
+    for input, weight in zip(input_list, weight_list):
+        outputs_original.append(torch.relu(F.linear(input, weight.T)))
+    return outputs_original
+
+
 def create_input(func, M, N, K):
     T = 8
     inputs = None
@@ -90,7 +99,7 @@ def create_input(func, M, N, K):
         inputs = torch.randn((S, M, N), device=device, dtype=data_type)
         weight_list = [torch.randn((S, N, K), device=device, dtype=data_type) for _ in range(T)]
         bias_list = [torch.randn((S, M, K), device=device, dtype=data_type) for _ in range(T)]
-    if func == fn6:
+    if func in [fn6, fn7]:
         M, N, K = 5, 8, 7
         inputs = torch.randn((T, M, N), device=device, dtype=data_type)
         weight_list = [torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)]
@@ -188,6 +197,7 @@ class TestCombineMatMul:
             fn4,
             fn5,
             fn6,
+            fn7,
         ],
     )
     def test_matmul_patterns_inference(self, caplog, pattern_func, dynamic):
@@ -212,9 +222,9 @@ class TestCombineMatMul:
             fn4,
             fn5,
             fn6,
+            fn7,
         ],
     )
-    @pytest.mark.skip(reason="Training pattern of combine mm is not supported yet")
     def test_matmul_patterns_training(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
             combine_matmul_test_with_loss_and_grad(self.train_backend, pattern_func, dynamic)

@@ -26,12 +26,11 @@ def has_mm_dependency(a, b):
     )
 
 
-def check_trans_input(node):
-    final_trans = False
+def check_trans_input(node, final_trans):
     while True:
         is_trans, node = check_input(node)
         if is_trans:
-            final_trans = final_trans != True
+            final_trans = not final_trans
         else:
             break
     return final_trans, node
@@ -82,18 +81,21 @@ class MMNodeDesc:
     def set_node(self, node):
         self.node = node
 
-    def set_input1(self, input1):
-        self.input1_trans, self.input1 = check_trans_input(input1)
+    def set_input1(self, input1, final_trans=False):
+        self.input1_trans, self.input1 = check_trans_input(input1, final_trans)
         self.input1_shape = get_shape(self.input1)
         if self.input1_shape == None:
             return False
         self.input1_ancestors = get_ancestors(self.input1)
         return True
 
-    def set_input2(self, input2):
-        self.input2_trans, self.input2 = check_trans_input(input2)
+    def set_input2(self, input2, final_trans=False):
+        self.input2_trans, self.input2 = check_trans_input(input2, final_trans)
         self.input2_shape = get_shape(self.input2)
         if self.input2_shape == None:
+            return False
+        if len(self.input2_shape) == 1:
+            # Note: skip dot-product cases
             return False
         self.input2_ancestors = get_ancestors(self.input2)
         return True
@@ -117,13 +119,20 @@ def get_node_desc(node):
     bias = None
     act = None
     check_args = False
-    if node.target in [torch.ops.aten.mm.default, torch.ops.aten.bmm.default]:
+    trans_b = False
+    if node.target in (torch.ops.aten.mm.default, torch.ops.aten.matmul.default, torch.ops.aten.bmm.default):
         input1 = node.args[0]
         input2 = node.args[1]
     elif node.target == torch.ops.aten.addmm.default:
         bias = node.args[0]
         input1 = node.args[1]
         input2 = node.args[2]
+    elif node.target == torch.ops.aten.linear.default:
+        input1 = node.args[0]
+        input2 = node.args[1]
+        if len(node.args) == 3:
+            bias = node.args[2]
+        trans_b = True
     else:
         # CustomDenseLayer and CustomBatchDenseLayer
         input1 = node.args[0]
@@ -131,17 +140,16 @@ def get_node_desc(node):
         bias = node.args[3]
         # TODO(JYJ):Remove restrictions
         trans_b = node.args[2]
-        if trans_b == True:
-            input2 = input2.args[0]
-        if isinstance(bias, (int, float)):
-            return None
         act = node.args[4]
+
+    if isinstance(bias, (int, float)):
+        return None
 
     mm_desc = MMNodeDesc()
     mm_desc.set_node(node)
     if not mm_desc.set_input1(input1):
         return None
-    if not mm_desc.set_input2(input2):
+    if not mm_desc.set_input2(input2, trans_b):
         return None
     if not mm_desc.set_bias(bias):
         return None
