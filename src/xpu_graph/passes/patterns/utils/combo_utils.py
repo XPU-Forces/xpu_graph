@@ -38,7 +38,7 @@ COMBINABLE_POI_OP_IDX = _fetch_combinable_ops_idx(
 )
 
 DEFAULT_COMBINE_MM_WIDTH = "4"
-COMBINE_MM_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.matmul_combine_width, DEFAULT_COMBINE_MM_WIDTH)), 4)
+COMBINE_MM_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.matmul_combine_width, DEFAULT_COMBINE_MM_WIDTH)), 2)
 
 
 class ComboPoiManager:
