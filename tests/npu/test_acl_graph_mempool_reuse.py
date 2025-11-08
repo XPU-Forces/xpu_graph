@@ -20,7 +20,15 @@ class BMM(torch.nn.Module):
         self.weight = torch.nn.Parameter(torch.empty(2048, 1024))
 
     def forward(self, x):
-        return torch.matmul(x, self.weight)
+        y = torch.matmul(x, self.weight)
+        y1 = torch.relu(y)
+        y2 = torch.relu(-y)
+        z = torch.cat([y1, y2], dim=-1)
+
+        # Note: inplace operation is required here
+        #       because out-of-place result is placed outside custom mempool and will not reused
+        x.copy_(z)
+        return x
 
 
 @pytest.mark.exclusive
@@ -84,5 +92,17 @@ class TestMemPoolReuse:
                 memory_reserved = torch.npu.max_memory_reserved()
 
             # NOTE(liuyuan): should grow with 0B at least once if we use acl_graph memory pool reuse.
-            # UPDATE(chenyifan): torchair.config.debug.aclgraph.disable_mempool_reuse_in_same_fx is forced to be False  with custom pool
-            assert 0 not in mem_growth, f"{mem_growth=}"
+            assert 0 in mem_growth, f"{mem_growth=}"
+
+
+if __name__ == "__main__":
+    import logging
+
+    import torch
+    from torch_npu.dynamo import torchair as tng
+
+    tng.logger.setLevel(logging.DEBUG)
+
+    testcase = TestMemPoolReuse()
+    testcase.setup_method()
+    testcase.test_mem_pool_reuse()
