@@ -107,7 +107,7 @@ class PluginPattern(Pattern):
 __PLUGIN_PATTERN_GROUP__ = {}
 __PLUGIN_PATTERN_FILTER_FUNCS__: dict = {}
 __LAST_PATTERN_INFO__ = None
-__CONTEXTUAL_PATTERN_RECORDER__ = [] 
+__CONTEXTUAL_PATTERN_RECORDER__ = []
 
 
 def register_plugin_pattern(
@@ -267,4 +267,3 @@ def deregister_plugin_patterns(func_or_func_name: Union[Callable, AnyStr], targe
             if func_name in target_patterns:
                 del target_patterns[func_name]
                 logger.debug("Deregister pattern %s successfully.", func_name)
-
