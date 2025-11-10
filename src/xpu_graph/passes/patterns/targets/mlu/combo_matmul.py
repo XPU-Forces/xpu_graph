@@ -88,10 +88,9 @@ class FusedCombineBmm(nn.Module):
                 beta = [1.0] * len(input_list)
                 kwargs["beta"] = beta
                 kwargs["c"] = bias_list
-        # output_list = torch.ops.torch_mlu.grouped_gemm(*args, **kwargs)
-        # output = torch.stack(output_list, dim=0)
         output = torch.ops.torch_mlu.grouped_gemm(*args, **kwargs)
-        output = torch.stack(output, dim=0)
+        if isinstance(output, list):
+            output = torch.stack(output, dim=0)
         return output
 
 
@@ -142,7 +141,11 @@ class FusedCombineMatMul(Pattern):
 
         last_node = max(desc.node for desc in mm_descs if isinstance(desc.node, fx.Node))
         with graph_module.graph.inserting_before(last_node):
-            if self._current_stage == FxStage.inference and len(new_input[0].meta["val"].shape) == 2:
+            if (
+                self._current_stage == FxStage.inference
+                and hasattr(torch.ops.torch_mlu, "grouped_gemm")
+                and len(new_input[0].meta["val"].shape) == 2
+            ):
                 use_groupgemm = True
             else:
                 use_groupgemm = False

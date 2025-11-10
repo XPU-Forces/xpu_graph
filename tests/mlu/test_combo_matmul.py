@@ -240,10 +240,10 @@ if __name__ == "__main__":
     )
     combine_matmul_test_with_loss_and_grad(xpu_graph_backend, fn6, dynamic=True)
 
-    # xpu_graph_backend = xpu_graph.mlu_compiler(
-    #     is_training=False,
-    #     opt_level=OptLevel.level2,
-    #     debug=True,
-    #     vendor_compiler_config=None,
-    # )
-    # combine_matmul_test(xpu_graph_backend, fn3, dynamic=False)
+    xpu_graph_backend = xpu_graph.mlu_compiler(
+        is_training=False,
+        opt_level=OptLevel.level2,
+        debug=True,
+        vendor_compiler_config=None,
+    )
+    combine_matmul_test(xpu_graph_backend, fn0, dynamic=False)
