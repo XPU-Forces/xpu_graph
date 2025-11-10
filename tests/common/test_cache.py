@@ -1,7 +1,7 @@
 import itertools
 import os
+import pickle
 
-import dill
 import torch
 
 from tests.common.test_models import SimpleModel, compare_inference
@@ -43,12 +43,12 @@ def test_xpugraph_inference_artifact(caplog, tmp_path):
 
         if os.path.exists(pkl_path):
             with open(pkl_path, "rb") as f:
-                loaded_artifact = dill.load(f)
+                loaded_artifact = pickle.load(f)
                 return loaded_artifact
 
         compiled_artifact = infer_backend(gm, example_inputs)
         with open(pkl_path, "wb") as f:
-            dill.dump(compiled_artifact, f)
+            pickle.dump(compiled_artifact, f)
         return compiled_artifact
 
     with need_xpu_graph_logs():
