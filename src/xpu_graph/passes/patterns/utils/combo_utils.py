@@ -183,7 +183,8 @@ def partially_topo_sort(node: fx.Node, insert_after: Optional[fx.Node] = None):
         cur = que.get()
         for user in cur.users:
             if user < cur:
-                insert_after.append(user)
+                insert_pos = max(insert_after, cur)
+                insert_pos.append(user)
                 que.put(user)
 
 
