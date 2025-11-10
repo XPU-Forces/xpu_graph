@@ -1,4 +1,5 @@
 import dataclasses
+from os import PathLike
 from typing import Any, Dict
 
 from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
@@ -67,7 +68,7 @@ def mlu_compiler(
 
     if "cache" not in patch_configs:
         cache = no_cache() if is_training else default_cache()
-    elif isinstance(patch_configs["cache"], str):
+    elif isinstance(patch_configs["cache"], (str, PathLike)):
         cache = XpuGraphLocalCache(patch_configs["cache"])
     else:
         assert isinstance(patch_configs["cache"], XpuGraphCache), "cache must be a XpuGraphCache instance"

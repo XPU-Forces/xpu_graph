@@ -5,7 +5,12 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
-from .cache import SerializeWrapper, XpuGraphCache, default_cache
+from .cache import (
+    XpuGraphCache,
+    default_cache,
+    deserialize_artifact,
+    serialize_artifact,
+)
 from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
@@ -64,6 +69,33 @@ def optimize_graph(gm, sample_inputs, config=None):
     return xpu_optimized
 
 
+# Note: this wrapper is necessary for inference compiler
+#       to ensure that the runtime args are correctly packed and unpacked
+#       but for other scenarios (training and fallback_dispatch-ed inference),
+#       this conversion has been handled by aot_autograd
+class XpuGraphInferenceArtifact:
+    def __init__(self, compiled_fn):
+        self.wrapped_fn = compiled_fn
+
+    def __call__(self, *runtime_args):
+        if getattr(self.wrapped_fn, "_boxed_call", False):
+            # Note: if the wrapped_fn is a boxed function, unbox it now
+            args = []
+            args.extend(runtime_args)
+            return self.wrapped_fn(args)
+        return self.wrapped_fn(*runtime_args)
+
+    def __reduce__(self):
+        # This method is still required as some framework requires direct serialization of inference compiled artifact
+        serialized = serialize_artifact(self.wrapped_fn)
+        return self.__class__.deserialize_fn, (serialized,)
+
+    @staticmethod
+    def deserialize_fn(arg_tuple):
+        compiled_fn = deserialize_artifact(arg_tuple)
+        return __class__(compiled_fn)
+
+
 class XpuGraph:
     def __init__(
         self,
@@ -104,7 +136,7 @@ class XpuGraph:
             with fake_mode:
                 if self._config.enable_cache:
                     hashkey = self._cache.cache_key(gm, fake_inputs, self._config, stage)
-                    cached_compiled = self._cache.load_gm(hashkey)
+                    cached_compiled = self._cache.load_artifact(hashkey)
                     if cached_compiled is not None:
                         return cached_compiled
 
@@ -143,10 +175,8 @@ class XpuGraph:
                         **self._config.vendor_compiler_config,
                     )
 
-                xpu_compiled = SerializeWrapper(xpu_compiled)
-
                 if self._config.enable_cache:
-                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                    xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
 
             return xpu_compiled
 
@@ -227,6 +257,7 @@ class XpuGraph:
             )
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
+            xpu_gm = XpuGraphInferenceArtifact(xpu_gm)
 
         if self._config.enable_interceptor is not None:
             from xpu_graph.interceptor import intercept
