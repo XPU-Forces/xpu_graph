@@ -7,7 +7,6 @@ from torch import fx, nn
 from xpu_graph.config import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
-from xpu_graph.passes.patterns.utils.shape_utils import SymShapeManager
 
 from ...utils.combo_utils import COMBINE_MM_WIDTH, find_dep, partially_topo_sort
 from .combo_matmul_utils import *
@@ -89,8 +88,15 @@ class FusedCombineBmm(nn.Module):
                 kwargs["beta"] = beta
                 kwargs["c"] = bias_list
         output = torch.ops.torch_mlu.grouped_gemm(*args, **kwargs)
+
+        # Compatibility patch for different versions of grouped_gemm
+        # 1. returns a tensor list
+        # 2. returns a concatenated tensor
+        # we prefer to see stacked result
         if isinstance(output, list):
             output = torch.stack(output, dim=0)
+        elif len(output.shape) == 2:
+            output = output.view(len(input_list), input_list[0].shape[0], weight_list[0].shape[1])
         return output
 
 
@@ -109,7 +115,6 @@ class FusedCombineMatMul(Pattern):
         changed = False
 
         graph_module.add_submodule("fused_combo_bmm", FusedCombineBmm())
-        sym_shape_manager = SymShapeManager(graph_module.graph)
         # split mm by difference module
         target_module = [
             torch.ops.aten.mm.default,
@@ -128,7 +133,7 @@ class FusedCombineMatMul(Pattern):
             ]
             if len(candidates) < COMBINE_MM_WIDTH:
                 continue
-            changed = changed | self.combo_matmul(graph_module, candidates, sym_shape_manager, COMBINE_MM_WIDTH)
+            changed = changed | self.combo_matmul(graph_module, candidates, COMBINE_MM_WIDTH)
 
         return changed
 
@@ -168,7 +173,7 @@ class FusedCombineMatMul(Pattern):
                     desc.node.replace_all_uses_with(new_n)
                 partially_topo_sort(new_n, insert_after=new_nodes[-1])
 
-    def combo_matmul(self, graph_module, candidates, sym_shape_manager, combine_mm_width):
+    def combo_matmul(self, graph_module, candidates, combine_mm_width):
         changed = False
         group_by_shape = {}
         # split mm by input&weight&bias's shape and activation mode
@@ -180,9 +185,9 @@ class FusedCombineMatMul(Pattern):
             key = (
                 mm_desc.input1_trans,
                 mm_desc.input2_trans,
-                tuple(sym_shape_manager.rebind_shape(mm_desc.input1_shape)),
-                tuple(sym_shape_manager.rebind_shape(mm_desc.input2_shape)),
-                ((None if mm_desc.bias == None else tuple(sym_shape_manager.rebind_shape(mm_desc.bias_shape))),),
+                str(mm_desc.input1_shape),
+                str(mm_desc.input2_shape),
+                None if mm_desc.bias == None else str(mm_desc.bias_shape),
                 mm_desc.act,
             )
             if key not in group_by_shape:
