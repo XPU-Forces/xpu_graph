@@ -225,6 +225,7 @@ class TestCombineMatMul:
             fn7,
         ],
     )
+    @pytest.mark.skip(reason="combo_mm for training is not fully verified yet, disable it for now")
     def test_matmul_patterns_training(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
             combine_matmul_test_with_loss_and_grad(self.train_backend, pattern_func, dynamic)

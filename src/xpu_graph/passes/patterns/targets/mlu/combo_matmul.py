@@ -99,7 +99,8 @@ class FusedCombineMatMul(Pattern):
     _pattern_group = PatternGroup.GROUP1
     _support_stages = [
         FxStage.inference,
-        FxStage.pregrad,
+        # NOTE: though combo_mm seems applicable to training mode, but it is not fully verified yet, disable it for now
+        # FxStage.pregrad,
         # FxStage.forward,
         # FxStage.backward,
     ]
