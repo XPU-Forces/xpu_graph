@@ -22,11 +22,17 @@ class XpuGraphCacheForNpu(XpuGraphCache, backend=Target.npu, anchor_class=XpuGra
         artifact = value.dump_artifacts()
         with open(artifact_path, "wb") as f:
             pickle.dump(artifact, f)
+        return value
 
     def load_gm(self, key):
-        from torchair.npu_fx_compiler._CompiledFxGraph import load_artifacts
+        from torchair.npu_fx_compiler import _CompiledFxGraph
+
+        load_artifacts = _CompiledFxGraph.load_artifacts
 
         artifact_path = self._graph_path(key)
+        if not os.path.exists(artifact_path):
+            return None
+
         logger.info(f"Use cache in location: {artifact_path}")
         with open(artifact_path, "rb") as f:
             artifact = pickle.load(f)
@@ -73,7 +79,7 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
         if mempool := config_dict.get("use_custom_pool", None):
             config.aclgraph_config.use_custom_pool = mempool
 
-    npu_backend = tng.get_npu_backend(compiler_config=config)
+    npu_backend = tng.get_compiler(compiler_config=config)
     compiled_module = npu_backend(module, example_inputs)
 
     return compiled_module
