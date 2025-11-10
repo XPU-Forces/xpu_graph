@@ -5,13 +5,7 @@ import dill
 import torch
 
 from tests.common.test_models import SimpleModel, compare_inference
-from xpu_graph import (
-    OptLevel,
-    XpuGraph,
-    XpuGraphConfig,
-    XpuGraphLocalCache,
-    mlu_compiler,
-)
+from xpu_graph import OptLevel, mlu_compiler
 from xpu_graph.test_utils import need_xpu_graph_logs
 
 device = "mlu"

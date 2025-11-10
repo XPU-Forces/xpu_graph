@@ -52,39 +52,6 @@ def _get_target_function(fn_name: str):
     return target
 
 
-__SERIALIZE_HELPER__ = {}
-
-
-def register_serialize_helper(target_cls):
-    def wrapper(HelperCls):
-        if target_cls in __SERIALIZE_HELPER__:
-            logger.info(
-                f"Override serializer for {target_cls}, from {__SERIALIZE_HELPER__[target_cls]} to {HelperCls.serialize_fn}"
-            )
-        __SERIALIZE_HELPER__[target_cls] = HelperCls.serialize_fn
-        return HelperCls
-
-    return wrapper
-
-
-def serialize_artifact(artifact):
-    cls_key = None
-    for cls in __SERIALIZE_HELPER__:
-        if isinstance(artifact, cls):
-            # If multiple serializer matches, choose the most specific one
-            if cls_key is None or issubclass(cls, cls_key):
-                cls_key = cls
-    if cls_key is None:
-        raise NotImplementedError(f"Unsupported serialization for {type(artifact)}")
-    return __SERIALIZE_HELPER__[cls_key](artifact)
-
-
-def deserialize_artifact(serialized):
-    deserialize_fn, deserialize_args = serialized
-    return deserialize_fn(deserialize_args)
-
-
-@register_serialize_helper(target_cls=GraphModule)
 class GmSerializeHelper:
     """Note: this is a backported serializer / deserializer for class GraphModule"""
 
@@ -156,7 +123,21 @@ class GmSerializeHelper:
         return gm
 
 
-@register_serialize_helper(target_cls=CompiledFxGraph)
+def serialize_artifact(artifact):
+    if isinstance(artifact, GraphModule):
+        return GmSerializeHelper.serialize_fn(artifact)
+    elif (serialize_fn := getattr(artifact, "_xpugraph_serialize_fn", None)) is not None:
+        # Note: this is inspired by
+        return serialize_fn(artifact)
+    else:
+        raise NotImplementedError(f"Unsupported serialization for {type(artifact)}")
+
+
+def deserialize_artifact(serialized):
+    deserialize_fn, deserialize_args = serialized
+    return deserialize_fn(deserialize_args)
+
+
 class CompiledFxGraphSerializeHelper:
     @staticmethod
     def serialize_fn(compiled_fx: CompiledFxGraph):
