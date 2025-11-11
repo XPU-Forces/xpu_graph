@@ -1,8 +1,10 @@
+import functools
 import os
 from itertools import chain
 
 import torch
 from torch._dynamo.backends.common import aot_autograd
+from torch._functorch.aot_autograd import create_aot_dispatcher_function
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import SerializeWrapper, XpuGraphCache, default_cache
@@ -13,6 +15,7 @@ from .fx_utils import (
     fakify_tensors,
     find_hop_nodes,
     find_subclass_inputs,
+    freeze_compile,
 )
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
@@ -92,9 +95,7 @@ class XpuGraph:
             chain.from_iterable(__PLUGIN_PATTERN_GROUP__.get(self._config.target, {}).values())
         )
 
-    def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
-        logger.info(f"{self._config}")
-
+    def _get_compiler(self, stage: FxStage):
         def _compiler(gm, fake_inputs, stage: FxStage):
             nodes_statistics = NodesStatistics()
 
@@ -131,7 +132,10 @@ class XpuGraph:
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
 
-                if stage != FxStage.pregrad and self._config.vendor_compiler_config is not None:
+                if (
+                    stage in [FxStage.inference, FxStage.forward, FxStage.backward]
+                    and self._config.vendor_compiler_config is not None
+                ):
                     from .backends import vendor_compiler
 
                     xpu_compiled = vendor_compiler(
@@ -143,33 +147,33 @@ class XpuGraph:
                         **self._config.vendor_compiler_config,
                     )
 
-                xpu_compiled = SerializeWrapper(xpu_compiled)
+                    xpu_compiled = SerializeWrapper(xpu_compiled)
 
-                if self._config.enable_cache:
-                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                    # if self._config.enable_cache:
+                    #     xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
 
             return xpu_compiled
 
-        def _staged_compiler(stage: FxStage):
-            def wrapped(gm, sample_inputs):
-                with local_logger(stage.name):
-                    xpu_compiled = _compiler(gm, sample_inputs, stage)
-                return xpu_compiled
+        def wrapped(gm, sample_inputs):
+            with local_logger(stage.name):
+                xpu_compiled = _compiler(gm, sample_inputs, stage)
+            return xpu_compiled
 
-            return wrapped
+        return wrapped
 
+    def _legacy_dispatch_and_compile(self, dynamo_gm, example_inputs):
         fallback_dispatch = False
         if self._config.fallback_legacy_dispatch:
-            fallback_dispatch = False
-            hop_nodes = find_hop_nodes(dynamo_gm)
-            if len(hop_nodes) > 0:
-                logger.warning(f"Higher order operators detected: {', '.join(str(op) for op in hop_nodes)}.")
-                fallback_dispatch = True
+            if self._config.is_training:
+                hop_nodes = find_hop_nodes(dynamo_gm)
+                if len(hop_nodes) > 0:
+                    logger.warning(f"Higher order operators detected: {', '.join(str(op) for op in hop_nodes)}.")
+                    fallback_dispatch = True
 
-            subclass_tensors = find_subclass_inputs(example_inputs)
-            if len(subclass_tensors) > 0:
-                logger.warning(f"Subclass inputs detected: {', '.join(str(cls) for cls in subclass_tensors)}.")
-                fallback_dispatch = True
+        subclass_tensors = find_subclass_inputs(example_inputs)
+        if len(subclass_tensors) > 0:
+            logger.warning(f"Subclass inputs detected: {', '.join(str(cls) for cls in subclass_tensors)}.")
+            fallback_dispatch = True
 
         if fallback_dispatch:
             logger.debug(
@@ -178,13 +182,13 @@ class XpuGraph:
             )
             kwargs = {}
             if self._config.is_training:
-                kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
-                kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
+                kwargs["fw_compiler"] = self._get_compiler(FxStage.forward)
+                kwargs["bw_compiler"] = self._get_compiler(FxStage.backward)
                 kwargs["keep_inference_input_mutations"] = True
                 if partition_fn := get_partition_fn(self._config.partition_fn):
                     kwargs["partition_fn"] = partition_fn
             else:
-                kwargs["fw_compiler"] = _staged_compiler(FxStage.inference)
+                kwargs["fw_compiler"] = self._get_compiler(FxStage.inference)
                 kwargs["keep_inference_input_mutations"] = True
             xpu_gm = aot_autograd(**kwargs)(dynamo_gm, example_inputs)
             fw_metadata = None
@@ -204,11 +208,11 @@ class XpuGraph:
                 dispatched_gm.print_readable(print_output=False, include_stride=True, include_device=True),
             )
 
-            pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
+            pregrad_gm = self._get_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
             kwargs = {}
-            kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
-            kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
+            kwargs["fw_compiler"] = self._get_compiler(FxStage.forward)
+            kwargs["bw_compiler"] = self._get_compiler(FxStage.backward)
             if partition_fn := get_partition_fn(self._config.partition_fn):
                 kwargs["partition_fn"] = partition_fn
             xpu_gm = aot_autograd(**kwargs)(pregrad_gm, fake_inputs)
@@ -226,7 +230,53 @@ class XpuGraph:
                 dispatched_gm.print_readable(print_output=False, include_stride=True, include_device=True),
             )
 
-            xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
+            xpu_gm = self._get_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
+
+        return xpu_gm, fw_metadata
+
+    def _dispatch_and_compile(self, dynamo_gm, example_inputs, *args, **kwargs):
+        logger.debug(
+            "before compile: graph like:\n %s",
+            dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
+        kwargs = {}
+        kwargs["keep_inference_input_mutations"] = True
+        kwargs["fw_compiler"] = self._get_compiler(FxStage.forward)
+        kwargs["bw_compiler"] = self._get_compiler(FxStage.backward)
+
+        def partition_fn(joint_gm, joint_args, *, num_fwd_outputs):
+            new_joint_gm = self._get_compiler(FxStage.joint)(joint_gm, joint_args)
+
+            from torch._functorch.partitioners import default_partition
+
+            partition_fn = get_partition_fn(self._config.partition_fn) or default_partition
+
+            return partition_fn(new_joint_gm, joint_args, num_fwd_outputs=num_fwd_outputs)
+
+        kwargs["partition_fn"] = partition_fn
+        if self._config.freeze:
+            kwargs["inference_compiler"] = functools.partial(
+                freeze_compile, dynamo_gm, inner_compiler=self._get_compiler(FxStage.inference)
+            )
+        else:
+            kwargs["inference_compiler"] = self._get_compiler(FxStage.inference)
+
+        compiled = aot_autograd(**kwargs)(dynamo_gm, example_inputs)
+
+        if tracing_context := torch._guards.TracingContext.try_get():
+            fw_metadata = tracing_context.fw_metadata
+        else:
+            fw_metadata = None
+
+        return compiled, fw_metadata
+
+    def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
+        logger.info(f"{self._config}")
+
+        if self._config.fallback_legacy_dispatch:
+            xpu_gm, fw_metadata = self._legacy_dispatch_and_compile(dynamo_gm, example_inputs)
+        else:
+            xpu_gm, fw_metadata = self._dispatch_and_compile(dynamo_gm, example_inputs)
 
         if self._config.enable_interceptor is not None:
             from xpu_graph.interceptor import intercept

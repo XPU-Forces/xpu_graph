@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import torch
 
@@ -290,6 +292,10 @@ class TestCombinePointwiseSinkTraining:
             fn1,
             fn5_symshape,
         ],
+    )
+    @pytest.mark.skipif(
+        os.environ.get("XPUGRAPH_FALLBACK_LEGACY_DISPATCH", "1") == "0",
+        reason="Pregrad passes will be replaced with joint passes",
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):

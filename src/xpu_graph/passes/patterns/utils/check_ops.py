@@ -384,8 +384,11 @@ def is_type_cast(node: Any) -> bool:
     return False
 
 
-def is_exclusively_used(used: fx.Node, user: fx.Node):
-    return all(cand is user for cand in used.users)
+def is_exclusively_used(used: fx.Node, user: fx.Node, exclude_backward=True):
+    return all(
+        cand is user or (exclude_backward and cand.meta.get("partitioner_tag", None) == "is_backward")
+        for cand in used.users
+    )
 
 
 def is_firstly_used(used: fx.Node, user: fx.Node) -> bool:

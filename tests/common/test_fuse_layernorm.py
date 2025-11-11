@@ -1,7 +1,7 @@
+import os
+
 import pytest
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 import xpu_graph
 from xpu_graph.config import OptLevel
@@ -161,6 +161,10 @@ class TestLayerNorm:
             False,
         ],
     )
+    @pytest.mark.skipif(
+        os.environ.get("XPUGRAPH_FALLBACK_LEGACY_DISPATCH", "1") == "0",
+        reason="Pregrad passes will be replaced with joint passes",
+    )
     def test_layernrom_patterns_with_loss_and_grad(
         self, caplog, pattern_func, input_dtype, weight_dtype, bias_dtype, grad_dtype, dynamic
     ):
@@ -178,40 +182,42 @@ class TestLayerNorm:
 
 
 if __name__ == "__main__":
-    infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True)
-    infer_backend = xpu_graph.XpuGraph(infer_config)
-    layernorm_test(infer_backend, naive_layernorm, torch.float32, torch.float32, torch.float32)
-    layernorm_test(infer_backend, naive_layernorm_noweight, torch.float32, torch.float32, torch.float32)
-    layernorm_test(infer_backend, naive_layernorm_noweight_nobias, torch.float32, torch.float32, None)
-    layernorm_test(infer_backend, naive_layernorm_nobias, torch.float32, torch.float32, None)
-    layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float32, torch.float16, torch.float16)
-    layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float32, torch.bfloat16, torch.bfloat16)
-    layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float16, torch.float16, torch.float16)
-    layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float16, torch.float32, torch.float32)
+    # infer_config = xpu_graph.XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True)
+    # infer_backend = xpu_graph.XpuGraph(infer_config)
+    # layernorm_test(infer_backend, naive_layernorm, torch.float32, torch.float32, torch.float32)
+    # layernorm_test(infer_backend, naive_layernorm_noweight, torch.float32, torch.float32, torch.float32)
+    # layernorm_test(infer_backend, naive_layernorm_noweight_nobias, torch.float32, torch.float32, None)
+    # layernorm_test(infer_backend, naive_layernorm_nobias, torch.float32, torch.float32, None)
+    # layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float32, torch.float16, torch.float16)
+    # layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float32, torch.bfloat16, torch.bfloat16)
+    # layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float16, torch.float16, torch.float16)
+    # layernorm_test(infer_backend, naive_layernorm_liftdtype, torch.float16, torch.float32, torch.float32)
 
-    train_config = xpu_graph.XpuGraphConfig(is_training=True, opt_level=OptLevel.level2, debug=True)
+    train_config = xpu_graph.XpuGraphConfig(
+        is_training=True, opt_level=OptLevel.level2, debug=True, fallback_legacy_dispatch=False
+    )
     train_backend = xpu_graph.XpuGraph(train_config)
     layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm, torch.float32, torch.float32, torch.float32, torch.float32
+        train_backend, naive_layernorm, torch.float32, torch.float32, torch.float32, torch.float32, dynamic=False
     )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_noweight, torch.float32, torch.float32, torch.float32, torch.float32
-    )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_noweight_nobias, torch.float32, torch.float32, None, torch.float32
-    )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_nobias, torch.float32, torch.float32, None, torch.float32
-    )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_liftdtype, torch.float32, torch.float16, torch.float16, torch.float32
-    )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_liftdtype, torch.float32, torch.bfloat16, torch.bfloat16, torch.float32
-    )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_liftdtype, torch.float16, torch.float16, torch.float16, torch.float16
-    )
-    layernorm_test_with_loss_and_grad(
-        train_backend, naive_layernorm_liftdtype, torch.float16, torch.float32, torch.float32, torch.float32
-    )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_noweight, torch.float32, torch.float32, torch.float32, torch.float32
+    # )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_noweight_nobias, torch.float32, torch.float32, None, torch.float32
+    # )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_nobias, torch.float32, torch.float32, None, torch.float32
+    # )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_liftdtype, torch.float32, torch.float16, torch.float16, torch.float32
+    # )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_liftdtype, torch.float32, torch.bfloat16, torch.bfloat16, torch.float32
+    # )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_liftdtype, torch.float16, torch.float16, torch.float16, torch.float16
+    # )
+    # layernorm_test_with_loss_and_grad(
+    #     train_backend, naive_layernorm_liftdtype, torch.float16, torch.float32, torch.float32, torch.float32
+    # )
