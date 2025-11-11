@@ -7,7 +7,6 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import (
     SerializableArtifact,
-    SerializableFxGraph,
     SerializableGraphModule,
     XpuGraphCache,
     default_cache,
@@ -91,13 +90,31 @@ class XpuGraphInferenceArtifact:
 
 class BoxedCallWrapper:
     def __init__(self, compiled_func):
-        self.__compiled_func = compiled_func
+        self._compiled_func = compiled_func
 
     def __call__(self, *args):
-        if getattr(self.__compiled_func, "_boxed_call", False):
+        if getattr(self._compiled_func, "_boxed_call", False):
             # Note: if the wrapped_fn is a boxed function, unbox it now
-            return self.__compiled_func([args])
-        return self.__compiled_func(*args)
+            return self._compiled_func(list(args))
+        return self._compiled_func(*args)
+
+    # # NOTE(liuyuan): ugly
+    # def hijack_call(self, *args):
+    #     if getattr(self._compiled_func, "_boxed_call", False):
+    #         logger.info("ugly")
+    #         # Note: if the wrapped_fn is a boxed function, unbox it now
+    #         return self._compiled_func([args])
+    #     return self._compiled_func(*args)
+
+    # def __call__(self, *args, **kwargs):
+    #     #NOTE(liuyuan): dummy call for callable check.
+    #     pass
+
+    # def __getattribute__(self, name):
+    #     if name in ["__call__", "_compiled_func"]:
+    #         name = "hijack_call" if name == "__call__" else name
+    #         return super().__getattribute__(name)
+    #     return getattr(super().__getattribute__("_compiled_func"), name)
 
 
 class XpuGraph:
@@ -181,8 +198,8 @@ class XpuGraph:
                 else:
                     xpu_compiled = SerializableGM(xpu_compiled)
 
-                if self._config.vendor_compiler_config is None:
-                    xpu_compiled = SerializableGraphModule(xpu_compiled)
+                # NOTE(liuyuan): See SerializableArtifact.__new__ for implicit no-conversion.
+                xpu_compiled = SerializableGraphModule(xpu_compiled)
 
                 if self._config.enable_cache and isinstance(xpu_compiled, SerializableArtifact):
                     self._cache.save_artifact(hashkey, xpu_compiled)

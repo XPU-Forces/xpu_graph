@@ -55,8 +55,17 @@ def _get_target_function(fn_name: str):
 
 class SerializableArtifact(ABC):
     def __init__(self, artifact):
+        if isinstance(artifact, SerializableArtifact):
+            return
         super().__init__()
         self._artifact = artifact
+
+    # NOTE(liuyuan): allow implicit no-conversion between subclasses of Serializable.
+    def __new__(cls, artifact):
+        if isinstance(artifact, SerializableArtifact):
+            return artifact
+        else:
+            return super().__new__(cls)
 
     @property
     def artifact(self):
