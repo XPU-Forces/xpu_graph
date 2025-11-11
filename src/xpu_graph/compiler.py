@@ -69,25 +69,11 @@ def optimize_graph(gm, sample_inputs, config=None):
     return xpu_optimized
 
 
-class XpuGraphInferenceArtifact:
-    # Note: this wrapper is NECESSARY for inference compiler
-    #       to ensure that the runtime args are correctly packed and unpacked
-    #       but for other scenarios (training and fallback_dispatch-ed inference),
-    #       this conversion has been handled by aot_autograd
-    # Further reading: what is boxed_call? See discussion in : https://github.com/pytorch/pytorch/pull/83137#issuecomment-1211320670
-    def __init__(self, compiled_fn):
-        self.wrapped_fn = compiled_fn
-
-    def __call__(self, *runtime_args):
-        if getattr(self.wrapped_fn, "_boxed_call", False):
-            # Note: if the wrapped_fn is a boxed function, unbox it now
-            args = []
-            args.extend(runtime_args)
-            return self.wrapped_fn(args)
-        return self.wrapped_fn(*runtime_args)
-
-
 class BoxedCallWrapper:
+    # Note: this wrapper is NECESSARY for inference compiler, to ensure that the runtime args are correctly packed and unpacked
+    #       meanwhile in other cases, this conversion has been handled by aot_autograd
+    # Further reading: what is boxed_call? See discussion in : https://github.com/pytorch/pytorch/pull/83137#issuecomment-1211320670
+
     def __init__(self, compiled_func):
         self._compiled_func = compiled_func
 
