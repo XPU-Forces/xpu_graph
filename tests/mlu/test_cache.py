@@ -2,6 +2,7 @@ import itertools
 import os
 import pickle
 
+import pytest
 import torch
 
 from tests.common.test_models import SimpleModel, compare_inference
@@ -30,8 +31,14 @@ def test_xpugraph_cache(caplog, tmp_path):
     assert caplog.text.count("Use cache in location") == 2, "Should use cache twice"
 
 
-def test_xpugraph_inference_artifact(caplog, tmp_path):
-    infer_backend = mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=False, cache=tmp_path)
+@pytest.mark.parametrize("use_inductor", [True, False])
+def test_xpugraph_inference_artifact(caplog, tmp_path, use_inductor):
+    if use_inductor:
+        infer_backend = mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=False, cache=tmp_path)
+    else:
+        infer_backend = mlu_compiler(
+            is_training=False, opt_level=OptLevel.level2, freeze=False, cache=tmp_path, vendor_compiler_config=None
+        )
 
     compiled_id = itertools.count()
 
