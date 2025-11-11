@@ -5,12 +5,7 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
-from .cache import (
-    XpuGraphCache,
-    default_cache,
-    deserialize_artifact,
-    serialize_artifact,
-)
+from .cache import XpuGraphCache, default_cache, serialize_artifact
 from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
@@ -73,6 +68,7 @@ def optimize_graph(gm, sample_inputs, config=None):
 #       to ensure that the runtime args are correctly packed and unpacked
 #       but for other scenarios (training and fallback_dispatch-ed inference),
 #       this conversion has been handled by aot_autograd
+# Further reading: what is boxed_call? See discussion in : https://github.com/pytorch/pytorch/pull/83137#issuecomment-1211320670
 class XpuGraphInferenceArtifact:
     def __init__(self, compiled_fn):
         self.wrapped_fn = compiled_fn
@@ -88,12 +84,14 @@ class XpuGraphInferenceArtifact:
     def __reduce__(self):
         # This method is still required as some framework requires direct serialization of inference compiled artifact
         serialized = serialize_artifact(self.wrapped_fn)
+        if serialized is None:
+            raise NotImplementedError(f"Cannot serialize type {type(self.wrapped_fn)}")
         return self.__class__.deserialize_fn, (serialized,)
 
     @staticmethod
-    def deserialize_fn(arg_tuple):
-        compiled_fn = deserialize_artifact(arg_tuple)
-        return __class__(compiled_fn)
+    def deserialize_fn(serialized):
+        deserialize_fn, deserialize_args = serialized
+        return __class__(deserialize_fn(deserialize_args))
 
 
 class XpuGraph:

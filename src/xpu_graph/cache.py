@@ -128,14 +128,13 @@ def serialize_artifact(artifact):
         return GmSerializeHelper.serialize_fn(artifact)
     elif (serialize_fn := getattr(artifact, "_xpugraph_serialize_fn", None)) is not None:
         # Note: this is inspired by
-        return serialize_fn(artifact)
+        ret = serialize_fn(artifact)
+        assert (
+            isinstance(ret, tuple) and len(ret) == 2 and callable(ret[0])
+        ), f"serialize_fn {serialize_fn} should return a tuple of (deserialize_fn, deserialize_args)"
+        return ret
     else:
-        raise NotImplementedError(f"Unsupported serialization for {type(artifact)}")
-
-
-def deserialize_artifact(serialized):
-    deserialize_fn, deserialize_args = serialized
-    return deserialize_fn(deserialize_args)
+        return None
 
 
 class CompiledFxGraphSerializeHelper:
@@ -219,9 +218,8 @@ class XpuGraphLocalCache(XpuGraphCache):
         self._path = cache_path
 
     def save_artifact(self, key, value, expire=None):
-        try:
-            serialized = serialize_artifact(value)
-        except NotImplementedError:
+        serialized = serialize_artifact(value)
+        if serialized is None:
             logger.warning(f"Cannot serialize type {type(value)}, skip: {value}")
             return value
         artifact_path = self._artifact_path(key)
