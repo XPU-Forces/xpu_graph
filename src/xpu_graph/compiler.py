@@ -169,10 +169,6 @@ class XpuGraph:
                     else:
                         logger.warning(f"Cannot cache type {type(xpu_compiled)}, skip: {xpu_compiled}")
 
-                if stage == FxStage.pregrad and isinstance(xpu_compiled, SerializableGM):
-                    # Pregrad requires the returned artifact to be a graph module
-                    xpu_compiled = xpu_compiled.artifact
-
             return xpu_compiled
 
         def _staged_compiler(stage: FxStage):
@@ -230,6 +226,9 @@ class XpuGraph:
             )
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
+            if isinstance(pregrad_gm, SerializableGM):
+                # Pregrad requires the returned artifact to be a graph module
+                pregrad_gm = pregrad_gm.artifact
 
             kwargs = {}
             kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
