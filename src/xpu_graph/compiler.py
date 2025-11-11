@@ -74,8 +74,7 @@ class XpuGraphInferenceArtifact:
         self.wrapped_fn = compiled_fn
 
     def __call__(self, *runtime_args):
-        wrapped_fn = self.wrapped_fn
-        if getattr(wrapped_fn, "_boxed_call", False):
+        if getattr(self.wrapped_fn, "_boxed_call", False):
             # Note: if the wrapped_fn is a boxed function, unbox it now
             args = []
             args.extend(runtime_args)

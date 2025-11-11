@@ -169,7 +169,8 @@ class SerializableArtifact:
         self._artifact = artifact
         # The _boxed_call is necessary as it marks the calling convension of compiled artifact
         # and aot_dispatcher (outside xpu_graph inner_compile) need this flag to distinguish between boxed_call and unboxed call
-        self._boxed_call = getattr(self.artifact, "_boxed_call", False)
+        if getattr(self.artifact, "_boxed_call", False):
+            self._boxed_call = True
 
     def __call__(self, *args, **kwargs):
         return self.artifact(*args, **kwargs)
