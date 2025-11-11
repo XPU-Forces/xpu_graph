@@ -64,12 +64,12 @@ def optimize_graph(gm, sample_inputs, config=None):
     return xpu_optimized
 
 
-# Note: this wrapper is necessary for inference compiler
-#       to ensure that the runtime args are correctly packed and unpacked
-#       but for other scenarios (training and fallback_dispatch-ed inference),
-#       this conversion has been handled by aot_autograd
-# Further reading: what is boxed_call? See discussion in : https://github.com/pytorch/pytorch/pull/83137#issuecomment-1211320670
 class XpuGraphInferenceArtifact:
+    # Note: this wrapper is NECESSARY for inference compiler
+    #       to ensure that the runtime args are correctly packed and unpacked
+    #       but for other scenarios (training and fallback_dispatch-ed inference),
+    #       this conversion has been handled by aot_autograd
+    # Further reading: what is boxed_call? See discussion in : https://github.com/pytorch/pytorch/pull/83137#issuecomment-1211320670
     def __init__(self, compiled_fn):
         self.wrapped_fn = compiled_fn
 
@@ -82,7 +82,9 @@ class XpuGraphInferenceArtifact:
         return self.wrapped_fn(*runtime_args)
 
     def __reduce__(self):
-        # This method is still required as some framework requires direct serialization of inference compiled artifact
+        # Note: This is a legacy function. In most cases, the __reduce__ method wouldn't be invoked.
+        #       But in some legacy scenarios, the outer framework requires the compiled artifact returned by xpu_graph to be picklizable
+        #       So we have to implement the __reduce__ method of XpuGraphInferenceArtifact
         serialized = serialize_artifact(self.wrapped_fn)
         if serialized is None:
             raise NotImplementedError(f"Cannot serialize type {type(self.wrapped_fn)}")
