@@ -127,7 +127,12 @@ def serialize_artifact(artifact):
     if isinstance(artifact, GraphModule):
         return GmSerializeHelper.serialize_fn(artifact)
     elif (serialize_fn := getattr(artifact, "_xpugraph_serialize_fn", None)) is not None:
-        # Note: this is inspired by
+        # Note: Use ducktyping to mark serializable artifact
+        #       This attribute is inspired by class SerializableCompiledFunction
+        #       ref: (https://github.com/pytorch/pytorch/blob/52a6b5a4cc9f938b9cda102fb506fd0e4b32ecad/torch/_functorch/aot_autograd.py#L1160)
+        #       A serializable artifact should implement a serialize fn
+        #       1. The serialize_fn should return a tuple of (deserialize_fn, deserialize_args)
+        #       2. The deserialize_fn should accept deserialize_args to reconstruct the artifact
         ret = serialize_fn(artifact)
         assert (
             isinstance(ret, tuple) and len(ret) == 2 and callable(ret[0])
