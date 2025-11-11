@@ -3,9 +3,9 @@ import hashlib
 import importlib
 import os
 import pickle
-from abc import ABC, abstractmethod, abstractstaticmethod
+from abc import ABC, abstractmethod
 from os import PathLike
-from typing import Callable, Dict, Tuple, Union
+from typing import Tuple, Union
 
 import torch
 from torch._dynamo.convert_frame import compile_lock
@@ -58,7 +58,13 @@ class SerializableArtifact(ABC):
         if isinstance(artifact, SerializableArtifact):
             return
         super().__init__()
+        assert callable(artifact), f"artifact must be callable, but got {type(artifact)}"
         self._artifact = artifact
+        if getattr(artifact, "_boxed_call", False):
+            self._boxed_call = True
+
+    def __call__(self, *args, **kwargs):
+        return self._artifact(*args, **kwargs)
 
     # NOTE(liuyuan): allow implicit no-conversion between subclasses of Serializable.
     def __new__(cls, artifact):
@@ -81,7 +87,7 @@ class SerializableArtifact(ABC):
         """
         ...
 
-    @abstractstaticmethod
+    @staticmethod
     def _deserialize(*args):
         ...
 
@@ -92,12 +98,26 @@ class SerializableGraphModule(SerializableArtifact):
         super().__init__(artifact)
 
     def _serialize(self) -> Tuple:
-        gm_dict = self._artifact.__dict__.copy()
+        gm_dict, graph_meta, nodes_meta = GmSerializeHelper.serialize_fn(self._artifact)
+        return (gm_dict, graph_meta, nodes_meta)
+
+    @staticmethod
+    def _deserialize(gm_dict, graph_meta, nodes_meta):
+        gm = GmSerializeHelper.deserialize_fn(gm_dict, graph_meta, nodes_meta)
+        return __class__(gm)
+
+
+class GmSerializeHelper:
+    """Note: this is a backported serializer / deserializer for class GraphModule"""
+
+    @staticmethod
+    def serialize_fn(gm: GraphModule):
+        gm_dict = gm.__dict__.copy()
         del gm_dict["_graph"]
         for k, v in gm_dict["_modules"].items():
             if isinstance(v, GraphModule):
                 gm_dict["_modules"][k] = GmSerializeHelper.serialize_fn(v)
-        graph = self._artifact.graph
+        graph = gm.graph
         graph_meta = (graph._tracer_cls, graph._tracer_extras)
         nodes = list(graph.nodes)
         nodes_meta = []
@@ -118,14 +138,14 @@ class SerializableGraphModule(SerializableArtifact):
                 dict(map_aggregate(node.kwargs, _wrap_arg)),
             )
             nodes_meta.append(node_meta)
-        return (gm_dict, graph_meta, nodes_meta)
+
+        return gm_dict, graph_meta, nodes_meta
 
     @staticmethod
-    def _deserialize(gm_dict, graph_meta, nodes_meta):
+    def deserialize_fn(gm_dict, graph_meta, nodes_meta):
         for k, v in gm_dict["_modules"].items():
-            if isinstance(v, tuple) and v[0] == GmSerializeHelper.deserialize_fn:
-                des_fn, deserialize_args = v
-                gm_dict["_modules"][k] = des_fn(deserialize_args)
+            if isinstance(v, tuple):
+                gm_dict["_modules"][k] = GmSerializeHelper.deserialize_fn(*v)
         gm = GraphModule.__new__(GraphModule)
         gm.__dict__ = gm_dict
 
@@ -156,7 +176,7 @@ class SerializableGraphModule(SerializableArtifact):
         return gm
 
 
-class SerializableFxGraph(SerializableArtifact):
+class SerializableCompiledFxGraph(SerializableArtifact):
     def __init__(self, artifact):
         assert isinstance(artifact, CompiledFxGraph)
         super().__init__(artifact)
@@ -195,167 +215,7 @@ class SerializableFxGraph(SerializableArtifact):
             if tracing_context is not None and tracing_context.output_strides:
                 tracing_context.output_strides.clear()
             FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
-        return compiled_fn
-
-
-class GmSerializeHelper:
-    """Note: this is a backported serializer / deserializer for class GraphModule"""
-
-    @staticmethod
-    def serialize_fn(gm: GraphModule):
-        gm_dict = gm.__dict__.copy()
-        del gm_dict["_graph"]
-        for k, v in gm_dict["_modules"].items():
-            if isinstance(v, GraphModule):
-                gm_dict["_modules"][k] = GmSerializeHelper.serialize_fn(v)
-        graph = gm.graph
-        graph_meta = (graph._tracer_cls, graph._tracer_extras)
-        nodes = list(graph.nodes)
-        nodes_meta = []
-
-        def _wrap_arg(arg):
-            if isinstance(arg, Node):
-                return _ArgWrapper(arg)
-            else:
-                return arg
-
-        for node in nodes:
-            node_meta = (
-                node.name,
-                node.type,
-                node.op,
-                node._pretty_print_target(node.target),
-                tuple(map_aggregate(node.args, _wrap_arg)),
-                dict(map_aggregate(node.kwargs, _wrap_arg)),
-            )
-            nodes_meta.append(node_meta)
-
-        return (__class__.deserialize_fn, (gm_dict, graph_meta, nodes_meta))
-
-    @staticmethod
-    def deserialize_fn(arg_tuple):
-        gm_dict, graph_meta, nodes_meta = arg_tuple
-        for k, v in gm_dict["_modules"].items():
-            if isinstance(v, tuple) and v[0] == GmSerializeHelper.deserialize_fn:
-                des_fn, deserialize_args = v
-                gm_dict["_modules"][k] = des_fn(deserialize_args)
-        gm = GraphModule.__new__(GraphModule)
-        gm.__dict__ = gm_dict
-
-        tracer_cls, tracer_extras = graph_meta
-        graph = Graph(gm, tracer_cls, tracer_extras)
-
-        _node_name_to_node = {}
-
-        def _unwrap_arg(arg):
-            if isinstance(arg, _ArgWrapper):
-                return _node_name_to_node[arg.name]
-            else:
-                return arg
-
-        for node_meta in nodes_meta:
-            node_name, node_type, node_op, node_target, node_args, node_kwargs = node_meta
-
-            if node_op == "call_function":
-                node_target = _get_target_function(node_target)
-
-            node_args = tuple(map_aggregate(node_args, _unwrap_arg))
-            node_kwargs = dict(map_aggregate(node_kwargs, _unwrap_arg))
-            _node_name_to_node[node_name] = graph.create_node(
-                node_op, node_target, node_args, node_kwargs, node_name, node_type
-            )
-        gm.graph = graph
-        gm.recompile()
-        return gm
-
-
-class CompiledFxGraphSerializeHelper:
-    @staticmethod
-    def serialize_fn(compiled_fx: CompiledFxGraph):
-        mod = copy.copy(compiled_fx)
-        mod.current_callable = None
-        return (__class__.deserialize_fn, (mod,))
-
-    @staticmethod
-    def deserialize_fn(arg_tuple):
-        logger.info(f"Deserializing a {CompiledFxGraph.__qualname__}")
-        (compiled_fn,) = arg_tuple
-        # Torch Inductor config is lazy initialized. invoke it manually
-        for device in compiled_fn.device_types:
-            if device == "cpu":
-                continue
-            logger.debug(f"Check interface for device: {device}")
-            get_interface_for_device(device)
-        path = get_path(compiled_fn.cache_key, "py")[2]
-        compiled_fn.current_callable = PyCodeCache.load_by_key_path(
-            compiled_fn.cache_key,
-            path,
-            compiled_fn.cache_linemap,
-            compiled_fn.constants,
-        ).call
-        cudagraphs = compiled_fn.cudagraph_info is not None
-        logger.debug(f"Cudagraphs enabled: {cudagraphs}")
-        # Note:
-        #   1. This post_compile function is only available on 2.5.x,
-        #      it may be in different locations in other versions
-        #   2. Example_inputs in post_compile actually leads to symint guards,
-        #      but we choose to not produce extra guards
-        if torch_version.startswith("2.5"):
-            tracing_context = torch._guards.TracingContext.try_get()
-            if tracing_context is not None and tracing_context.output_strides:
-                tracing_context.output_strides.clear()
-            FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
-        return compiled_fn
-
-
-class SerializableArtifact:
-    """Base class for serializable artifact"""
-
-    def __init__(self, artifact):
-        self._artifact = artifact
-        # The _boxed_call is necessary as it marks the calling convension of compiled artifact
-        # and aot_dispatcher (outside xpu_graph inner_compile) need this flag to distinguish between boxed_call and unboxed call
-        if getattr(self.artifact, "_boxed_call", False):
-            self._boxed_call = True
-
-    def __call__(self, *args, **kwargs):
-        return self.artifact(*args, **kwargs)
-
-    @property
-    def artifact(self):
-        return self._artifact
-
-    @overload
-    def serialize(self):
-        raise NotImplementedError(f"Unsupported serialize artifact: {type(self.artifact)}")
-
-    def __reduce__(self):
-        #       A serializable artifact should implement a serialize fn
-        #       1. The serialize_fn should return a tuple of (deserialize_fn, deserialize_args)
-        #       2. The deserialize_fn should accept deserialize_args to reconstruct the artifact
-        serialized = self.serialize()
-        assert (
-            isinstance(serialized, tuple) and len(serialized) == 2 and callable(serialized[0])
-        ), f"serialize_fn  should return a tuple of (deserialize_fn, deserialize_args)"
-        return (self.__class__.deserialize, (self.__class__, *serialized))
-
-    @staticmethod
-    def deserialize(cls, artifact_deserializer, artifact_deserialize_args):
-        return cls(artifact_deserializer(artifact_deserialize_args))
-
-
-class SerializableGM(SerializableArtifact):
-    """Serializable artifact for GraphModule"""
-
-    def serialize(self):
-        return GmSerializeHelper.serialize_fn(self.artifact)
-
-
-class SerializableCompiledFxGraph(SerializableArtifact):
-    """Serializable artifact for CompiledFxGraph"""
-
-    def serialize(self):
-        return CompiledFxGraphSerializeHelper.serialize_fn(self.artifact)
+        return __class__(compiled_fn)
 
 
 class XpuGraphCache:
@@ -408,7 +268,7 @@ class XpuGraphLocalCache(XpuGraphCache):
             with open(artifact_path, "wb+") as f:
                 pickle.dump(value, f)
             with open(artifact_path, "rb") as f:
-                _ = pickle.load(f)
+                return pickle.load(f)
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)

@@ -87,7 +87,31 @@ def mlu_compiler(
 
     if not is_training:
         import torch_mlu_ops
-    return XpuGraph(config, cache)
+
+    if is_training:
+        return XpuGraph(config, cache)
+    else:
+        # Note: this is a legacy patch, as some outer framework requires the xpugraph-returned compiled artifact to be pickable
+        class PatchedPickableXpuGraphBackend(XpuGraph):
+            def __call__(self, *args, **kwargs):
+                compiled = super().__call__(*args, **kwargs)
+                from .cache import (
+                    CompiledFxGraph,
+                    GraphModule,
+                    SerializableCompiledFxGraph,
+                    SerializableGraphModule,
+                )
+                from .compiler import BoxedCallWrapper
+
+                if isinstance(compiled, BoxedCallWrapper):
+                    if isinstance(compiled._compiled_func, GraphModule):
+                        compiled._compiled_func = SerializableGraphModule(compiled._compiled_func)
+                    elif isinstance(compiled._compiled_func, CompiledFxGraph):
+                        compiled._compiled_func = SerializableCompiledFxGraph(compiled._compiled_func)
+
+                return compiled
+
+        return PatchedPickableXpuGraphBackend(config, cache)
 
 
 _MLU_TRAIN_CONFIG = XpuGraphConfig(

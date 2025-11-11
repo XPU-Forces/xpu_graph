@@ -32,7 +32,7 @@ def test_xpugraph_cache(caplog, tmp_path):
 
 
 @pytest.mark.parametrize("use_inductor", [True, False])
-def test_xpugraph_inference_artifact(caplog, tmp_path, use_inductor):
+def test_xpugraph_inference_artifact_picklizable(caplog, tmp_path, use_inductor):
     if use_inductor:
         infer_backend = mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=False, cache=tmp_path)
     else:

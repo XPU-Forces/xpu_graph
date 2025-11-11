@@ -10,7 +10,6 @@ from .cache import (
     SerializableGraphModule,
     XpuGraphCache,
     default_cache,
-    serialize_artifact,
 )
 from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
@@ -141,7 +140,8 @@ class XpuGraph:
                     hashkey = self._cache.cache_key(gm, fake_inputs, self._config, stage)
                     cached_compiled = self._cache.load_artifact(hashkey)
                     if cached_compiled is not None:
-                        return cached_compiled
+                        assert isinstance(cached_compiled, SerializableArtifact)
+                        return cached_compiled.artifact
 
                 # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
                 original_gm_graph = gm.print_readable(print_output=False, include_stride=True, include_device=True)
@@ -178,17 +178,17 @@ class XpuGraph:
                         **self._config.vendor_compiler_config,
                     )
                 else:
-                    xpu_compiled = SerializableGM(xpu_compiled)
-
-                if self._config.vendor_compiler_config:
                     xpu_compiled = SerializableGraphModule(xpu_compiled)
 
+                if self._config.enable_cache:
+                    if isinstance(xpu_compiled, SerializableArtifact):
+                        xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
+                    else:
+                        logger.warning(f"Artifact of type {type(xpu_compiled)} is not serializable, skip cache.")
+
                 if isinstance(xpu_compiled, SerializableArtifact):
-                    if self._config.enable_cache:
-                        self._cache.save_artifact(hashkey, xpu_compiled)
                     # WARNING(liuyuan): MUST get the real artifact itself before return.
                     xpu_compiled = xpu_compiled.artifact
-
             return xpu_compiled
 
         def _staged_compiler(stage: FxStage):
@@ -246,9 +246,6 @@ class XpuGraph:
             )
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
-            if isinstance(pregrad_gm, SerializableGM):
-                # Pregrad requires the returned artifact to be a graph module
-                pregrad_gm = pregrad_gm.artifact
 
             kwargs = {}
             kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
