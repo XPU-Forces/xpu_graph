@@ -98,24 +98,6 @@ class BoxedCallWrapper:
             return self._compiled_func(list(args))
         return self._compiled_func(*args)
 
-    # # NOTE(liuyuan): ugly
-    # def hijack_call(self, *args):
-    #     if getattr(self._compiled_func, "_boxed_call", False):
-    #         logger.info("ugly")
-    #         # Note: if the wrapped_fn is a boxed function, unbox it now
-    #         return self._compiled_func([args])
-    #     return self._compiled_func(*args)
-
-    # def __call__(self, *args, **kwargs):
-    #     #NOTE(liuyuan): dummy call for callable check.
-    #     pass
-
-    # def __getattribute__(self, name):
-    #     if name in ["__call__", "_compiled_func"]:
-    #         name = "hijack_call" if name == "__call__" else name
-    #         return super().__getattribute__(name)
-    #     return getattr(super().__getattribute__("_compiled_func"), name)
-
 
 class XpuGraph:
     def __init__(
@@ -198,11 +180,12 @@ class XpuGraph:
                 else:
                     xpu_compiled = SerializableGM(xpu_compiled)
 
-                # NOTE(liuyuan): See SerializableArtifact.__new__ for implicit no-conversion.
-                xpu_compiled = SerializableGraphModule(xpu_compiled)
+                if self._config.vendor_compiler_config:
+                    xpu_compiled = SerializableGraphModule(xpu_compiled)
 
-                if self._config.enable_cache and isinstance(xpu_compiled, SerializableArtifact):
-                    self._cache.save_artifact(hashkey, xpu_compiled)
+                if isinstance(xpu_compiled, SerializableArtifact):
+                    if self._config.enable_cache:
+                        self._cache.save_artifact(hashkey, xpu_compiled)
                     # WARNING(liuyuan): MUST get the real artifact itself before return.
                     xpu_compiled = xpu_compiled.artifact
 
