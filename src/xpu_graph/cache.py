@@ -4,7 +4,7 @@ import importlib
 import os
 import pickle
 from os import PathLike
-from typing import Union
+from typing import Union, overload
 
 import torch
 from torch._dynamo.convert_frame import compile_lock
@@ -123,25 +123,6 @@ class GmSerializeHelper:
         return gm
 
 
-def serialize_artifact(artifact):
-    if isinstance(artifact, GraphModule):
-        return GmSerializeHelper.serialize_fn(artifact)
-    elif (serialize_fn := getattr(artifact, "_xpugraph_serialize_fn", None)) is not None:
-        # Note: Use ducktyping to mark serializable artifact
-        #       This attribute is inspired by class SerializableCompiledFunction
-        #       ref: (https://github.com/pytorch/pytorch/blob/52a6b5a4cc9f938b9cda102fb506fd0e4b32ecad/torch/_functorch/aot_autograd.py#L1160)
-        #       A serializable artifact should implement a serialize fn
-        #       1. The serialize_fn should return a tuple of (deserialize_fn, deserialize_args)
-        #       2. The deserialize_fn should accept deserialize_args to reconstruct the artifact
-        ret = serialize_fn(artifact)
-        assert (
-            isinstance(ret, tuple) and len(ret) == 2 and callable(ret[0])
-        ), f"serialize_fn {serialize_fn} should return a tuple of (deserialize_fn, deserialize_args)"
-        return ret
-    else:
-        return None
-
-
 class CompiledFxGraphSerializeHelper:
     @staticmethod
     def serialize_fn(compiled_fx: CompiledFxGraph):
@@ -179,6 +160,55 @@ class CompiledFxGraphSerializeHelper:
                 tracing_context.output_strides.clear()
             FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
         return compiled_fn
+
+
+class SerializableArtifact:
+    """Base class for serializable artifact"""
+
+    def __init__(self, artifact):
+        self._artifact = artifact
+        # The _boxed_call is necessary as it marks the calling convension of compiled artifact
+        # and aot_dispatcher (outside xpu_graph inner_compile) need this flag to distinguish between boxed_call and unboxed call
+        self._boxed_call = getattr(self.artifact, "_boxed_call", False)
+
+    def __call__(self, *args, **kwargs):
+        return self.artifact(*args, **kwargs)
+
+    @property
+    def artifact(self):
+        return self._artifact
+
+    @overload
+    def serialize(self):
+        raise NotImplementedError(f"Unsupported serialize artifact: {type(self.artifact)}")
+
+    def __reduce__(self):
+        #       A serializable artifact should implement a serialize fn
+        #       1. The serialize_fn should return a tuple of (deserialize_fn, deserialize_args)
+        #       2. The deserialize_fn should accept deserialize_args to reconstruct the artifact
+        serialized = self.serialize()
+        assert (
+            isinstance(serialized, tuple) and len(serialized) == 2 and callable(serialized[0])
+        ), f"serialize_fn  should return a tuple of (deserialize_fn, deserialize_args)"
+        return (self.__class__.deserialize, (self.__class__, *serialized))
+
+    @staticmethod
+    def deserialize(cls, artifact_deserializer, artifact_deserialize_args):
+        return cls(artifact_deserializer(artifact_deserialize_args))
+
+
+class SerializableGM(SerializableArtifact):
+    """Serializable artifact for GraphModule"""
+
+    def serialize(self):
+        return GmSerializeHelper.serialize_fn(self.artifact)
+
+
+class SerializableCompiledFxGraph(SerializableArtifact):
+    """Serializable artifact for CompiledFxGraph"""
+
+    def serialize(self):
+        return CompiledFxGraphSerializeHelper.serialize_fn(self.artifact)
 
 
 class XpuGraphCache:
@@ -223,18 +253,13 @@ class XpuGraphLocalCache(XpuGraphCache):
         self._path = cache_path
 
     def save_artifact(self, key, value, expire=None):
-        serialized = serialize_artifact(value)
-        if serialized is None:
-            logger.warning(f"Cannot serialize type {type(value)}, skip: {value}")
-            return value
         artifact_path = self._artifact_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
         with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
             with open(artifact_path, "wb+") as f:
-                pickle.dump(serialized, f)
+                pickle.dump(value, f)
             with open(artifact_path, "rb") as f:
-                deserialize_fn, deserialize_args = pickle.load(f)
-                cached_graph = deserialize_fn(deserialize_args)
+                cached_graph = pickle.load(f)
         return cached_graph
 
     def load_artifact(self, key):
@@ -243,8 +268,8 @@ class XpuGraphLocalCache(XpuGraphCache):
             with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
                 logger.info(f"Use cache in location: {artifact_path}")
                 with open(artifact_path, "rb") as f:
-                    deserialize_fn, deserialize_args = pickle.load(f)
-            return deserialize_fn(deserialize_args)
+                    cached_graph = pickle.load(f)
+            return cached_graph
         else:
             return None
 

@@ -5,7 +5,7 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
-from .cache import XpuGraphCache, default_cache, serialize_artifact
+from .cache import SerializableArtifact, SerializableGM, XpuGraphCache, default_cache
 from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
@@ -74,26 +74,13 @@ class XpuGraphInferenceArtifact:
         self.wrapped_fn = compiled_fn
 
     def __call__(self, *runtime_args):
-        if getattr(self.wrapped_fn, "_boxed_call", False):
+        wrapped_fn = self.wrapped_fn
+        if getattr(wrapped_fn, "_boxed_call", False):
             # Note: if the wrapped_fn is a boxed function, unbox it now
             args = []
             args.extend(runtime_args)
             return self.wrapped_fn(args)
         return self.wrapped_fn(*runtime_args)
-
-    def __reduce__(self):
-        # Note: This is a legacy function. In most cases, the __reduce__ method wouldn't be invoked.
-        #       But in some legacy scenarios, the outer framework requires the compiled artifact returned by xpu_graph to be picklizable
-        #       So we have to implement the __reduce__ method of XpuGraphInferenceArtifact
-        serialized = serialize_artifact(self.wrapped_fn)
-        if serialized is None:
-            raise NotImplementedError(f"Cannot serialize type {type(self.wrapped_fn)}")
-        return self.__class__.deserialize_fn, (serialized,)
-
-    @staticmethod
-    def deserialize_fn(serialized):
-        deserialize_fn, deserialize_args = serialized
-        return __class__(deserialize_fn(deserialize_args))
 
 
 class XpuGraph:
@@ -174,9 +161,18 @@ class XpuGraph:
                         is_backward=stage == FxStage.backward,
                         **self._config.vendor_compiler_config,
                     )
+                else:
+                    xpu_compiled = SerializableGM(xpu_compiled)
 
                 if self._config.enable_cache:
-                    xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
+                    if isinstance(xpu_compiled, SerializableArtifact):
+                        xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
+                    else:
+                        logger.warning(f"Cannot cache type {type(xpu_compiled)}, skip: {xpu_compiled}")
+
+                if stage == FxStage.pregrad and isinstance(xpu_compiled, SerializableGM):
+                    # Pregrad requires the returned artifact to be a graph module
+                    xpu_compiled = xpu_compiled.artifact
 
             return xpu_compiled
 
