@@ -2,7 +2,6 @@ import torch
 
 from tests.common.test_models import SimpleModel, compare_inference
 from xpu_graph import OptLevel, XpuGraph, XpuGraphConfig, XpuGraphLocalCache
-from xpu_graph.cache import SerializableGraphModule
 from xpu_graph.test_utils import need_xpu_graph_logs
 
 device = "cpu"
