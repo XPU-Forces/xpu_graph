@@ -5,7 +5,14 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
-from .cache import SerializableArtifact, SerializableGM, XpuGraphCache, default_cache
+from .cache import (
+    SerializableArtifact,
+    SerializableFxGraph,
+    SerializableGraphModule,
+    XpuGraphCache,
+    default_cache,
+    serialize_artifact,
+)
 from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
@@ -80,6 +87,17 @@ class XpuGraphInferenceArtifact:
             args.extend(runtime_args)
             return self.wrapped_fn(args)
         return self.wrapped_fn(*runtime_args)
+
+
+class BoxedCallWrapper:
+    def __init__(self, compiled_func):
+        self.__compiled_func = compiled_func
+
+    def __call__(self, *args):
+        if getattr(self.__compiled_func, "_boxed_call", False):
+            # Note: if the wrapped_fn is a boxed function, unbox it now
+            return self.__compiled_func([args])
+        return self.__compiled_func(*args)
 
 
 class XpuGraph:
@@ -163,11 +181,13 @@ class XpuGraph:
                 else:
                     xpu_compiled = SerializableGM(xpu_compiled)
 
-                if self._config.enable_cache:
-                    if isinstance(xpu_compiled, SerializableArtifact):
-                        xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
-                    else:
-                        logger.warning(f"Cannot cache type {type(xpu_compiled)}, skip: {xpu_compiled}")
+                if self._config.vendor_compiler_config is None:
+                    xpu_compiled = SerializableGraphModule(xpu_compiled)
+
+                if self._config.enable_cache and isinstance(xpu_compiled, SerializableArtifact):
+                    self._cache.save_artifact(hashkey, xpu_compiled)
+                    # WARNING(liuyuan): MUST get the real artifact itself before return.
+                    xpu_compiled = xpu_compiled.artifact
 
             return xpu_compiled
 
@@ -251,7 +271,7 @@ class XpuGraph:
             )
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
-            xpu_gm = XpuGraphInferenceArtifact(xpu_gm)
+            xpu_gm = BoxedCallWrapper(xpu_gm)
 
         if self._config.enable_interceptor is not None:
             from xpu_graph.interceptor import intercept
