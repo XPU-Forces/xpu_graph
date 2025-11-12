@@ -8,7 +8,7 @@
 - [triton-x] 3.2.0 或者更高；
 
 ## 重大变动
-- XPUGraph返回的产物从 `SerializeWrapepr` 更名为 `XpuGraphRuntimeArtifact`，接口不变。 #450
+-
 
 ## 主要特性与改进
 -
