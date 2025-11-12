@@ -8,9 +8,7 @@
 - [triton-x] 3.2.0 或者更高；
 
 ## 重大变动
-- 解耦重构了cache机制和编译产物封装机制。 #450
-  * 定义了 `SerializableArtifact` 类，所有后端如果需要产物缓存，都需要将编译产物继承自该类，并实现对应的 `_serialize` 和 `_deserialize` 方法。
-  * 实现了 `XpuGraphRuntimeArtifact` 类，用于封装所有XpuGraph编译后的产物，使得运行时参数能够正确传递给编译产物。
+- XPUGraph返回的产物从 `SerializeWrapepr` 更名为 `XpuGraphRuntimeArtifact`，接口不变。 #450
 
 ## 主要特性与改进
 -
