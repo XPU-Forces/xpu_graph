@@ -101,9 +101,9 @@ def mlu_compiler(
                     SerializableCompiledFxGraph,
                     SerializableGraphModule,
                 )
-                from .compiler import BoxedCallWrapper
+                from .runtime import XpuGraphRuntimeArtifact
 
-                if isinstance(compiled, BoxedCallWrapper):
+                if isinstance(compiled, XpuGraphRuntimeArtifact):
                     if isinstance(compiled._compiled_func, GraphModule):
                         compiled._compiled_func = SerializableGraphModule(compiled._compiled_func)
                     elif isinstance(compiled._compiled_func, CompiledFxGraph):

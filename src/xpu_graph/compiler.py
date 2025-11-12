@@ -21,6 +21,7 @@ from .fx_utils import (
 )
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
+from .runtime import XpuGraphRuntimeArtifact
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
 
 __all__ = [
@@ -67,21 +68,6 @@ def optimize_graph(gm, sample_inputs, config=None):
         logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
 
     return xpu_optimized
-
-
-class BoxedCallWrapper:
-    # Note: this wrapper is NECESSARY for inference compiler, to ensure that the runtime args are correctly packed and unpacked
-    #       meanwhile in other cases, this conversion has been handled by aot_autograd
-    # Further reading: what is boxed_call? See discussion in : https://github.com/pytorch/pytorch/pull/83137#issuecomment-1211320670
-
-    def __init__(self, compiled_func):
-        self._compiled_func = compiled_func
-
-    def __call__(self, *args):
-        if getattr(self._compiled_func, "_boxed_call", False):
-            # Note: if the wrapped_fn is a boxed function, unbox it now
-            return self._compiled_func(list(args))
-        return self._compiled_func(*args)
 
 
 class XpuGraph:
@@ -254,7 +240,8 @@ class XpuGraph:
             )
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
-            xpu_gm = BoxedCallWrapper(xpu_gm)
+
+        xpu_gm = XpuGraphRuntimeArtifact(xpu_gm)
 
         if self._config.enable_interceptor is not None:
             from xpu_graph.interceptor import intercept

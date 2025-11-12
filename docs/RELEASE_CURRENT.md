@@ -10,7 +10,7 @@
 ## 重大变动
 - 解耦重构了cache机制和编译产物封装机制。 #450
   * 定义了 `SerializableArtifact` 类，所有后端如果需要产物缓存，都需要将编译产物继承自该类，并实现对应的 `_serialize` 和 `_deserialize` 方法。
-  * 实现了 `BoxedCallWrapper` 类，用于封装inference compiler编译后的函数，确保在推理场景下，运行时参数能够正确传递给boxed_func形式的编译产物。
+  * 实现了 `XpuGraphRuntimeArtifact` 类，用于封装所有XpuGraph编译后的产物，使得运行时参数能够正确传递给编译产物。
 
 ## 主要特性与改进
 -
