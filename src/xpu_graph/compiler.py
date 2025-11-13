@@ -5,7 +5,12 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
-from .cache import SerializeWrapper, XpuGraphCache, default_cache
+from .cache import (
+    SerializableArtifact,
+    SerializableGraphModule,
+    XpuGraphCache,
+    default_cache,
+)
 from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
@@ -16,52 +21,12 @@ from .fx_utils import (
 )
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
+from .runtime import XpuGraphRuntimeArtifact
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
 
 __all__ = [
-    "optimize_graph",
     "XpuGraph",
 ]
-
-
-def optimize_graph(gm, sample_inputs, config=None):
-    # Create default config if none provided
-    if config is None:
-        config = XpuGraphConfig(
-            is_training=False,
-            target=Target.none,
-            enable_cache=False,
-            opt_level=OptLevel.level2,
-        )
-    config._reset_config_with_env()
-
-    # Setup logging based on config
-    setup_logger(config.debug)
-
-    logger.info(f"{config}")
-
-    # Create fake inputs for optimization
-    fake_mode = FakeTensorMode()
-    fake_mode.allow_non_fake_inputs = True
-    fake_inputs = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in sample_inputs]
-
-    with fake_mode:
-        logger.debug(
-            "before xpu_optimize_graph, graph like:\n %s",
-            gm.print_readable(print_output=False, include_stride=True, include_device=True),
-        )
-        logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
-
-        pass_manager = PassManager(config)
-        xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
-
-        logger.debug(
-            "after xpu_optimize_graph, graph like:\n %s",
-            xpu_optimized.print_readable(print_output=False, include_stride=True, include_device=True),
-        )
-        logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
-
-    return xpu_optimized
 
 
 class XpuGraph:
@@ -104,9 +69,10 @@ class XpuGraph:
             with fake_mode:
                 if self._config.enable_cache:
                     hashkey = self._cache.cache_key(gm, fake_inputs, self._config, stage)
-                    cached_compiled = self._cache.load_gm(hashkey)
+                    cached_compiled = self._cache.load_artifact(hashkey)
                     if cached_compiled is not None:
-                        return cached_compiled
+                        assert isinstance(cached_compiled, SerializableArtifact)
+                        return cached_compiled.artifact
 
                 # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
                 original_gm_graph = gm.print_readable(print_output=False, include_stride=True, include_device=True)
@@ -142,12 +108,18 @@ class XpuGraph:
                         is_backward=stage == FxStage.backward,
                         **self._config.vendor_compiler_config,
                     )
-
-                xpu_compiled = SerializeWrapper(xpu_compiled)
+                else:
+                    xpu_compiled = SerializableGraphModule(xpu_compiled)
 
                 if self._config.enable_cache:
-                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                    if isinstance(xpu_compiled, SerializableArtifact):
+                        xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
+                    else:
+                        logger.warning(f"Artifact of type {type(xpu_compiled)} is not serializable, skip cache.")
 
+                if isinstance(xpu_compiled, SerializableArtifact):
+                    # WARNING(liuyuan): MUST get the real artifact itself before return.
+                    xpu_compiled = xpu_compiled.artifact
             return xpu_compiled
 
         def _staged_compiler(stage: FxStage):
@@ -227,6 +199,8 @@ class XpuGraph:
             )
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
+
+        xpu_gm = XpuGraphRuntimeArtifact(xpu_gm)
 
         if self._config.enable_interceptor is not None:
             from xpu_graph.interceptor import intercept

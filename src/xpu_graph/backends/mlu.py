@@ -3,6 +3,7 @@ from typing import Dict
 import torch
 import torch_mlu
 
+from xpu_graph.cache import SerializableCompiledFxGraph
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger
 
@@ -57,4 +58,4 @@ def mlu_compile(
         compiled_func = compile_fx_inner(
             module, example_inputs, cpp_wrapper=cpp_wrapper, is_inference=is_inference, is_backward=is_backward
         )
-    return compiled_func
+    return SerializableCompiledFxGraph(compiled_func)

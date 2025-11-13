@@ -1,8 +1,8 @@
 import os
-from typing import Optional
+from typing import Optional, Tuple, Union
 
 import torch
-import torch.fx as fx
+from torch import fx, nn
 
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
@@ -29,16 +29,19 @@ def _fetch_combinable_ops_idx(config_str):
     return extra_combinable_ops_idx
 
 
-DEFAULT_COMBINE_WIDTH = "3"
+DEFAULT_COMBINE_POI_WIDTH = "3"
 DEFAULT_COMBINABLE_POI_OP_IDX = "aten.mul.Tensor:0,1;aten.add.Tensor:0,1;aten.where.self:1,2;"
 
-COMBINE_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, DEFAULT_COMBINE_WIDTH)), 2)
+COMBINE_POI_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_width, DEFAULT_COMBINE_POI_WIDTH)), 2)
 COMBINABLE_POI_OP_IDX = _fetch_combinable_ops_idx(
     DEFAULT_COMBINABLE_POI_OP_IDX + os.getenv(__XPU_GRAPH_ENVS__.pointwise_combine_ops_idx, "")
 )
 
+DEFAULT_COMBINE_MM_WIDTH = "4"
+COMBINE_MM_WIDTH = max(int(os.getenv(__XPU_GRAPH_ENVS__.matmul_combine_width, DEFAULT_COMBINE_MM_WIDTH)), 2)
 
-class ComboManager:
+
+class ComboPoiManager:
     def __init__(
         self,
         gm: fx.GraphModule,
@@ -118,7 +121,7 @@ class ComboManager:
         replace_groups = []
         for other_args_kwargs, combinable_lists in self.shared_to_combinelists.items():
             for _, orig_results in combinable_lists:
-                if len(orig_results) < COMBINE_WIDTH:
+                if len(orig_results) < COMBINE_POI_WIDTH:
                     continue
                 orig_args = [orig_result.args[self.combo_argidx] for orig_result in orig_results]
                 do_stack = True
@@ -167,3 +170,83 @@ class ComboManager:
 
                 replace_groups.append((orig_args, orig_results, combined_arg, combined_result, split_node))
         return replace_groups
+
+
+def partially_topo_sort(node: fx.Node, insert_after: Optional[fx.Node] = None):
+    if insert_after is None or insert_after < node:
+        insert_after = node
+    import queue
+
+    que = queue.Queue()
+    que.put(node)
+    while not que.empty():
+        cur = que.get()
+        for user in cur.users:
+            if user < cur:
+                insert_pos = max(insert_after, cur)
+                insert_pos.append(user)
+                que.put(user)
+
+
+def extract_nodes_from_args_kwargs(args, kwargs):
+    """
+    从给定的 args 和 kwargs 中递归提取所有 fx.Node 实例。
+    """
+    nodes = []
+
+    def recurse(item):
+        if isinstance(item, fx.Node):
+            nodes.append(item)
+        elif isinstance(item, (list, tuple)):
+            for elem in item:
+                recurse(elem)
+        elif isinstance(item, dict):
+            for value in item.values():
+                recurse(value)
+        # 其他类型（如 int、float、str 等）不处理
+
+    recurse(args)
+    recurse(kwargs)
+    return nodes
+
+
+def get_ancestors(node):
+    """
+    找给定node的所有祖先
+    """
+    stack = [node]
+    ancestors = []
+    while stack:
+        node = stack.pop()
+        if node in ancestors:
+            continue
+        if node is None:
+            continue
+        if node.op == "placeholder":
+            continue
+        ancestors.append(node)
+        stack += extract_nodes_from_args_kwargs(node.args, node.kwargs)
+    if len(ancestors) > 0:
+        # remove node
+        ancestors = ancestors[1:]
+    return ancestors
+
+
+def find_dep(nodes, dep_func):
+    """
+    给定依赖函数和节点队列, 返回分组好的节点.
+    """
+    groups = []
+
+    for node in nodes:
+        placed = False
+        for group in groups:
+            if any(dep_func(node, other) for other in group):
+                continue
+            group.append(node)
+            placed = True
+            break
+        if not placed:
+            groups.append([node])
+
+    return groups
