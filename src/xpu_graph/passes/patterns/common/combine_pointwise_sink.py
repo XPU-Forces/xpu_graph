@@ -8,7 +8,11 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ..utils.check_ops import check_op, is_firstly_used
-from ..utils.combo_utils import COMBINABLE_POI_OP_IDX, COMBINE_WIDTH, ComboManager
+from ..utils.combo_utils import (
+    COMBINABLE_POI_OP_IDX,
+    COMBINE_POI_WIDTH,
+    ComboPoiManager,
+)
 from ..utils.shape_utils import SymShapeManager
 
 aten = torch.ops.aten
@@ -43,7 +47,7 @@ class CombinePointwiseSink(Pattern):
                 or check_op(node, aten.concat.default)
                 or node.op == "output"
             ):
-                if len(node.args[0]) < COMBINE_WIDTH:
+                if len(node.args[0]) < COMBINE_POI_WIDTH:
                     continue
             else:
                 continue
@@ -61,7 +65,7 @@ class CombinePointwiseSink(Pattern):
 
             for poi_op, combinable_argidxs in COMBINABLE_POI_OP_IDX:
                 for combinable_argidx in combinable_argidxs:
-                    combo_manager = ComboManager(
+                    combo_manager = ComboPoiManager(
                         graph_module, poi_op, combinable_argidx, cat_dim, extra_shape_check, shape_manager
                     )
                     for arg in node.args[0]:

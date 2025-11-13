@@ -108,7 +108,7 @@ class PluginPattern(Pattern):
 __PLUGIN_PATTERN_GROUP__ = {}
 __PLUGIN_PATTERN_FILTER_FUNCS__: dict = {}
 __LAST_PATTERN_INFO__ = None
-__CONTEXTUAL_PATTERN_RECORDER__ = None
+__CONTEXTUAL_PATTERN_RECORDER__ = []
 
 
 def register_plugin_pattern(

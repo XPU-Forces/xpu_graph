@@ -1,8 +1,9 @@
 import dataclasses
+from os import PathLike
 from typing import Any, Dict
 
 from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
-from .compiler import XpuGraph, optimize_graph
+from .compiler import XpuGraph
 from .config import OptLevel, Target, XpuGraphConfig
 from .passes.patterns.plugin_pattern import *
 from .version import __version__
@@ -12,7 +13,6 @@ __all__ = [
     "XpuGraphConfig",
     "Target",
     "OptLevel",
-    "optimize_graph",
     "XpuGraphCache",
     "default_cache",
     "mlu_compiler",
@@ -67,7 +67,7 @@ def mlu_compiler(
 
     if "cache" not in patch_configs:
         cache = no_cache() if is_training else default_cache()
-    elif isinstance(patch_configs["cache"], str):
+    elif isinstance(patch_configs["cache"], (str, PathLike)):
         cache = XpuGraphLocalCache(patch_configs["cache"])
     else:
         assert isinstance(patch_configs["cache"], XpuGraphCache), "cache must be a XpuGraphCache instance"
@@ -86,7 +86,31 @@ def mlu_compiler(
 
     if not is_training:
         import torch_mlu_ops
-    return XpuGraph(config, cache)
+
+    if is_training:
+        return XpuGraph(config, cache)
+    else:
+        # Note: this is a legacy patch, as some outer framework requires the xpugraph-returned compiled artifact to be pickable
+        class PatchedPickableXpuGraphBackend(XpuGraph):
+            def __call__(self, *args, **kwargs):
+                compiled = super().__call__(*args, **kwargs)
+                from .cache import (
+                    CompiledFxGraph,
+                    GraphModule,
+                    SerializableCompiledFxGraph,
+                    SerializableGraphModule,
+                )
+                from .runtime import XpuGraphRuntimeArtifact
+
+                if isinstance(compiled, XpuGraphRuntimeArtifact):
+                    if isinstance(compiled._compiled_func, GraphModule):
+                        compiled._compiled_func = SerializableGraphModule(compiled._compiled_func)
+                    elif isinstance(compiled._compiled_func, CompiledFxGraph):
+                        compiled._compiled_func = SerializableCompiledFxGraph(compiled._compiled_func)
+
+                return compiled
+
+        return PatchedPickableXpuGraphBackend(config, cache)
 
 
 _MLU_TRAIN_CONFIG = XpuGraphConfig(

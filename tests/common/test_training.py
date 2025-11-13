@@ -51,9 +51,11 @@ class TestTrainingWithPartiioner:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level1, freeze=False, debug=True, enable_interceptor="rtol=1e-6,atol=1e-5"
+    import os
+
+    os.environ["XPUGRAPH_PARTITIONER"] = "torch._functorch.partitioners.min_cut_rematerialization_partition"
+    train_config = xpu_graph.XpuGraphConfig(
+        is_training=True, opt_level=OptLevel.level1, freeze=False, enable_interceptor="rtol=1e-6,atol=1e-5"
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
-    for ModCls in all_models:
-        compare_training(device, data_type, ModCls, xpu_graph_backend)
+    train_backend = xpu_graph.XpuGraph(train_config)
+    compare_training(device, data_type, SimpleModel, train_backend)
