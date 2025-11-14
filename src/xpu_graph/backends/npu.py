@@ -17,7 +17,14 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
     config = CompilerConfig()
     recursive_set_obj(config_dict, config)
-    if (mode := config_dict.get("mode", "reduce-overhead")) == "reduce-overhead":
+    if (
+        mode := config_dict.get(
+            "mode",
+            (
+                "max-autotune" if "compiler" in config_dict else "reduce-overhead"
+            ),  # NOTE(liuyuan): If user specify the compiler, then we should consider it as GE instead of AclGraph.
+        )
+    ) == "reduce-overhead":
         config.mode = mode
         from torch import SymInt
 
@@ -27,12 +34,6 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
         if mempool := config_dict.get("use_custom_pool", None):
             config.aclgraph_config.use_custom_pool = mempool
-    else:
-        """
-        TODO(zhangjihang): We have to use this, cause some case we have to use GE
-        """
-        config.experimental_config.keep_inference_input_mutations = True
-        config.experimental_config.frozen_parameter = True
 
     npu_backend = tng.get_npu_backend(compiler_config=config)
     compiled_module = npu_backend(module, example_inputs)
