@@ -3,7 +3,7 @@ import hashlib
 import importlib
 import os
 import pickle
-from abc import ABC, abstractmethod
+from abc import ABC, abstractclassmethod, abstractmethod
 from os import PathLike
 from typing import Tuple, Union
 
@@ -218,19 +218,7 @@ class SerializableCompiledFxGraph(SerializableArtifact):
         return __class__(compiled_fn)
 
 
-import importlib
-
-
-class AutoloadDispatcher(PolyBackendDispatcher):
-    def __class_getitem__(cls, target: Target):
-        try:
-            importlib.import_module(f"xpu_graph.backends.{target.value}", __package__)
-        except Exception as e:
-            logger.warning(f"{target.value} is not found, use the default registrations")
-        return super().__class_getitem__(target)
-
-
-class XpuGraphCache(AutoloadDispatcher):
+class XpuGraphCache:
     """A base cache class does not store any thing"""
 
     def cache_key(
@@ -276,19 +264,19 @@ class XpuGraphLocalCache(XpuGraphCache):
 
         artifact_path = self._artifact_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
-        with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
-            with open(artifact_path, "wb+") as f:
-                pickle.dump(value, f)
-            with open(artifact_path, "rb") as f:
-                return pickle.load(f)
+        # with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
+        with open(artifact_path, "wb+") as f:
+            pickle.dump(value, f)
+        with open(artifact_path, "rb") as f:
+            return pickle.load(f)
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)
         if os.path.isfile(artifact_path):
-            with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
-                logger.info(f"Use cache in location: {artifact_path}")
-                with open(artifact_path, "rb") as f:
-                    return pickle.load(f)
+            # with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
+            logger.info(f"Use cache in location: {artifact_path}")
+            with open(artifact_path, "rb") as f:
+                return pickle.load(f)
         else:
             return None
 

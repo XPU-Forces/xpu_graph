@@ -41,9 +41,7 @@ class XpuGraph:
         # Setup logging based on config
         setup_logger(self._config.debug)
 
-        self._cache = (
-            cache if cache and config.enable_cache else XpuGraphCache[config.target]() if config.enable_cache else None
-        )
+        self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
         self._set_context()
         # WARNING(liuyuan): _pass_manager MUST be initilized after _set_context because triton kernel depends on environment varaibels that fetched in _set_context.
         self._pass_manager = PassManager(self._config)

@@ -7,55 +7,25 @@ import torch
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.graph_module import GraphModule
 
-from xpu_graph.cache import XpuGraphCache
+from xpu_graph.cache import SerializableArtifact
 from xpu_graph.config import Target, get_cache_dir
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger, recursive_set_obj
 
 
-class XpuGraphCacheForNpu(XpuGraphCache, backend=Target.npu, anchor_class=XpuGraphCache):
-    def __init__(self):
-        super().__init__()
-        self._path = os.path.abspath(get_cache_dir())
-        os.makedirs(self._path, exist_ok=True)
+class NpuSerializableArtifact(SerializableArtifact):
+    def __init__(self, artifact):
+        assert hasattr(artifact, "dump_artifacts")
+        super().__init__(artifact)
 
-    def save_gm(self, key, value, expire=None):
-        # WARNING(liuyuan): DO NOT support compilation from inductor or with triton kernels.
-        if getattr(value, "_xpu_graph_mark_npu_inductor_compilation", False) or getattr(
-            value, "_xpu_graph_mark_npu_has_triton_kernel", False
-        ):
-            return value
+    def _serialize(self):
+        return (self._artifact.dump_artifacts(),)
 
-        artifact_path = self._graph_path(key)
-        logger.info(f"Save cache in location: {artifact_path}")
-        artifact = value.dump_artifacts()
-        with open(artifact_path, "wb") as f:
-            pickle.dump(artifact, f)
-        return value
-
-    def load_gm(self, key):
+    @staticmethod
+    def _deserialize(artifact):
         from torchair.npu_fx_compiler import _CompiledFxGraph
 
-        load_artifacts = _CompiledFxGraph.load_artifacts
-
-        artifact_path = self._graph_path(key)
-        if not os.path.exists(artifact_path):
-            return None
-
-        logger.info(f"Use cache in location: {artifact_path}")
-        with open(artifact_path, "rb") as f:
-            artifact = pickle.load(f)
-            return load_artifacts(artifact)
-
-    def delete_gm(self, key):
-        if key in self.cache:
-            del self.cache[key]
-
-    @cache
-    def _graph_path(self, key):
-        fname = f"xpugraph_{key}.pt"
-        artifact_cache = os.path.join(self._path, fname)
-        return artifact_cache
+        return __class__(_CompiledFxGraph.load_artifacts(artifact))
 
 
 def has_triton_kernel(gm: GraphModule):
@@ -108,8 +78,8 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
     compiled_module = npu_backend(module, example_inputs)
 
-    if has_triton_kernel(module):
-        compiled_module._xpu_graph_mark_npu_has_triton_kernel = True
+    if not has_triton_kernel(module):
+        compiled_module = NpuSerializableArtifact(compiled_module)
 
     return compiled_module
 
