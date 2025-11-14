@@ -3,7 +3,8 @@ import hashlib
 import importlib
 import os
 import pickle
-from abc import ABC, abstractmethod
+from abc import ABC, abstractclassmethod, abstractmethod
+from functools import wraps
 from os import PathLike
 from typing import Tuple, Union
 
@@ -29,9 +30,9 @@ else:
 from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
 
-from .config import XpuGraphConfig, get_cache_dir
+from .config import Target, XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
-from .utils import logger
+from .utils import PolyBackendDispatcher, logger
 
 
 class _ArgWrapper:
@@ -92,16 +93,27 @@ class SerializableArtifact(ABC):
         ...
 
 
+def make_it_real_mode(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
 class SerializableGraphModule(SerializableArtifact):
     def __init__(self, artifact):
         assert isinstance(artifact, GraphModule)
         super().__init__(artifact)
 
+    @make_it_real_mode
     def _serialize(self) -> Tuple:
         gm_dict, graph_meta, nodes_meta = GmSerializeHelper.serialize_fn(self._artifact)
         return (gm_dict, graph_meta, nodes_meta)
 
     @staticmethod
+    @make_it_real_mode
     def _deserialize(gm_dict, graph_meta, nodes_meta):
         gm = GmSerializeHelper.deserialize_fn(gm_dict, graph_meta, nodes_meta)
         return __class__(gm)
@@ -181,12 +193,14 @@ class SerializableCompiledFxGraph(SerializableArtifact):
         assert isinstance(artifact, CompiledFxGraph)
         super().__init__(artifact)
 
+    @make_it_real_mode
     def _serialize(self):
         mod = copy.copy(self._artifact)
         mod.current_callable = None
         return (mod,)
 
     @staticmethod
+    @make_it_real_mode
     def _deserialize(mod):
         logger.info(f"Deserializing a {CompiledFxGraph.__qualname__}")
         compiled_fn = mod
@@ -264,19 +278,20 @@ class XpuGraphLocalCache(XpuGraphCache):
 
         artifact_path = self._artifact_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
-        with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
-            with open(artifact_path, "wb+") as f:
-                pickle.dump(value, f)
-            with open(artifact_path, "rb") as f:
-                return pickle.load(f)
+        # TODO(liuyuan): Fake Tensor is enabled when we try to load it back, fix it.
+        # with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
+        with open(artifact_path, "wb+") as f:
+            pickle.dump(value, f)
+        # with open(artifact_path, "rb") as f:
+        #     return pickle.load(f)
+        return value
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)
         if os.path.isfile(artifact_path):
-            with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
-                logger.info(f"Use cache in location: {artifact_path}")
-                with open(artifact_path, "rb") as f:
-                    return pickle.load(f)
+            logger.info(f"Use cache in location: {artifact_path}")
+            with open(artifact_path, "rb") as f:
+                return pickle.load(f)
         else:
             return None
 
