@@ -8,10 +8,15 @@
 - [triton-x] 3.2.0 或者更高；
 
 ## 重大变动
--
+- 现在`GE`后端不再默认使能以下两个选项
+  - `experimental_config.keep_inference_input_mutations`
+  - `experimental_config.frozen_parameter`
+
+  这是因为前者需要确保编译覆盖的算子，正确注册`mutates_args`；后者则在`regional compilaton`使用场景下会导致精度问题，我们决定交由使用者去控制这两个选项的开关，同时也保持和`vendor`默认设置的对齐；
+  如果用户需要使能这两个开关，可以在`vendor_compiler_config`中增加`{"experimental_config": {"keep_inference_input_mutations": True, "frozen_parameter": True}}`这样的结构化字段来告知XpuGraph。
 
 ## 主要特性与改进
 -
 
 ## Bug修复与其他改动
--
+- 修复用户在传入`{"compiler": "ge"}`设置下，错误使用`AclGraph`而非`GE`的问题；
