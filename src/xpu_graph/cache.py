@@ -278,10 +278,13 @@ class XpuGraphLocalCache(XpuGraphCache):
 
         artifact_path = self._artifact_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
+        # TODO(liuyuan): Fake Tensor is enabled when we try to load it back, fix it.
+        # with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
         with open(artifact_path, "wb+") as f:
             pickle.dump(value, f)
-        with open(artifact_path, "rb") as f:
-            return pickle.load(f)
+        # with open(artifact_path, "rb") as f:
+        #     return pickle.load(f)
+        return value
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)
