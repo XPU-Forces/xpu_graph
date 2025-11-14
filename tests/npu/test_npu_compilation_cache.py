@@ -4,7 +4,8 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.experimental.proxy_tensor import make_fx
 
 from xpu_graph import Target
-from xpu_graph.backends.npu import XpuGraphCacheForNpu
+from xpu_graph.backends.npu import NpuSerializableArtifact
+from xpu_graph.cache import XpuGraphLocalCache
 from xpu_graph.compiler import XpuGraphCompiler
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.test_utils import need_xpu_graph_logs
@@ -27,12 +28,11 @@ class TestNpuCompilationCache:
         self.compiler = XpuGraphCompiler()
 
         def dummy(x, y):
-            return x @ y
+            return x + y
 
         self.dummy_func = dummy
         self.inputs = (torch.empty(1024).npu(), torch.empty(1024).npu())
 
-        self.cache = XpuGraphCacheForNpu()
         self.stage = FxStage.inference
 
     @pytest.mark.parametrize(
@@ -42,18 +42,19 @@ class TestNpuCompilationCache:
             .set_vendor_compiler_config({"compiler": "ge", "mode": "reduce-overhead"})
             .set_debug(True)
             .set_is_training(False)
-            .set_enable_cache(True)
+            .set_enable_cache(False)
             .done(),
             lambda self: self.compiler.set_target(Target.npu)
             .set_vendor_compiler_config({"compiler": "ge"})
             .set_debug(True)
             .set_is_training(False)
-            .set_enable_cache(True)
+            .set_enable_cache(False)
             .done(),
         ),
         ids=("aclgraph", "ge"),
     )
     def test_cache(self, compiler_setting, clear_cache_dir):
+        cache = XpuGraphLocalCache("/tmp/xpu_graph_whhh")
         compiler_setting(self)
         ori_gm = []
         compiled_gm = []
@@ -66,16 +67,16 @@ class TestNpuCompilationCache:
         compiled_module = torch.compile(self.dummy_func, backend=hijack_backend, dynamic=False)
         compiled_module(*self.inputs)
 
-        cache_key = self.cache.cache_key(
+        cache_key = cache.cache_key(
             ori_gm[0],
             self.inputs,
             self.compiler._config,
             self.stage,
         )
 
-        self.cache.save_gm(cache_key, compiled_gm[0])
-        self.cache.load_gm(cache_key)
-        assert torch.allclose(compiled_module(*self.inputs), self.dummy_func(*self.inputs), equal_nan=True)
+        cache.save_artifact(cache_key, NpuSerializableArtifact(compiled_gm[0]._compiled_func))
+        compiled_module = cache.load_artifact(cache_key).artifact
+        assert torch.allclose(compiled_module(*self.inputs)[0], self.dummy_func(*self.inputs), equal_nan=True)
 
     @pytest.mark.parametrize(
         "compiler_setting",
