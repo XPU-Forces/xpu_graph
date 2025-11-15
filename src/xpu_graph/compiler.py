@@ -148,17 +148,17 @@ class XpuGraph:
                 "before compile: graph like:\n %s",
                 dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
             )
-            kwargs = {}
+            aot_config = {}
             if self._config.is_training:
-                kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
-                kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
-                kwargs["keep_inference_input_mutations"] = True
+                aot_config["fw_compiler"] = _staged_compiler(FxStage.forward)
+                aot_config["bw_compiler"] = _staged_compiler(FxStage.backward)
+                aot_config["keep_inference_input_mutations"] = True
                 if partition_fn := get_partition_fn(self._config.partition_fn):
-                    kwargs["partition_fn"] = partition_fn
+                    aot_config["partition_fn"] = partition_fn
             else:
-                kwargs["fw_compiler"] = _staged_compiler(FxStage.inference)
-                kwargs["keep_inference_input_mutations"] = True
-            xpu_gm = aot_autograd(**kwargs)(dynamo_gm, example_inputs)
+                aot_config["fw_compiler"] = _staged_compiler(FxStage.inference)
+                aot_config["keep_inference_input_mutations"] = True
+            xpu_gm = aot_autograd(**aot_config)(dynamo_gm, example_inputs)
             fw_metadata = None
         elif self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
@@ -178,12 +178,12 @@ class XpuGraph:
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
-            kwargs = {}
-            kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
-            kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
+            aot_config = {}
+            aot_config["fw_compiler"] = _staged_compiler(FxStage.forward)
+            aot_config["bw_compiler"] = _staged_compiler(FxStage.backward)
             if partition_fn := get_partition_fn(self._config.partition_fn):
-                kwargs["partition_fn"] = partition_fn
-            xpu_gm = aot_autograd(**kwargs)(pregrad_gm, fake_inputs)
+                aot_config["partition_fn"] = partition_fn
+            xpu_gm = aot_autograd(**aot_config)(pregrad_gm, fake_inputs)
 
         else:
             logger.debug(
@@ -214,6 +214,18 @@ class XpuGraph:
                 mark=os.environ.get("RANK", "0"),
                 config_str=self._config.enable_interceptor,
             )
+
+        if (guard_filter_fn := kwargs.get("options", {}).get("guard_filter_fn")) is not None and (
+            tracing_context := torch._guards.TracingContext.try_get()
+        ) is not None:
+            orig_guards = tracing_context.guards_context.dynamo_guards
+            filter_flags = guard_filter_fn(orig_guards)
+            filtered_guards = torch._guards.GuardsSet(
+                set(guard for guard, flag in zip(orig_guards, filter_flags) if not flag)
+            )
+            logger.info(f"Removed guards: {list(filtered_guards)}")
+            tracing_context.guards_context.dynamo_guards = orig_guards - filtered_guards
+
         return xpu_gm
 
     def get_pattern_manager(self):
