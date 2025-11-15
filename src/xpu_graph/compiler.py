@@ -1,5 +1,6 @@
 import os
 from itertools import chain
+from typing import Callable
 
 import torch
 from torch._dynamo.backends.common import aot_autograd
@@ -39,14 +40,6 @@ class XpuGraph:
         self._config = config
         # Setup logging based on config
         setup_logger(self._config.debug)
-
-        if (
-            self._config.target == Target.npu
-            and self._config.vendor_compiler_config is not None
-            and self._config.vendor_compiler_config.get("compiler", "ge") == "ge"
-        ):
-            self._config.enable_cache = False
-            logger.warning("Target NPU ge-compiler does not support cache.")
 
         self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
         self._set_context()
@@ -247,3 +240,60 @@ class XpuGraph:
             torch._dynamo.config.numpy_default_float = self._orig_ctx["torch._dynamo.config.numpy_default_float"]
         if self._cache is not None:
             self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])
+
+
+class XpuGraphCompiler:
+    def __init__(self):
+        super().__init__()
+        self._config = XpuGraphConfig(is_training=False)
+        self._config._reset_config_with_env()
+        # for filed in type(self._config).__dataclass_fields__.keys():
+        for field in XpuGraphConfig.__dataclass_fields__.keys():
+            setter = self._create_setter(field)
+            setattr(
+                self.__class__,
+                field,
+                property(self._create_getter(field), setter),
+            )
+            setattr(self.__class__, "set_%s" % field, self._create_chained_setter(setter))
+
+        self.prior_work()
+        self._compiler = None
+
+    def _create_getter(self, field):
+        def getter(self):
+            return getattr(self._config, field)
+
+        return getter
+
+    def _create_setter(self, field):
+        # HACK(liuyuan): typing.Dict[str, typing.Any] is a GenericAlias which is unavailable for isinstance.
+        # See https://docs.python.org/3/library/typing.html#typing.Dict and https://docs.python.org/3/library/stdtypes.html#types-genericalias
+        expected_type = XpuGraphConfig.__dataclass_fields__[field].type if field != "vendor_compiler_config" else dict
+
+        def setter(self, val):
+            if not isinstance(val, expected_type):
+                raise TypeError(f"Expected {expected_type}, but got {type(val)}.")
+            setattr(self._config, field, val)
+            self._compiler = None
+
+        return setter
+
+    def _create_chained_setter(self, setter):
+        def chained_setter(self, val):
+            setter(self, val)
+            return self
+
+        return chained_setter
+
+    def prior_work(self):
+        ...
+
+    def done(self):
+        self._compiler = XpuGraph(self._config)
+
+    def compile(self, model: torch.nn.Module, *args, backend=None, **kwargs) -> Callable:
+        assert isinstance(
+            self._compiler, XpuGraph
+        ), "You should call XpuGraphCompiler.done before XpuGraphCompiler.compile"
+        return torch.compile(model, backend=self._compiler, *args, **kwargs)
