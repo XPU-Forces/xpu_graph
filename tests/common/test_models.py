@@ -86,27 +86,32 @@ class DropoutModel(nn.Module):
 all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, DropoutModel]
 
 
-def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16, dynamic=True):
+def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16, dynamic=True, state_dict=None):
     golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
 
+    if state_dict is not None:
+        compiled.load_state_dict(state_dict)
+        golden.load_state_dict(state_dict)
+    else:
+        compiled.load_state_dict(golden.state_dict())
+
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=dynamic)
-    compiled.load_state_dict(golden.state_dict())
     compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
     golden_input = compiled_input.clone()
-    target = torch.randn((bsz, 1), device=device, dtype=data_type)
-
-    loss_fn = nn.MSELoss()
-
     with torch.inference_mode():
-        rng_state = torch.random.get_rng_state()
-        loss_golden = loss_fn(golden(golden_input), target)
+        if device == "cpu":
+            rng_state = torch.random.get_rng_state()
+            output_golden = golden(golden_input)
+            torch.random.set_rng_state(rng_state)
+        else:
+            with torch.random.fork_rng(device_type=device):
+                output_golden = golden(golden_input)
 
-        torch.random.set_rng_state(rng_state)
-        loss_compiled = loss_fn(compiled(compiled_input), target)
+        compiled_output = compiled(compiled_input)
 
     assert is_similar(compiled_input, golden_input)
-    assert is_similar(loss_golden, loss_compiled)
+    assert is_similar(compiled_output, output_golden)
 
 
 def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input_dim=16, dynamic=True):
