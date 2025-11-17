@@ -7,7 +7,7 @@ import torch
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.graph_module import GraphModule
 
-from xpu_graph.cache import SerializableArtifact
+from xpu_graph.cache import SerializableArtifact, temp_disable_tracing_envs
 from xpu_graph.config import Target, get_cache_dir
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger, recursive_set_obj
@@ -18,14 +18,16 @@ class NpuSerializableArtifact(SerializableArtifact):
         assert hasattr(artifact, "dump_artifacts")
         super().__init__(artifact)
 
-    def _serialize(self):
-        return (self._artifact.dump_artifacts(),)
+    def convert_to_bytes(self):
+        with temp_disable_tracing_envs():
+            return pickle.dumps(self._artifact.dump_artifacts())
 
     @staticmethod
-    def _deserialize(artifact):
+    def rebuild_from_bytes(bytes):
         from torchair.npu_fx_compiler import _CompiledFxGraph
 
-        return __class__(_CompiledFxGraph.load_artifacts(artifact))
+        with temp_disable_tracing_envs():
+            return __class__(_CompiledFxGraph.load_artifacts(pickle.loads(bytes)))
 
 
 def has_triton_kernel(gm: GraphModule):

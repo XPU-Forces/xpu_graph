@@ -26,13 +26,7 @@ def clear_cache_dir():
 class TestNpuCompilationCache:
     def setup_method(self):
         self.compiler = XpuGraphCompiler()
-
-        def dummy(x, y):
-            return x + y
-
-        self.dummy_func = dummy
         self.inputs = (torch.empty(1024).npu(), torch.empty(1024).npu())
-
         self.stage = FxStage.inference
 
     @pytest.mark.parametrize(
@@ -59,12 +53,15 @@ class TestNpuCompilationCache:
         ori_gm = []
         compiled_gm = []
 
+        def dummy(x, y):
+            return x + y
+
         def hijack_backend(gm, *args, **kwargs):
             ori_gm.append(gm)
             compiled_gm.append(self.compiler._compiler(gm, *args, **kwargs))
             return compiled_gm[0]
 
-        compiled_module = torch.compile(self.dummy_func, backend=hijack_backend, dynamic=False)
+        compiled_module = torch.compile(dummy, backend=hijack_backend, dynamic=False)
         compiled_module(*self.inputs)
 
         cache_key = cache.cache_key(
@@ -76,7 +73,7 @@ class TestNpuCompilationCache:
 
         cache.save_artifact(cache_key, NpuSerializableArtifact(compiled_gm[0]._compiled_func))
         compiled_module = cache.load_artifact(cache_key).artifact
-        assert torch.allclose(compiled_module(*self.inputs)[0], self.dummy_func(*self.inputs), equal_nan=True)
+        assert torch.allclose(compiled_module(*self.inputs)[0], dummy(*self.inputs), equal_nan=True)
 
     @pytest.mark.parametrize(
         "compiler_setting",
@@ -98,12 +95,23 @@ class TestNpuCompilationCache:
     )
     def test_compile_pipeline(self, compiler_setting, clear_cache_dir, caplog):
         compiler_setting(self)
+
+        class Model(torch.nn.Module):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.weight = torch.nn.Parameter(torch.empty(1024))
+
+            def forward(self, x, y):
+                return x + y + self.weight
+
+        model = Model().eval().npu()
+
         with need_xpu_graph_logs():
-            compiled = self.compiler.compile(self.dummy_func, dynamic=False)
+            compiled = self.compiler.compile(model, dynamic=False)
             compiled(*self.inputs)
 
             compiler_setting(self)
-            compiled = self.compiler.compile(self.dummy_func, dynamic=False)
+            compiled = self.compiler.compile(model, dynamic=False)
             compiled(*self.inputs)
 
             assert "Use cache in location" in caplog.text
