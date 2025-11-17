@@ -1,35 +1,19 @@
-import copy
 import hashlib
 import importlib
 import os
 import pickle
 from abc import ABC, abstractmethod
 from contextlib import contextmanager, nullcontext
-from functools import wraps
 from os import PathLike
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch._dynamo.device_interface import get_interface_for_device
 from torch._guards import TracingContext
-from torch._inductor.utils import BoxedBool
-from torch.utils._python_dispatch import _disable_current_modes
-
-torch_version = torch.__version__[:3]
-if torch_version >= "2.6":
-    from torch._inductor.codecache import FxGraphCache, PyCodeCache, get_path
-    from torch._inductor.output_code import CompiledFxGraph
-else:
-    from torch._inductor.codecache import (
-        CompiledFxGraph,
-        PyCodeCache,
-        get_path,
-        FxGraphCache,
-    )
-
 from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
+from torch.utils._python_dispatch import _disable_current_modes
 
 from .config import XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
@@ -83,16 +67,16 @@ class SerializableArtifact(ABC):
         return self.rebuild_from_bytes, (self.convert_to_bytes(),)
 
     @abstractmethod
-    def convert_to_bytes(self) -> Tuple[callable, bytes]:
+    def convert_to_bytes(self) -> bytes:
         """
-        Convert artifact to bytes. The return tuple should be (rebuild_from_bytes, artifact_bytes),
-        where rebuild_from_bytes is a function that takes artifact_bytes as input and returns the artifact.
+        Convert artifact to bytes. The return value should be artifact_bytes,
+        which can rebuild the artifact via rebuild_from_bytes.
         """
         ...
 
     @staticmethod
     @abstractmethod
-    def rebuild_from_bytes(byte_str: bytes):
+    def rebuild_from_bytes(byte_s: bytes):
         """
         Rebuild artifact from bytes. The input is the artifact_bytes from convert_to_bytes.
         """
@@ -112,15 +96,15 @@ class SerializableGraphModule(SerializableArtifact):
         assert isinstance(artifact, GraphModule)
         super().__init__(artifact)
 
-    def convert_to_bytes(self) -> Tuple[callable, bytes]:
+    def convert_to_bytes(self) -> bytes:
         with temp_disable_tracing_envs():
             gm_dict, graph_meta, nodes_meta = GmSerializeHelper.serialize_fn(self._artifact)
             return pickle.dumps((gm_dict, graph_meta, nodes_meta))
 
     @staticmethod
-    def rebuild_from_bytes(byte_str: bytes):
+    def rebuild_from_bytes(byte_s: bytes):
         with temp_disable_tracing_envs():
-            gm_dict, graph_meta, nodes_meta = pickle.loads(byte_str)
+            gm_dict, graph_meta, nodes_meta = pickle.loads(byte_s)
             gm = GmSerializeHelper.deserialize_fn(gm_dict, graph_meta, nodes_meta)
             return __class__(gm)
 
@@ -196,10 +180,12 @@ class GmSerializeHelper:
 
 class SerializableCompiledFxGraph(SerializableArtifact):
     def __init__(self, artifact):
+        from torch._inductor.compile_fx import CompiledFxGraph
+
         assert isinstance(artifact, CompiledFxGraph)
         super().__init__(artifact)
 
-    def convert_to_bytes(self) -> Tuple[callable, bytes]:
+    def convert_to_bytes(self) -> bytes:
         with temp_disable_tracing_envs():
             current_callable = self._artifact.current_callable
             self._artifact.current_callable = None
@@ -208,11 +194,15 @@ class SerializableCompiledFxGraph(SerializableArtifact):
             return serialized
 
     @staticmethod
-    def rebuild_from_bytes(bytes):
+    def rebuild_from_bytes(byte_s):
+        from torch._inductor.codecache import FxGraphCache, PyCodeCache, get_path
+        from torch._inductor.compile_fx import CompiledFxGraph
+        from torch._inductor.utils import BoxedBool
+
         logger.info(f"Deserializing a {CompiledFxGraph.__qualname__}")
         with temp_disable_tracing_envs():
             # Disable tracing envs is necessary because we need to load REAL tensors as parameters and buffers
-            compiled_fn = pickle.loads(bytes)
+            compiled_fn = pickle.loads(byte_s)
         # Torch Inductor config is lazy initialized. invoke it manually
         for device in compiled_fn.device_types:
             if device == "cpu":
@@ -233,6 +223,7 @@ class SerializableCompiledFxGraph(SerializableArtifact):
         #      it may be in different locations in other versions
         #   2. Example_inputs in post_compile actually leads to symint guards,
         #      but we choose to not produce extra guards
+        torch_version = torch.__version__[:3]
         if torch_version.startswith("2.5"):
             tracing_context = torch._guards.TracingContext.try_get()
             if tracing_context is not None and tracing_context.output_strides:
