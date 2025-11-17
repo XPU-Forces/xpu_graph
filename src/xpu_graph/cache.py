@@ -283,8 +283,7 @@ class XpuGraphLocalCache(XpuGraphCache):
             pickle.dump((value.rebuild_from_bytes, artifact_bytes), f)
         with open(artifact_path, "rb") as f:
             rebuild_from_bytes, artifact_bytes = pickle.load(f)
-            return rebuild_from_bytes(artifact_bytes)
-        return value
+        return rebuild_from_bytes(artifact_bytes)
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)
