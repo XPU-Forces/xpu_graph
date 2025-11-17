@@ -19,6 +19,7 @@ class NpuSerializableArtifact(SerializableArtifact):
         super().__init__(artifact)
 
     def convert_to_bytes(self):
+        # NOTE(liuyuan): Since tng_backend does not save any tenosr, would it be necessary?
         with temp_disable_tracing_envs():
             return pickle.dumps(self._artifact.dump_artifacts())
 
@@ -26,6 +27,7 @@ class NpuSerializableArtifact(SerializableArtifact):
     def rebuild_from_bytes(bytes):
         from torchair.npu_fx_compiler import _CompiledFxGraph
 
+        # NOTE(liuyuan): Since tng_backend does not save any tenosr, would it be necessary?
         with temp_disable_tracing_envs():
             return __class__(_CompiledFxGraph.load_artifacts(pickle.loads(bytes)))
 
