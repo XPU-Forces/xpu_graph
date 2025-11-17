@@ -4,6 +4,8 @@ import importlib
 import os
 import pickle
 from abc import ABC, abstractmethod
+from contextlib import contextmanager, nullcontext
+from functools import wraps
 from os import PathLike
 from typing import Tuple, Union
 
@@ -78,18 +80,31 @@ class SerializableArtifact(ABC):
         return self._artifact
 
     def __reduce__(self):
-        return (self._deserialize, self._serialize())
+        return self.rebuild_from_bytes, (self.convert_to_bytes(),)
 
     @abstractmethod
-    def _serialize(self) -> Tuple:
+    def convert_to_bytes(self) -> Tuple[callable, bytes]:
         """
-        The return tuple will be passed to __deserializa function.
+        Convert artifact to bytes. The return tuple should be (rebuild_from_bytes, artifact_bytes),
+        where rebuild_from_bytes is a function that takes artifact_bytes as input and returns the artifact.
         """
         ...
 
     @staticmethod
-    def _deserialize(*args):
+    @abstractmethod
+    def rebuild_from_bytes(byte_str: bytes):
+        """
+        Rebuild artifact from bytes. The input is the artifact_bytes from convert_to_bytes.
+        """
         ...
+
+
+@contextmanager
+def temp_disable_tracing_envs():
+    with compile_lock, _disable_current_modes():
+        tracing_context = TracingContext.try_get()
+        with tracing_context.patch(fake_mode=None) if tracing_context else nullcontext():
+            yield
 
 
 class SerializableGraphModule(SerializableArtifact):
@@ -97,14 +112,17 @@ class SerializableGraphModule(SerializableArtifact):
         assert isinstance(artifact, GraphModule)
         super().__init__(artifact)
 
-    def _serialize(self) -> Tuple:
-        gm_dict, graph_meta, nodes_meta = GmSerializeHelper.serialize_fn(self._artifact)
-        return (gm_dict, graph_meta, nodes_meta)
+    def convert_to_bytes(self) -> Tuple[callable, bytes]:
+        with temp_disable_tracing_envs():
+            gm_dict, graph_meta, nodes_meta = GmSerializeHelper.serialize_fn(self._artifact)
+            return pickle.dumps((gm_dict, graph_meta, nodes_meta))
 
     @staticmethod
-    def _deserialize(gm_dict, graph_meta, nodes_meta):
-        gm = GmSerializeHelper.deserialize_fn(gm_dict, graph_meta, nodes_meta)
-        return __class__(gm)
+    def rebuild_from_bytes(byte_str: bytes):
+        with temp_disable_tracing_envs():
+            gm_dict, graph_meta, nodes_meta = pickle.loads(byte_str)
+            gm = GmSerializeHelper.deserialize_fn(gm_dict, graph_meta, nodes_meta)
+            return __class__(gm)
 
 
 class GmSerializeHelper:
@@ -181,15 +199,20 @@ class SerializableCompiledFxGraph(SerializableArtifact):
         assert isinstance(artifact, CompiledFxGraph)
         super().__init__(artifact)
 
-    def _serialize(self):
-        mod = copy.copy(self._artifact)
-        mod.current_callable = None
-        return (mod,)
+    def convert_to_bytes(self) -> Tuple[callable, bytes]:
+        with temp_disable_tracing_envs():
+            current_callable = self._artifact.current_callable
+            self._artifact.current_callable = None
+            serialized = pickle.dumps(self._artifact)
+            self._artifact.current_callable = current_callable
+            return serialized
 
     @staticmethod
-    def _deserialize(mod):
+    def rebuild_from_bytes(bytes):
         logger.info(f"Deserializing a {CompiledFxGraph.__qualname__}")
-        compiled_fn = mod
+        with temp_disable_tracing_envs():
+            # Disable tracing envs is necessary because we need to load REAL tensors as parameters and buffers
+            compiled_fn = pickle.loads(bytes)
         # Torch Inductor config is lazy initialized. invoke it manually
         for device in compiled_fn.device_types:
             if device == "cpu":
@@ -264,19 +287,21 @@ class XpuGraphLocalCache(XpuGraphCache):
 
         artifact_path = self._artifact_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
-        with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
-            with open(artifact_path, "wb+") as f:
-                pickle.dump(value, f)
-            with open(artifact_path, "rb") as f:
-                return pickle.load(f)
+        artifact_bytes = value.convert_to_bytes()
+        with open(artifact_path, "wb+") as f:
+            pickle.dump((value.rebuild_from_bytes, artifact_bytes), f)
+        with open(artifact_path, "rb") as f:
+            rebuild_from_bytes, artifact_bytes = pickle.load(f)
+            return rebuild_from_bytes(artifact_bytes)
+        return value
 
     def load_artifact(self, key):
         artifact_path = self._artifact_path(key)
         if os.path.isfile(artifact_path):
-            with compile_lock, _disable_current_modes(), TracingContext.patch(fake_mode=None):
-                logger.info(f"Use cache in location: {artifact_path}")
-                with open(artifact_path, "rb") as f:
-                    return pickle.load(f)
+            logger.info(f"Use cache in location: {artifact_path}")
+            with open(artifact_path, "rb") as f:
+                rebuild_from_bytes, artifact_bytes = pickle.load(f)
+                return rebuild_from_bytes(artifact_bytes)
         else:
             return None
 
