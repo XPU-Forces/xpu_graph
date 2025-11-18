@@ -96,12 +96,10 @@ def mlu_compiler(
         class PatchedPickableXpuGraphBackend(XpuGraph):
             def __call__(self, *args, **kwargs):
                 compiled = super().__call__(*args, **kwargs)
-                from .cache import (
-                    CompiledFxGraph,
-                    GraphModule,
-                    SerializableCompiledFxGraph,
-                    SerializableGraphModule,
-                )
+                from torch._inductor.compile_fx import CompiledFxGraph
+                from torch.fx import GraphModule
+
+                from .cache import SerializableCompiledFxGraph, SerializableGraphModule
                 from .runtime import XpuGraphRuntimeArtifact
 
                 if isinstance(compiled, XpuGraphRuntimeArtifact):
