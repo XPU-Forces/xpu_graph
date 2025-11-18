@@ -11,16 +11,6 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.test_utils import need_xpu_graph_logs
 
 
-@pytest.fixture
-def clear_cache_dir():
-    import shutil
-    from glob import glob
-
-    # NOTE(liuyuan): clear all cache
-    for dir in glob("/tmp/xpu_graph_*"):
-        shutil.rmtree(dir)
-
-
 @pytest.mark.exclusive
 class TestNpuCompilationCache:
     def setup_method(self):
@@ -46,8 +36,8 @@ class TestNpuCompilationCache:
         ),
         ids=("aclgraph", "ge"),
     )
-    def test_cache(self, compiler_setting, clear_cache_dir):
-        cache = XpuGraphLocalCache("/tmp/xpu_graph_whhh")
+    def test_cache(self, tmp_path, compiler_setting):
+        cache = XpuGraphLocalCache(tmp_path)
         compiler_setting(self)
         ori_gm = []
         compiled_gm = []
@@ -92,7 +82,7 @@ class TestNpuCompilationCache:
         ),
         ids=("aclgraph", "ge"),
     )
-    def test_compile_pipeline(self, compiler_setting, clear_cache_dir, caplog):
+    def test_compile_pipeline(self, compiler_setting, caplog):
         compiler_setting(self)
 
         class Model(torch.nn.Module):
