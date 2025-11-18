@@ -41,7 +41,6 @@ def test_silu_mul():
     xconf = XpuGraphConfig(
         is_training=False,
         debug=False,
-        dump_graph=True,
         freeze=True,
         target=Target.npu,
         opt_level=OptLevel.level2,

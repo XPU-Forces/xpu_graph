@@ -52,16 +52,20 @@ dev = [
 npu = [
     "torch==2.7.1", # Change it if you wish to use another version.
     "numpy<2",
-    "torch-npu", # DO NOT forget to change the version according to PyTorch and the source defined below.
     "decorator",
     "scipy",
     "attrs",
     "psutil",
     "protobuf",
-    "byted-triton-x",
+    "byted-triton-x==3.2.0.post9",
     "pybind11",
+    "torch_npu",
 ]
 
+# [dependency-groups]
+# local_npu = ["byted-xpu-graph[dev]", "byted-xpu-graph[npu]", "torch_npu"]
+# ci_npu = ["byted-xpu-graph[dev]", "byted-xpu-graph[npu]", "torch_npu@https://tosv.byted.org/obj/seed-hhw/xllm_xpu_plugin_ci/torch_npu-2.7.1.post1.dev20251016-cp311-cp311-manylinux_2_28_x86_64.whl"]
+#
 
 [project.urls]
 Homepage = "https://github.com/XPU-Forces/xpu_graph"
@@ -85,4 +89,4 @@ url = "https://download.pytorch.org/whl/cpu"
 torch           = { index = "pytorch_cpu" }
 torchvision     = { index = "pytorch_cpu" }
 # DO NOT forget to change the verison here.
-torch_npu       = { url = "https://tosv.byted.org/obj/seed-hhw/xllm_xpu_plugin_ci/torch_npu-2.7.1.dev20250903-cp310-cp310-manylinux_2_28_x86_64.whl" }
+torch_npu       = { url = "https://tosv.byted.org/obj/seed-hhw/xllm_xpu_plugin_ci/torch_npu-2.7.1.dev20251107-cp310-cp310-manylinux_2_28_x86_64.whl" }
