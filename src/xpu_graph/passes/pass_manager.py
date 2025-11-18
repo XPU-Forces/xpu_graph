@@ -46,7 +46,8 @@ class PassManager:
         if self._config.constant_folding:
             from .constant_folding import ConstantFolding
 
-            self._passes.append(ConstantFolding(self._config.folding_freezed_params))
+            if ConstantFolding._opt_level <= self._config.opt_level:
+                self._passes.append(ConstantFolding(self._config.folding_freezed_params))
 
         for pass_ in self._passes:
             pass_._set_level(self._config.opt_level)
