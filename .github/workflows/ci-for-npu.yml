@@ -76,8 +76,8 @@ jobs:
       run: |
         echo "Running npu tests..."
         . .venv/bin/activate
-        pytest --cov=xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
-        pytest --cov=xpu_graph --cov-append -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
+        pytest --cov=src/xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
+        pytest --cov=src/xpu_graph --cov-append -m "exclusive" --cov-report=xml -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -86,3 +86,4 @@ jobs:
         fail_ci_if_error: true
         use_pypi: true
         verbose: true
+        files: ./coverage.xml
