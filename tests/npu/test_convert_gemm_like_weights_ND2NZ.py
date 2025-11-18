@@ -71,7 +71,6 @@ class TestFoldNdToNzFormat:
                 is_training=False,
                 debug=True,
                 target=xpu_graph.Target.npu,
-                dump_graph=True,
                 freeze=True,
                 opt_level=OptLevel.level1,
                 vendor_compiler_config={"mode": "reduce-overhead", "compiler": "ge"},
