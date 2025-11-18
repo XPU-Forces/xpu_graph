@@ -57,7 +57,7 @@ npu = [
     "attrs",
     "psutil",
     "protobuf",
-    "byted-triton-x",
+    "byted-triton-x==3.2.0.post9",
     "pybind11",
     "torch_npu",
 ]
