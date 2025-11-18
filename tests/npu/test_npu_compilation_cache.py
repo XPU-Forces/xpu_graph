@@ -23,6 +23,7 @@ def clear_cache_dir():
         shutil.rmtree(dir)
 
 
+@pytest.mark.exclusive
 class TestNpuCompilationCache:
     def setup_method(self):
         self.compiler = XpuGraphCompiler()
@@ -47,7 +48,6 @@ class TestNpuCompilationCache:
         ),
         ids=("aclgraph", "ge"),
     )
-    @pytest.mark.exclusive
     def test_cache(self, compiler_setting, clear_cache_dir):
         cache = XpuGraphLocalCache("/tmp/xpu_graph_whhh")
         compiler_setting(self)
@@ -94,7 +94,6 @@ class TestNpuCompilationCache:
         ),
         ids=("aclgraph", "ge"),
     )
-    @pytest.mark.exclusive
     def test_compile_pipeline(self, compiler_setting, clear_cache_dir, caplog):
         compiler_setting(self)
 
