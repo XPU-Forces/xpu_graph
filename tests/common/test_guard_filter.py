@@ -33,6 +33,7 @@ class TestGuardFilter:
             compare_func(foo, self.xpu_graph_backend, xpu_graph.skip_all_guards_unsafe)
 
         assert caplog.text.count("xpu_graph passes start ") == 1
+        assert caplog.text.count("Ignoring all guards!!!") == 1
 
 
 if __name__ == "__main__":
