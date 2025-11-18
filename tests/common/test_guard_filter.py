@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+import xpu_graph
 from xpu_graph import XpuGraph, XpuGraphConfig
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
@@ -12,7 +13,6 @@ def foo(x):
 
 
 def compare_func(func, xpu_graph_backend, guard_filter_fn=None):
-    guard_filter_fn = guard_filter_fn or (lambda guards: [False for _ in guards])
     compiled = torch.compile(
         func, backend=xpu_graph_backend, dynamic=False, options={"guard_filter_fn": guard_filter_fn}
     )
@@ -28,15 +28,9 @@ class TestGuardFilter:
         config = XpuGraphConfig(is_training=False, enable_cache=False)
         self.xpu_graph_backend = XpuGraph(config)
 
-    @pytest.mark.parametrize(
-        "func",
-        [
-            foo,
-        ],
-    )
-    def test_guard_filter(self, caplog, func):
+    def test_skip_all_guards(self, caplog):
         with need_xpu_graph_logs():
-            compare_func(func, self.xpu_graph_backend)
+            compare_func(foo, self.xpu_graph_backend, xpu_graph.skip_all_guards_unsafe)
 
         assert caplog.text.count("xpu_graph passes start ") == 1
 

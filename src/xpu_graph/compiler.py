@@ -3,7 +3,6 @@ from itertools import chain
 
 import torch
 from torch._dynamo.backends.common import aot_autograd
-from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import (
     SerializableArtifact,
@@ -11,7 +10,7 @@ from .cache import (
     XpuGraphCache,
     default_cache,
 )
-from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
+from .config import Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
     dispatch_graph,
