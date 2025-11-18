@@ -16,8 +16,6 @@ def clear_cache_dir():
     import shutil
     from glob import glob
 
-    from xpu_graph.config import get_cache_dir
-
     # NOTE(liuyuan): clear all cache
     for dir in glob("/tmp/xpu_graph_*"):
         shutil.rmtree(dir)

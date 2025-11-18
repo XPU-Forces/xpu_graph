@@ -95,7 +95,6 @@ class TestAddRMSNormPattern:
     def setup_class(self):
         config = XpuGraphConfig(
             is_training=False,
-            dump_graph=True,
             freeze=True,
             target=Target.npu,
             opt_level=OptLevel.level2,
