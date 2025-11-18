@@ -2,11 +2,11 @@ import hashlib
 import importlib
 import os
 import pickle
-from abc import ABC, abstractclassmethod, abstractmethod
+from abc import ABC, abstractmethod
+from contextlib import contextmanager, nullcontext
 from functools import wraps
 from os import PathLike
 from typing import Union
-from contextlib import contextmanager, nullcontext
 
 import torch
 from torch._dynamo.convert_frame import compile_lock
@@ -18,7 +18,7 @@ from torch.utils._python_dispatch import _disable_current_modes
 
 from .config import Target, XpuGraphConfig, get_cache_dir
 from .fx_utils import FxStage
-from .utils import PolyBackendDispatcher, logger
+from .utils import logger
 
 
 class _ArgWrapper:
@@ -91,6 +91,7 @@ def temp_disable_tracing_envs():
         tracing_context = TracingContext.try_get()
         with tracing_context.patch(fake_mode=None) if tracing_context else nullcontext():
             yield
+
 
 class SerializableGraphModule(SerializableArtifact):
     def __init__(self, artifact):
