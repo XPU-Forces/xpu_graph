@@ -113,8 +113,6 @@ def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> t
     with torch._inductor.config.patch(inductor_backend.config):
         compiled_func = compile_fx_inner(module, inputs, is_inference=is_inference, is_backward=is_backward)
 
-    compiled_func._xpu_graph_mark_npu_inductor_compilation = True
-
     return compiled_func
 
 
