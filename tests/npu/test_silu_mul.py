@@ -1,13 +1,7 @@
-import numpy as np
-import pytest
 import torch
-import torch._dynamo.config
-import torch_npu
-import triton
-import triton.language as tl
-from torch import fx, nn
+from torch import nn
 
-import xpu_graph
+from xpu_graph import OptLevel, Target, XpuGraph, XpuGraphConfig
 from xpu_graph.accuracy_utils import assert_close, benchmark_compare_close
 
 
@@ -35,8 +29,6 @@ def test_silu_mul():
 
     # compile
     model_forward = model.forward
-    from xpu_graph.compiler import OptLevel, Target, XpuGraph
-    from xpu_graph.config import XpuGraphConfig
 
     xconf = XpuGraphConfig(
         is_training=False,
