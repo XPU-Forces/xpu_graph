@@ -95,7 +95,6 @@ class TestAddRMSNormPattern:
     def setup_class(self):
         config = XpuGraphConfig(
             is_training=False,
-            dump_graph=True,
             freeze=True,
             target=Target.npu,
             opt_level=OptLevel.level2,
@@ -108,6 +107,7 @@ class TestAddRMSNormPattern:
         with need_xpu_graph_logs():
             compare_add_rmsnorm_pattern(self.xpu_graph_backend)
         assert "Pattern.FusedAddRmsnorm changed graph" in caplog.text
+        assert "Save cache in location" not in caplog.text
 
 
 if __name__ == "__main__":

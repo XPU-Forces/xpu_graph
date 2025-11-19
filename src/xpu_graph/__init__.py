@@ -5,6 +5,7 @@ from typing import Any, Dict
 from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
 from .compiler import XpuGraph
 from .config import OptLevel, Target, XpuGraphConfig
+from .guard_filters import *
 from .passes.patterns.plugin_pattern import *
 from .version import __version__
 
@@ -22,6 +23,7 @@ __all__ = [
     "register_this_as_pattern_constraint",
     "deregister_plugin_patterns",
     "enable_plugin_patterns",
+    "skip_all_guards_unsafe",
 ]
 
 
@@ -94,12 +96,10 @@ def mlu_compiler(
         class PatchedPickableXpuGraphBackend(XpuGraph):
             def __call__(self, *args, **kwargs):
                 compiled = super().__call__(*args, **kwargs)
-                from .cache import (
-                    CompiledFxGraph,
-                    GraphModule,
-                    SerializableCompiledFxGraph,
-                    SerializableGraphModule,
-                )
+                from torch._inductor.compile_fx import CompiledFxGraph
+                from torch.fx import GraphModule
+
+                from .cache import SerializableCompiledFxGraph, SerializableGraphModule
                 from .runtime import XpuGraphRuntimeArtifact
 
                 if isinstance(compiled, XpuGraphRuntimeArtifact):

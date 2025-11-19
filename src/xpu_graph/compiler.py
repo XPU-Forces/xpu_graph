@@ -1,9 +1,9 @@
 import os
 from itertools import chain
+from typing import Callable
 
 import torch
 from torch._dynamo.backends.common import aot_autograd
-from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .cache import (
     SerializableArtifact,
@@ -11,7 +11,7 @@ from .cache import (
     XpuGraphCache,
     default_cache,
 )
-from .config import OptLevel, Target, XpuGraphConfig, get_partition_fn
+from .config import Target, XpuGraphConfig, get_partition_fn
 from .fx_utils import (
     FxStage,
     dispatch_graph,
@@ -39,14 +39,6 @@ class XpuGraph:
         self._config = config
         # Setup logging based on config
         setup_logger(self._config.debug)
-
-        if (
-            self._config.target == Target.npu
-            and self._config.vendor_compiler_config is not None
-            and self._config.vendor_compiler_config.get("compiler", "ge") == "ge"
-        ):
-            self._config.enable_cache = False
-            logger.warning("Target NPU ge-compiler does not support cache.")
 
         self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
         self._set_context()
@@ -148,17 +140,17 @@ class XpuGraph:
                 "before compile: graph like:\n %s",
                 dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
             )
-            kwargs = {}
+            aot_config = {}
             if self._config.is_training:
-                kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
-                kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
-                kwargs["keep_inference_input_mutations"] = True
+                aot_config["fw_compiler"] = _staged_compiler(FxStage.forward)
+                aot_config["bw_compiler"] = _staged_compiler(FxStage.backward)
+                aot_config["keep_inference_input_mutations"] = True
                 if partition_fn := get_partition_fn(self._config.partition_fn):
-                    kwargs["partition_fn"] = partition_fn
+                    aot_config["partition_fn"] = partition_fn
             else:
-                kwargs["fw_compiler"] = _staged_compiler(FxStage.inference)
-                kwargs["keep_inference_input_mutations"] = True
-            xpu_gm = aot_autograd(**kwargs)(dynamo_gm, example_inputs)
+                aot_config["fw_compiler"] = _staged_compiler(FxStage.inference)
+                aot_config["keep_inference_input_mutations"] = True
+            xpu_gm = aot_autograd(**aot_config)(dynamo_gm, example_inputs)
             fw_metadata = None
         elif self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
@@ -178,12 +170,12 @@ class XpuGraph:
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
-            kwargs = {}
-            kwargs["fw_compiler"] = _staged_compiler(FxStage.forward)
-            kwargs["bw_compiler"] = _staged_compiler(FxStage.backward)
+            aot_config = {}
+            aot_config["fw_compiler"] = _staged_compiler(FxStage.forward)
+            aot_config["bw_compiler"] = _staged_compiler(FxStage.backward)
             if partition_fn := get_partition_fn(self._config.partition_fn):
-                kwargs["partition_fn"] = partition_fn
-            xpu_gm = aot_autograd(**kwargs)(pregrad_gm, fake_inputs)
+                aot_config["partition_fn"] = partition_fn
+            xpu_gm = aot_autograd(**aot_config)(pregrad_gm, fake_inputs)
 
         else:
             logger.debug(
@@ -214,6 +206,18 @@ class XpuGraph:
                 mark=os.environ.get("RANK", "0"),
                 config_str=self._config.enable_interceptor,
             )
+
+        if (guard_filter_fn := kwargs.get("options", {}).get("guard_filter_fn")) is not None and (
+            tracing_context := torch._guards.TracingContext.try_get()
+        ) is not None:
+            orig_guards = tracing_context.guards_context.dynamo_guards
+            filter_flags = guard_filter_fn(orig_guards)
+            filtered_guards = torch._guards.GuardsSet(
+                set(guard for guard, flag in zip(orig_guards, filter_flags) if not flag)
+            )
+            logger.info(f"Removed guards: {list(filtered_guards)}")
+            tracing_context.guards_context.dynamo_guards = orig_guards - filtered_guards
+
         return xpu_gm
 
     def get_pattern_manager(self):
@@ -247,3 +251,60 @@ class XpuGraph:
             torch._dynamo.config.numpy_default_float = self._orig_ctx["torch._dynamo.config.numpy_default_float"]
         if self._cache is not None:
             self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])
+
+
+class XpuGraphCompiler:
+    def __init__(self):
+        super().__init__()
+        self._config = XpuGraphConfig(is_training=False)
+        self._config._reset_config_with_env()
+        # for filed in type(self._config).__dataclass_fields__.keys():
+        for field in XpuGraphConfig.__dataclass_fields__.keys():
+            setter = self._create_setter(field)
+            setattr(
+                self.__class__,
+                field,
+                property(self._create_getter(field), setter),
+            )
+            setattr(self.__class__, "set_%s" % field, self._create_chained_setter(setter))
+
+        self.prior_work()
+        self._compiler = None
+
+    def _create_getter(self, field):
+        def getter(self):
+            return getattr(self._config, field)
+
+        return getter
+
+    def _create_setter(self, field):
+        # HACK(liuyuan): typing.Dict[str, typing.Any] is a GenericAlias which is unavailable for isinstance.
+        # See https://docs.python.org/3/library/typing.html#typing.Dict and https://docs.python.org/3/library/stdtypes.html#types-genericalias
+        expected_type = XpuGraphConfig.__dataclass_fields__[field].type if field != "vendor_compiler_config" else dict
+
+        def setter(self, val):
+            if not isinstance(val, expected_type):
+                raise TypeError(f"Expected {expected_type}, but got {type(val)}.")
+            setattr(self._config, field, val)
+            self._compiler = None
+
+        return setter
+
+    def _create_chained_setter(self, setter):
+        def chained_setter(self, val):
+            setter(self, val)
+            return self
+
+        return chained_setter
+
+    def prior_work(self):
+        ...
+
+    def done(self):
+        self._compiler = XpuGraph(self._config)
+
+    def compile(self, model: torch.nn.Module, *args, backend=None, **kwargs) -> Callable:
+        assert isinstance(
+            self._compiler, XpuGraph
+        ), "You should call XpuGraphCompiler.done before XpuGraphCompiler.compile"
+        return torch.compile(model, backend=self._compiler, *args, **kwargs)
