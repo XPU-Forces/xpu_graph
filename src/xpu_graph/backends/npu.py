@@ -88,7 +88,14 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
     return compiled_module
 
 
-def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> torch.nn.Module:
+def inductor_compiler(
+    module: torch.nn.Module,
+    inputs,
+    *,
+    is_inference: bool = False,
+    is_backward: bool = False,
+    **config_dict: Dict,
+) -> torch.nn.Module:
     logger.info("Decompose gm for npu_inductor")
     from xpu_graph.fx_utils import decompose_for_inductor
 
@@ -100,9 +107,6 @@ def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> t
 
     from torch import _TorchCompileInductorWrapper
     from torch._inductor.compile_fx import compile_fx, compile_fx_inner
-
-    is_inference = config_dict.get("is_inference", False)
-    is_backward = config_dict.get("is_backward", False)
 
     # default means None. In torch, _TorchCompileInductorWrapper's apply_mode just passes.
     mode = config_dict.get("mode", "default")
@@ -116,9 +120,17 @@ def inductor_compiler(module: torch.nn.Module, inputs, **config_dict: Dict) -> t
     return compiled_func
 
 
-def npu_compile(module: torch.nn.Module, inputs, **config_dict: Dict) -> torch.nn.Module:
+def npu_compile(
+    module: torch.nn.Module,
+    inputs,
+    *,
+    is_inference: bool = False,
+    is_backward: bool = False,
+    **config_dict: Dict,
+) -> torch.nn.Module:
     compiler = config_dict.get("compiler", "ge")
     if compiler == "ge":
+        assert is_inference, "Currently, we use ge only for inference."
         return ge_compiler(module, inputs, **config_dict)
     else:
-        return inductor_compiler(module, inputs, **config_dict)
+        return inductor_compiler(module, inputs, is_inference=is_inference, is_backward=is_backward, **config_dict)
