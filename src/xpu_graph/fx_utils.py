@@ -28,7 +28,7 @@ from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.proxy import GraphAppendingTracer, Proxy
 from torch.utils._python_dispatch import is_traceable_wrapper_subclass_type
 
-from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
 FX_COUNT = itertools.count()
 
@@ -38,6 +38,7 @@ class FxStage(Enum):
     pregrad = "pregrad"
     forward = "forward"
     backward = "backward"
+    joint = "joint"
 
 
 def trace_and_inline(
@@ -375,6 +376,46 @@ def get_disable_fake_mode():
             unset_fake_temporarily as disable_fake_mode,
         )
     return disable_fake_mode
+
+
+def freeze_compile(dynamo_gm, aot_graph_module, example_args, *, inner_compiler=None):
+    can_unlift = True
+    for name, param in dynamo_gm.named_parameters(remove_duplicate=False):
+        if _is_subclass_input(param):
+            logger.debug("Found subclass input %s, cannot unlift", name)
+            can_unlift = False
+            break
+    for name, buffer in dynamo_gm.named_buffers(remove_duplicate=False):
+        if _is_subclass_input(buffer):
+            logger.debug("Found subclass input %s, cannot unlift", name)
+            can_unlift = False
+            break
+    if can_unlift:
+        unlifted_nodes = _unlift_params(dynamo_gm, aot_graph_module)
+        num_params = len([node for node in unlifted_nodes if node.op != "placeholder"])
+        aot_graph_module.graph.lint()
+        aot_graph_module.recompile()
+    if inner_compiler is not None:
+        compiled = inner_compiler(aot_graph_module, example_args)
+    else:
+        compiled = aot_graph_module
+
+    if can_unlift:
+
+        def freeze_wrapper(full_args):
+            print(len(full_args), full_args)
+            unfreezed_args = list(full_args[num_params:])
+            print(len(unfreezed_args), unfreezed_args)
+            full_args.clear()
+            if not hasattr(compiled, "_boxed_call"):
+                return compiled(*unfreezed_args)
+            return compiled(unfreezed_args)
+
+        freeze_wrapper._boxed_call = True
+
+        return freeze_wrapper
+
+    return compiled
 
 
 def _get_wrapped_constant(node: fx.Node):
