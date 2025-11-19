@@ -106,7 +106,8 @@ class XpuGraph:
                 else:
                     xpu_compiled = SerializableGraphModule(xpu_compiled)
 
-                if self._config.enable_cache:
+                if self._config.enable_cache and stage != FxStage.joint:
+                    # Note(chenyifan): Disable cache for FxStage.joint for now, as it drops necessary meta info for parition_fn
                     if isinstance(xpu_compiled, SerializableArtifact):
                         xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
                     else:
