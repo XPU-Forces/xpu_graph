@@ -124,17 +124,16 @@ class XpuGraph:
 
     def _legacy_dispatch_and_compile(self, dynamo_gm, example_inputs):
         fallback_dispatch = False
-        if self._config.fallback_legacy_dispatch:
-            if self._config.is_training:
-                hop_nodes = find_hop_nodes(dynamo_gm)
-                if len(hop_nodes) > 0:
-                    logger.warning(f"Higher order operators detected: {', '.join(str(op) for op in hop_nodes)}.")
-                    fallback_dispatch = True
-
-            subclass_tensors = find_subclass_inputs(example_inputs)
-            if len(subclass_tensors) > 0:
-                logger.warning(f"Subclass inputs detected: {', '.join(str(cls) for cls in subclass_tensors)}.")
+        if self._config.is_training:
+            hop_nodes = find_hop_nodes(dynamo_gm)
+            if len(hop_nodes) > 0:
+                logger.warning(f"Higher order operators detected: {', '.join(str(op) for op in hop_nodes)}.")
                 fallback_dispatch = True
+
+        subclass_tensors = find_subclass_inputs(example_inputs)
+        if len(subclass_tensors) > 0:
+            logger.warning(f"Subclass inputs detected: {', '.join(str(cls) for cls in subclass_tensors)}.")
+            fallback_dispatch = True
 
         if fallback_dispatch:
             logger.debug(
@@ -315,7 +314,8 @@ class XpuGraphCompiler:
 
         return chained_setter
 
-    def prior_work(self): ...
+    def prior_work(self):
+        ...
 
     def done(self):
         self._compiler = XpuGraph(self._config)
