@@ -76,7 +76,13 @@ jobs:
       run: |
         echo "Running npu tests..."
         . .venv/bin/activate
-        pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
+        echo "Running with fallback legacy dispatch..."
+        export XPU_GRAPH_FALLBACK_LEGACY_DISPATCH=1
+        pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph --cov-report=xml -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
+        pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph --cov-append --cov-report=xml -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
+        echo "Running with new dispatch..."
+        export XPU_GRAPH_FALLBACK_LEGACY_DISPATCH=0
+        pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph --cov-append --cov-report=xml -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
         pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph --cov-append --cov-report=xml -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
     - uses: codecov/codecov-action@v5
       env:
