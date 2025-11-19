@@ -391,10 +391,25 @@ def freeze_compile(dynamo_gm, aot_graph_module, example_args, *, inner_compiler=
             can_unlift = False
             break
     if can_unlift:
+        logger.debug(
+            "Before freezing, graph like:\n %s",
+            aot_graph_module.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
         unlifted_nodes = _unlift_params(dynamo_gm, aot_graph_module)
-        num_params = len([node for node in unlifted_nodes if node.op != "placeholder"])
         aot_graph_module.graph.lint()
         aot_graph_module.recompile()
+        unlifted_params = [node for node in unlifted_nodes if node.op == "get_attr"]
+        num_params = len(unlifted_params)
+        example_args = list(example_args[num_params:])
+        logger.info(
+            "Freezing %d params: %s",
+            num_params,
+            [node.target for node in unlifted_params],
+        )
+        logger.debug(
+            "After freezing, graph like:\n %s",
+            aot_graph_module.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
     if inner_compiler is not None:
         compiled = inner_compiler(aot_graph_module, example_args)
     else:
@@ -403,9 +418,7 @@ def freeze_compile(dynamo_gm, aot_graph_module, example_args, *, inner_compiler=
     if can_unlift:
 
         def freeze_wrapper(full_args):
-            print(len(full_args), full_args)
             unfreezed_args = list(full_args[num_params:])
-            print(len(unfreezed_args), unfreezed_args)
             full_args.clear()
             if not hasattr(compiled, "_boxed_call"):
                 return compiled(*unfreezed_args)
