@@ -165,6 +165,8 @@ class TestCombinePointwiseSourceTraining:
         ],
     )
     def test_pointwise_patterns(self, caplog, pattern_func):
+        if not self.xpu_graph_backend._config.fallback_legacy_dispatch:
+            pytest.skip("Pregrad passes will be replaced with joint passes")
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             combine_pointwise_test(self.xpu_graph_backend, pattern_func, is_training=True)
         if "xfail" in pattern_func.__name__:
