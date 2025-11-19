@@ -14,7 +14,7 @@ opt_times = 0
 class Optimizer(ABC):
     _debug = False
     _dump_graph = False
-    _opt_level = OptLevel.level0
+    _opt_level = OptLevel.level1
     _support_stages = [FxStage.inference]
 
     @abstractmethod

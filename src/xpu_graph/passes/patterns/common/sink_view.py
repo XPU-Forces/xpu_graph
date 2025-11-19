@@ -21,7 +21,7 @@ from ..utils.check_ops import (
 
 
 class SinkView(Pattern):
-    _opt_level = OptLevel.level0
+    _opt_level = OptLevel.level1
     _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
