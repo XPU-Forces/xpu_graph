@@ -6,7 +6,7 @@ from enum import Enum
 import torch
 import torch.fx as fx
 
-from xpu_graph.config import OptLevel
+from xpu_graph.config import OptLevel, XpuGraphConfig
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
@@ -37,6 +37,21 @@ class Pattern(Optimizer):
 
     def set_current_stage(self, stage: FxStage):
         self._current_stage = stage
+
+    @classmethod
+    def filter(cls, config: XpuGraphConfig) -> bool:
+        if cls._opt_level <= config.opt_level:
+            if cls.__name__ not in config.skip_patterns:
+                return True
+            else:
+                logger.info(f"Skip {cls._opt_level} pattern {cls.__name__}")
+                return False
+        else:
+            if cls.__name__ in config.include_patterns and cls.__name__ not in config.skip_patterns:
+                logger.info(f"Add {cls._opt_level} pattern {cls.__name__}")
+                return True
+            else:
+                return False
 
 
 class PatternRule(object):
