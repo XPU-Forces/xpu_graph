@@ -1,16 +1,34 @@
-import os
 import pickle
-from functools import cache
 from typing import Dict
 
 import torch
+from torch._functorch._aot_autograd.utils import make_boxed_func
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.graph_module import GraphModule
+from torch.fx.interpreter import Interpreter
 
 from xpu_graph.cache import SerializableArtifact, temp_disable_tracing_envs
-from xpu_graph.config import Target, get_cache_dir
-from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger, recursive_set_obj
+
+
+class PatchedFSDPInterpreter(Interpreter):
+    def call_function(self, target, args, kwargs):
+        if target in [
+            torch.ops._c10d_functional.reduce_scatter_tensor.default,
+            torch.ops._c10d_functional.all_gather_into_tensor.default,
+        ]:
+            if not args[0].is_contiguous():
+                print(
+                    f"Warning: {target} input is not contiguous, trying to fix it. Expect contiguous, but get {args[0].shape} {args[0].stride()}"
+                )
+                args = (args[0].contiguous(), *args[1:])
+
+        return super().call_function(target, args, kwargs)
+
+
+def patched_runner(gm: GraphModule, example_inputs):
+    compiled = PatchedFSDPInterpreter(gm)
+    return make_boxed_func(compiled.run)
 
 
 class NpuSerializableArtifact(SerializableArtifact):
@@ -134,5 +152,7 @@ def npu_compile(
     if compiler == "ge":
         assert is_inference, "Currently, we use ge only for inference."
         return ge_compiler(module, inputs, **config_dict)
+    elif compiler == "patched_runner":
+        return patched_runner(module, inputs)
     else:
         return inductor_compiler(module, inputs, is_inference=is_inference, is_backward=is_backward, **config_dict)
