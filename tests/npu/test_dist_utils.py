@@ -13,8 +13,8 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.mlu.manual_seed(seed)
-    torch.mlu.manual_seed_all(seed)
+    torch.npu.manual_seed(seed)
+    torch.npu.manual_seed_all(seed)
 
 
 class RandomDataset(Dataset):
@@ -76,9 +76,9 @@ def dist_setup(rank, world_size, mesh_shape=None, mesh_dim_names=None):
 
     if mesh_shape is None:
         mesh_shape = (world_size,)
-    dist.init_process_group(backend="cncl", rank=rank, world_size=world_size)
-    device_mesh = init_device_mesh("mlu", mesh_shape, mesh_dim_names=mesh_dim_names)
-    torch.mlu.set_device(rank)
+    dist.init_process_group(backend="hccl", rank=rank, world_size=world_size)
+    device_mesh = init_device_mesh("npu", mesh_shape, mesh_dim_names=mesh_dim_names)
+    torch.npu.set_device(rank)
     return device_mesh
 
 
