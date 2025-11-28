@@ -92,15 +92,16 @@ def infer(rank, world_size, do_compile, return_queue, ModCls, model_path):
         model = torch.compile(model, backend=xpu_graph_backend, dynamic=False)
 
     final_loss = 0
-    for batch_idx, (data, target) in enumerate(dataloader):
-        data, target = data.mlu(rank), target.mlu(rank)
-        output = model(data)
-        loss = criterion(output, target)
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(dataloader):
+            data, target = data.mlu(rank), target.mlu(rank)
+            output = model(data)
+            loss = criterion(output, target)
 
-        if batch_idx % 10 == 0 and rank == 0:
-            print(f"Batch [{batch_idx}], Loss: {loss.item():.4f}")
+            if batch_idx % 10 == 0 and rank == 0:
+                print(f"Batch [{batch_idx}], Loss: {loss.item():.4f}")
 
-        final_loss = final_loss + loss
+            final_loss = final_loss + loss
 
     return_queue.put((rank, final_loss.item()))
     cleanup()
@@ -163,4 +164,4 @@ class TestTP:
 
 
 if __name__ == "__main__":
-    tp_test(MainModel)
+    tp_test(MainModel, is_training=True)

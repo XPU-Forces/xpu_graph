@@ -31,10 +31,20 @@ def npu_compiler(
     freeze: bool = False,
     opt_level: OptLevel = OptLevel.level1,
     constant_folding: bool = True,
-    cache: XpuGraphCache = default_cache(),
     debug: bool = False,
-    vendor_compiler_config: Dict[str, Any] = {"mode": "default"},
+    **kwargs,
 ):
+    # Note:
+    #   By default, npu_compiler uses empty config to invoke vendor_compiler,
+    #   It is equivalent to vendor_compiler_config={"compiler": "ge", "mode": "reduce-overhead"} , using aclgraph as the backend
+    #   If you want to use inductor, you need to set vendor_compiler_config={"compiler": "inductor"} and the default mode is "default"
+    vendor_compiler_config: Dict[str, Any] = kwargs.get("vendor_compiler_config", {})
+
+    if "cache" in kwargs:
+        cache: XpuGraphCache = kwargs["cache"]
+    else:
+        cache: XpuGraphCache = default_cache()
+
     config = XpuGraphConfig(
         is_training=False,
         target=Target.npu,

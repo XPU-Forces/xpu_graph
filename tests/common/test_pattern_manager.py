@@ -46,7 +46,7 @@ def test_register_pattern_default():
 
 
 def test_register_pattern_update():
-    register_pattern_test(OptLevel.level2, OptLevel.level0)
+    register_pattern_test(OptLevel.level2, OptLevel.level1)
 
 
 def test_register_pattern_xfail():
