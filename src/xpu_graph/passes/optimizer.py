@@ -51,14 +51,11 @@ class Optimizer(ABC):
 
     def __dump_files(self, gm):
         import os
-        import shutil
 
         global opt_times
-        dirname = "xpu_graph_debugs"
+        dirname = f"xpu_graph_debugs_pid{os.getpid()}"
 
-        if opt_times == 0:
-            if os.path.exists(dirname):
-                shutil.rmtree(dirname)
+        if not os.path.exists(dirname):
             os.makedirs(dirname)
 
         filename = os.path.join(dirname, f"optimization_{opt_times}_after_pass_{self.__class__.__name__}")
