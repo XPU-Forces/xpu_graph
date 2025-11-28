@@ -20,11 +20,24 @@ def all_same_tensor(tensor_list):
 
 
 class FusedCombineBmm(nn.Module):
-    def forward(self, input_list, weight_list, bias_list, act: str, trans_a: bool, trans_b: bool, use_groupgemm: bool):
+    def forward(
+        self,
+        input_list,
+        weight_list,
+        bias_list,
+        act: str,
+        trans_a: bool,
+        trans_b: bool,
+        use_groupgemm: bool,
+    ):
         if use_groupgemm:
-            output = self.forward_groupgemm(input_list, weight_list, bias_list, trans_a, trans_b)
+            output = self.forward_groupgemm(
+                input_list, weight_list, bias_list, trans_a, trans_b
+            )
         else:
-            output = self.forward_bmm(input_list, weight_list, bias_list, trans_a, trans_b)
+            output = self.forward_bmm(
+                input_list, weight_list, bias_list, trans_a, trans_b
+            )
 
         # Apply activation function if specified
 
@@ -75,9 +88,15 @@ class FusedCombineBmm(nn.Module):
             output = output.view(weight_shape[0], input_shape[1], M, N)
         return output
 
-    def forward_groupgemm(self, input_list, weight_list, bias_list, trans_a: bool, trans_b: bool):
-        processed_inputs = [i.contiguous() if not i.is_contiguous() else i for i in input_list]
-        processed_weights = [w.contiguous() if not w.is_contiguous() else w for w in weight_list]
+    def forward_groupgemm(
+        self, input_list, weight_list, bias_list, trans_a: bool, trans_b: bool
+    ):
+        processed_inputs = [
+            i.contiguous() if not i.is_contiguous() else i for i in input_list
+        ]
+        processed_weights = [
+            w.contiguous() if not w.is_contiguous() else w for w in weight_list
+        ]
         args = [processed_inputs, processed_weights]
         kwargs = {"trans_a": trans_a, "trans_b": trans_b}
         if bias_list[0] is not None:
@@ -96,7 +115,15 @@ class FusedCombineBmm(nn.Module):
         if isinstance(output, list):
             output = torch.stack(output, dim=0)
         elif len(output.shape) == 2:
-            output = output.view(len(input_list), input_list[0].shape[0], weight_list[0].shape[1])
+            if trans_b == False:
+                K, N = weight_list[0].shape[-2:]
+            else:
+                N, K = weight_list[0].shape[-2:]
+            if trans_a == False:
+                M, K = input_list[0].shape[-2:]
+            else:
+                K, M = input_list[0].shape[-2:]
+            output = output.view(len(input_list), M, N)
         return output
 
 
@@ -129,11 +156,14 @@ class FusedCombineMatMul(Pattern):
             candidates = [
                 node
                 for node in graph_module.graph.nodes
-                if (node.op == "call_function" or node.op == "call_module") and node.target == module
+                if (node.op == "call_function" or node.op == "call_module")
+                and node.target == module
             ]
             if len(candidates) < COMBINE_MM_WIDTH:
                 continue
-            changed = changed | self.combo_matmul(graph_module, candidates, COMBINE_MM_WIDTH)
+            changed = changed | self.combo_matmul(
+                graph_module, candidates, COMBINE_MM_WIDTH
+            )
 
         return changed
 
@@ -145,7 +175,9 @@ class FusedCombineMatMul(Pattern):
         trans_b = mm_descs[0].input2_trans
         act = mm_descs[0].act
 
-        last_node = max(desc.node for desc in mm_descs if isinstance(desc.node, fx.Node))
+        last_node = max(
+            desc.node for desc in mm_descs if isinstance(desc.node, fx.Node)
+        )
         with graph_module.graph.inserting_before(last_node):
             if (
                 self._current_stage == FxStage.inference
@@ -157,12 +189,24 @@ class FusedCombineMatMul(Pattern):
                 use_groupgemm = False
             new_node = graph_module.graph.call_module(
                 "fused_combo_bmm",
-                args=(new_input, new_weight, new_bias, act, trans_a, trans_b, use_groupgemm),
+                args=(
+                    new_input,
+                    new_weight,
+                    new_bias,
+                    act,
+                    trans_a,
+                    trans_b,
+                    use_groupgemm,
+                ),
             )
-            unbind_node = graph_module.graph.call_function(torch.ops.aten.unbind.int, args=(new_node,))
+            unbind_node = graph_module.graph.call_function(
+                torch.ops.aten.unbind.int, args=(new_node,)
+            )
             new_nodes = []
             for idx in range(len(mm_descs)):
-                new_n = graph_module.graph.call_function(operator.getitem, args=(unbind_node, idx))
+                new_n = graph_module.graph.call_function(
+                    operator.getitem, args=(unbind_node, idx)
+                )
                 new_nodes.append(new_n)
 
             for desc, new_n in zip(mm_descs, new_nodes):
@@ -183,11 +227,18 @@ class FusedCombineMatMul(Pattern):
                 continue
 
             key = (
+                # check abtrans
                 mm_desc.input1_trans,
                 mm_desc.input2_trans,
+                # check shape
                 str(mm_desc.input1_shape),
                 str(mm_desc.input2_shape),
                 None if mm_desc.bias == None else str(mm_desc.bias_shape),
+                # check dtype
+                mm_desc.input1_dtype,
+                mm_desc.input2_dtype,
+                None if mm_desc.bias == None else str(mm_desc.bias_dtype),
+                # check activation
                 mm_desc.act,
             )
             if key not in group_by_shape:

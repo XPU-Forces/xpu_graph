@@ -9,6 +9,7 @@ from ...utils.check_ops import (  # get_shape,
     check_t_op,
     check_trans_op,
     get_shape,
+    get_dtype,
 )
 from ...utils.combo_utils import get_ancestors
 
@@ -16,14 +17,7 @@ from ...utils.combo_utils import get_ancestors
 def has_mm_dependency(a, b):
     all_a = a.input1_ancestors + a.input2_ancestors + a.bias_ancestors
     all_b = b.input1_ancestors + b.input2_ancestors + b.bias_ancestors
-    return (
-        a.input1 in all_b
-        or a.input2 in all_b
-        or (a.bias in all_b if a.bias else False)
-        or b.input1 in all_a
-        or b.input2 in all_a
-        or (b.bias in all_a if b.bias else False)
-    )
+    return a.node in all_b or b.node in all_a
 
 
 def check_trans_input(node, final_trans):
@@ -77,6 +71,9 @@ class MMNodeDesc:
         self.extra_match = False
         self.input1_trans = False
         self.input2_trans = False
+        self.input1_dtype: Optional[torch.dtype] = None
+        self.input2_dtype: Optional[torch.dtype] = None
+        self.bias_dtype: Optional[torch.dtype] = None
 
     def set_node(self, node):
         self.node = node
@@ -87,6 +84,7 @@ class MMNodeDesc:
         if self.input1_shape == None:
             return False
         self.input1_ancestors = get_ancestors(self.input1)
+        self.input1_dtype = get_dtype(self.input1)
         return True
 
     def set_input2(self, input2, final_trans=False):
@@ -98,6 +96,7 @@ class MMNodeDesc:
             # Note: skip dot-product cases
             return False
         self.input2_ancestors = get_ancestors(self.input2)
+        self.input2_dtype = get_dtype(self.input2)
         return True
 
     def set_bias(self, bias):
@@ -107,6 +106,7 @@ class MMNodeDesc:
             if self.bias_shape == None:
                 return False
             self.bias_ancestors = get_ancestors(self.bias)
+            self.bias_dtype = get_dtype(self.bias)
         return True
 
     def set_act(self, act: str):
@@ -120,7 +120,11 @@ def get_node_desc(node):
     act = None
     check_args = False
     trans_b = False
-    if node.target in (torch.ops.aten.mm.default, torch.ops.aten.matmul.default, torch.ops.aten.bmm.default):
+    if node.target in (
+        torch.ops.aten.mm.default,
+        torch.ops.aten.matmul.default,
+        torch.ops.aten.bmm.default,
+    ):
         input1 = node.args[0]
         input2 = node.args[1]
     elif node.target == torch.ops.aten.addmm.default:
