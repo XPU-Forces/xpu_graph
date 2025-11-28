@@ -74,7 +74,7 @@ class XpuGraphConfig:
     skip_patterns: List[str] = field(default_factory=list)
 
     # Whether to use legacy dispatchers in case of higher-order operators or subclass-tensors
-    fallback_legacy_dispatch: bool = False
+    fallback_legacy_dispatch: bool = True
 
     # Users can specify which partition function to use for training
     partition_fn: Optional[Union[Callable, str]] = None
