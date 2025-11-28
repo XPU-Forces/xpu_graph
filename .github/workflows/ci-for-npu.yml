@@ -62,7 +62,7 @@ jobs:
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
-        pip install uv
+        pip install uv==0.9.10
         uv python install 3.10 --default
         uv sync --extra dev --extra npu
         . .venv/bin/activate
