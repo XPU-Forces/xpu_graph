@@ -40,7 +40,7 @@ class ConstantFolding(Optimizer):
         for node in graph.nodes:
             if node.op != "call_function":
                 continue
-            if _no_folding(node):
+            if node.is_impure() or _no_folding(node):
                 continue
 
             if self._all_input_constant(node):
