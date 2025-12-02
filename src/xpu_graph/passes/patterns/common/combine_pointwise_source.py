@@ -89,7 +89,7 @@ class CombinePointwiseSource(Pattern):
                 )
                 for cand in candidates:
                     for result_node in cand.users:
-                        if get_input_node(result_node, combinable_argidx) is cand and "val" in result_node.meta:
+                        if get_input_node(result_node, combinable_argidx) is cand:
                             combo_manager.try_add_candidate(result_node)
 
                 # DO NOT specify insertion point, because new nodes will be reordered soon
