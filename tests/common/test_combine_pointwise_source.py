@@ -110,7 +110,8 @@ class TestCombinePointwiseSourceInference:
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
                 is_training=False,
-                opt_level=OptLevel.level2,
+                opt_level=OptLevel.level1,
+                include_patterns=["CombinePointwiseSource"],
             )
         )
 
@@ -139,12 +140,13 @@ class TestCombinePointwiseSourceInference:
             assert "aten.stack.default" not in caplog.text
 
 
-class TestCombinePointwiseSinkTraining:
+class TestCombinePointwiseSourceTraining:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
                 is_training=True,
-                opt_level=OptLevel.level2,
+                opt_level=OptLevel.level1,
+                include_patterns=["CombinePointwiseSource"],
             )
         )
 
