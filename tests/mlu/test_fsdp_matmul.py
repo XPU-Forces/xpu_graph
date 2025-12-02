@@ -22,7 +22,7 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model.load_state_dict(torch.load(model_path))
     model.train()
     model.mlu(rank)
-    model.inner = FSDP(model.inner, use_orig_params=True, device_mesh=device_mesh)
+    model = FSDP(model, use_orig_params=True, device_mesh=device_mesh)
 
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.01)

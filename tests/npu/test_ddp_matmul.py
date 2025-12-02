@@ -21,7 +21,7 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model.load_state_dict(torch.load(model_path))
     model.train()
     model.npu(rank)
-    model.inner = DDP(model.inner, device_mesh=device_mesh)
+    model = DDP(model, device_mesh=device_mesh)
 
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.01)
