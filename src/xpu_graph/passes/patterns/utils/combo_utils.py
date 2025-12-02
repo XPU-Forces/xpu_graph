@@ -74,8 +74,10 @@ class ComboPoiManager:
     def try_add_candidate(self, result_node):
         if (
             not isinstance(result_node, fx.Node)
+            or "val" not in result_node.meta
             or not check_op(result_node, self.combo_op)
             or not isinstance(result_node.args[self.combo_argidx], fx.Node)
+            or "val" not in result_node.args[self.combo_argidx].meta
             or not isinstance(result_node.args[self.combo_argidx].meta["val"], torch.Tensor)
         ):
             return False

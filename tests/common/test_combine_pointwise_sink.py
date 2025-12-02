@@ -245,7 +245,7 @@ class TestCombinePointwiseSinkInference:
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
                 is_training=False,
-                opt_level=OptLevel.level1,
+                opt_level=OptLevel.level2,
             )
         )
 
@@ -278,7 +278,7 @@ class TestCombinePointwiseSinkTraining:
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
                 is_training=True,
-                opt_level=OptLevel.level1,
+                opt_level=OptLevel.level2,
             )
         )
 
@@ -303,7 +303,7 @@ class TestCombinePointwiseSinkTraining:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level1, debug=True))
+    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True))
     combine_pointwise_test(xpu_graph_backend, fn0_concat_varlen)
     combine_pointwise_test(xpu_graph_backend, fn1)
     combine_pointwise_test(xpu_graph_backend, fn2_concat_varlen)

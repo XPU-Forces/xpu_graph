@@ -53,6 +53,17 @@ def fn2(a):
     return res
 
 
+def fn2_extra_inputs(a, b, c, d):
+    a = torch.reshape(a, [a.size(0), 16, 4])
+    a_list = a.unbind(dim=-1)
+    res = 0
+    for a in a_list[:-1]:
+        res += a + b
+    res += c + d
+    res += a_list[-1]
+    return res
+
+
 def fn3_inputs(x1, x2, x3, x4):
     return x1 * 0.1 + x2 * 0.1 + x3 * 0.1 + x4
 
@@ -81,6 +92,11 @@ def combine_pointwise_test(xpu_graph_backend, func, is_training=False):
 
         if func == fn3_inputs:
             inputs = torch.reshape(inputs, [batch, 16, 4]).unbind(dim=-1)
+        elif func == fn2_extra_inputs:
+            b = torch.ones((batch, 16), device=device, dtype=data_type)
+            c = torch.ones((batch, 16), device=device, dtype=data_type)
+            d = torch.ones((batch, 16), device=device, dtype=data_type)
+            inputs = (inputs, b, c, d)
         else:
             inputs = (inputs,)
 
@@ -95,6 +111,7 @@ class TestCombinePointwiseSourceInference:
             XpuGraphConfig(
                 is_training=False,
                 opt_level=OptLevel.level1,
+                include_patterns=["CombinePointwiseSource"],
             )
         )
 
@@ -106,6 +123,7 @@ class TestCombinePointwiseSourceInference:
             fn0_split_varlen2,
             fn1,
             fn2,
+            fn2_extra_inputs,
             fn3_inputs,
             fn4_symshape,
             fn5,
@@ -122,12 +140,13 @@ class TestCombinePointwiseSourceInference:
             assert "aten.stack.default" not in caplog.text
 
 
-class TestCombinePointwiseSinkTraining:
+class TestCombinePointwiseSourceTraining:
     def setup_class(self):
         self.xpu_graph_backend = XpuGraph(
             XpuGraphConfig(
                 is_training=True,
                 opt_level=OptLevel.level1,
+                include_patterns=["CombinePointwiseSource"],
             )
         )
 
@@ -139,6 +158,7 @@ class TestCombinePointwiseSinkTraining:
             fn0_split_varlen2,
             fn1,
             fn2,
+            fn2_extra_inputs,
             fn3_inputs,
             fn4_symshape,
             fn5,
@@ -156,7 +176,7 @@ class TestCombinePointwiseSinkTraining:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level1, debug=True))
+    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, opt_level=OptLevel.level2, debug=True))
     # combine_pointwise_test(xpu_graph_backend, fn0)
     # combine_pointwise_test(xpu_graph_backend, fn1)
     # combine_pointwise_test(xpu_graph_backend, fn2)
