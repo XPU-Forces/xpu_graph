@@ -44,11 +44,11 @@ class Pattern(Optimizer):
             if cls.__name__ not in config.skip_patterns:
                 return True
             else:
-                logger.info(f"Skip {cls._opt_level} pattern {cls.__name__}")
+                logger.debug(f"Skip {cls._opt_level} pattern {cls.__name__}")
                 return False
         else:
             if cls.__name__ in config.include_patterns and cls.__name__ not in config.skip_patterns:
-                logger.info(f"Add {cls._opt_level} pattern {cls.__name__}")
+                logger.debug(f"Add {cls._opt_level} pattern {cls.__name__}")
                 return True
             else:
                 return False
