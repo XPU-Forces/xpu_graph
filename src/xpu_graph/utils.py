@@ -191,6 +191,7 @@ class __XPU_GRAPH_ENVS__:
     vendor_compiler_mode = "VENDOR_COMPILER_MODE"
     enable_interceptor = "XPUGRAPH_INTERCEPTOR"
     logs = "XPUGRAPH_LOGS"
+    include_patterns = "XPUGRAPH_DEBUG_INCLUDE_PATTERNS"
     skip_patterns = "XPUGRAPH_DEBUG_SKIP_PATTERNS"
     pointwise_combine_width = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_WIDTH"
     pointwise_combine_ops_idx = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_OPS_IDX"

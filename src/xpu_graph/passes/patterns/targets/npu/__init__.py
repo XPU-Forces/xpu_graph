@@ -3,7 +3,6 @@ import pkgutil
 
 from xpu_graph.config import XpuGraphConfig
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern, Pattern, PatternGroup
-from xpu_graph.utils import logger
 
 
 def get_all_patterns(config: XpuGraphConfig):
@@ -30,7 +29,7 @@ def get_all_patterns(config: XpuGraphConfig):
                 and issubclass(pat, Pattern)
                 and pat.__module__.startswith(__name__)
                 and pat not in (Pattern, AutoMatchPattern)
-                and pat._opt_level <= config.opt_level
+                and pat.filter(config)
             ):
                 # NOTE(liuyuan): The nodes for super kernel may have side-effects on non-GE backend.
                 if pat.__name__ == "ScopedSuperKernel" and not using_ge_backend_with_super_kernel:

@@ -75,6 +75,10 @@ jobs:
       # WARNING(liuyuan): [-n auto] will lead to error (OOM?) and 8 is efficient enough.
       run: |
         echo "Running npu tests..."
+        export DEV0=$(shuf -n 1 -e 0 2 4 6)
+        export DEV1=$(( $DEV0 + 1 ))
+        export ASCEND_RT_VISIBLE_DEVICES=$DEV0,$DEV1
+        echo "NPU_VISIBLE_DEVICES: $ASCEND_RT_VISIBLE_DEVICES"
         . .venv/bin/activate
         pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
         pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph --cov-append --cov-report=xml -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu
