@@ -40,18 +40,13 @@ class Pattern(Optimizer):
 
     @classmethod
     def filter(cls, config: XpuGraphConfig) -> bool:
-        if cls._opt_level <= config.opt_level:
-            if cls.__name__ not in config.skip_patterns:
-                return True
-            else:
-                logger.debug(f"Skip {cls._opt_level} pattern {cls.__name__}")
-                return False
-        else:
-            if cls.__name__ in config.include_patterns and cls.__name__ not in config.skip_patterns:
-                logger.debug(f"Add {cls._opt_level} pattern {cls.__name__}")
-                return True
-            else:
-                return False
+        if cls.__name__ in config.skip_patterns:
+            logger.debug(f"Skip {cls._opt_level} pattern {cls.__name__}")
+            return False
+        if cls.__name__ in config.include_patterns:
+            logger.debug(f"Add {cls._opt_level} pattern {cls.__name__}")
+            return True
+        return cls._opt_level <= config.opt_level
 
 
 class PatternRule(object):
