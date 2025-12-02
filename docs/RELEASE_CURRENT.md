@@ -16,6 +16,8 @@
 
 ## 主要特性与改进
 - XpuGraphConfig增加调试用选项`include_patterns`和`skip_patterns`，用于额外打开或关闭特定pattern。 #463
+- 调整`CombinePointwiseSource`和`CombinePointwiseSink`两个pattern的应用优化级别为`level2`。 #470
 
 ## Bug修复与其他改动
 - 修复**常量折叠**相关pass错误折叠有**副作用（side-effect）**节点的问题；
+- 修复mlu推理模式下触发FallbackLegacyDispatch后产物无法被上游组件正确序列化的问题；

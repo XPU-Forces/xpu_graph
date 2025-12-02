@@ -28,7 +28,7 @@ from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.proxy import GraphAppendingTracer, Proxy
 from torch.utils._python_dispatch import is_traceable_wrapper_subclass_type
 
-from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var
+from .utils import __XPU_GRAPH_ENVS__, get_bool_env_var, logger
 
 FX_COUNT = itertools.count()
 
@@ -179,7 +179,7 @@ def _collect_params_and_inputs_info(gm, example_inputs):
             if "tensor_dict" in node.meta and node.meta["tensor_dict"].get("_dynamo_static_input_type", None):
                 static_input_indices.append(pos)
             else:
-                print("Non-static input pos %s for source %s", pos, source_name)
+                logger.debug("Non-static input pos %s for source %s", pos, source_name)
 
     if aot_autograd_arg_pos_to_source is not None:
         assert len(full_args) == len(aot_autograd_arg_pos_to_source)
