@@ -13,10 +13,9 @@
     2. 训练场景存在higher-order operator时（如`aotograd.Function.apply`），
 
     均会自动回退到 aot_autograd 的编译流程，以覆盖现有dispatch机制不支持的场景
--
 
 ## 主要特性与改进
--
+- XpuGraphConfig增加调试用选项`include_patterns`和`skip_patterns`，用于额外打开或关闭特定pattern。 #463
 
 ## Bug修复与其他改动
 - 修复**常量折叠**相关pass错误折叠有**副作用（side-effect）**节点的问题；
