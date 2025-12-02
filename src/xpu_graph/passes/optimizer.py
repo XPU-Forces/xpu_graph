@@ -75,7 +75,4 @@ class Optimizer(ABC):
         opt_times += 1
 
     def _set_level(self, opt_level: OptLevel):
-        assert (
-            self.__class__._opt_level <= opt_level
-        ), f"opt_level {opt_level} is not supported by {self.__class__.__name__}."
         self._opt_level = opt_level
