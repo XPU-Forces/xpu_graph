@@ -15,12 +15,7 @@
     均会自动回退到 aot_autograd 的编译流程，以覆盖现有dispatch机制不支持的场景
 
 ## 主要特性与改进
-- XpuGraphConfig增加调试用选项`include_patterns`和`skip_patterns`，格式为pattern名组合成的字符串list。 #463
-    * 默认情况下，所有level小于等于config中指定opt_level的pattern都会启用。；
-    * `include_patterns`用于指定在给定opt_level之上，额外需要启用的pattern；
-    * `skip_patterns`用于指定在给定opt_level及以下，需要禁用的pattern；
-    * 若指定的pattern不在上述范围，会被忽略；
-    * 也可以用环境变量`XPUGRAPH_DEBUG_INCLUDE_PATTERNS`和`XPUGRAPH_DEBUG_SKIP_PATTERNS`来指定，格式为逗号分隔的pattern名。
+- XpuGraphConfig增加调试用选项`include_patterns`和`skip_patterns`，用于额外打开或关闭特定pattern。 #463
 
 ## Bug修复与其他改动
 - 修复**常量折叠**相关pass错误折叠有**副作用（side-effect）**节点的问题；
