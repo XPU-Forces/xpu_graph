@@ -84,6 +84,8 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
     if not has_triton_kernel(module):
         compiled_module = NpuSerializableArtifact(compiled_module)
+    else:
+        logger.info("Triton kernel found in gm, skip serializing npu artifact.")
 
     return compiled_module
 
