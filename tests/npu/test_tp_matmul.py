@@ -10,15 +10,14 @@ from torch.distributed.tensor.parallel import (
     parallelize_module,
 )
 
-import xpu_graph
-from tests.mlu.test_dist_utils import (
+from tests.npu.test_dist_utils import (
     MainModel,
     cleanup,
     dist_setup,
     get_dp_dataloader,
     set_dist_env,
 )
-from xpu_graph.config import OptLevel
+from xpu_graph import OptLevel, Target, XpuGraph, XpuGraphConfig
 
 
 def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
@@ -26,7 +25,7 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model = ModCls()
     model.load_state_dict(torch.load(model_path))
     model.train()
-    model.mlu(rank)
+    model.npu(rank)
     model = parallelize_module(
         model,
         device_mesh,
@@ -40,8 +39,15 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     dataloader = get_dp_dataloader(rank, world_size)
 
     if do_compile:
-        xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=True, freeze=False, opt_level=OptLevel.level2, debug=True
+        xpu_graph_backend = XpuGraph(
+            XpuGraphConfig(
+                is_training=True,
+                freeze=False,
+                target=Target.npu,
+                opt_level=OptLevel.level0,
+                debug=True,
+                vendor_compiler_config=None,
+            )
         )
         model = torch.compile(model, backend=xpu_graph_backend, dynamic=False, fullgraph=True)
 
@@ -49,7 +55,7 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
         final_loss = 0
         n_batch = 0
         for batch_idx, (data, target) in enumerate(dataloader):
-            data, target = data.mlu(rank), target.mlu(rank)
+            data, target = data.npu(rank), target.npu(rank)
 
             optimizer.zero_grad()
             output = model(data)
@@ -73,7 +79,7 @@ def infer(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model = ModCls()
     model.load_state_dict(torch.load(model_path))
     model.eval()
-    model.mlu(rank)
+    model.npu(rank)
     model = parallelize_module(
         model,
         device_mesh,
@@ -86,15 +92,22 @@ def infer(rank, world_size, do_compile, return_queue, ModCls, model_path):
     dataloader = get_dp_dataloader(rank, world_size)
 
     if do_compile:
-        xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=False, opt_level=OptLevel.level2, debug=True
+        xpu_graph_backend = XpuGraph(
+            XpuGraphConfig(
+                is_training=False,
+                freeze=False,
+                target=Target.npu,
+                opt_level=OptLevel.level0,
+                debug=True,
+                vendor_compiler_config=None,
+            )
         )
         model = torch.compile(model, backend=xpu_graph_backend, dynamic=False, fullgraph=True)
 
     final_loss = 0
     with torch.no_grad():
         for batch_idx, (data, target) in enumerate(dataloader):
-            data, target = data.mlu(rank), target.mlu(rank)
+            data, target = data.npu(rank), target.npu(rank)
             output = model(data)
             loss = criterion(output, target)
 
@@ -110,7 +123,7 @@ def infer(rank, world_size, do_compile, return_queue, ModCls, model_path):
 def tp_test(ModCls, is_training=True, model_path="tp_model.pth"):
     set_dist_env()
     mp.set_start_method("spawn", force=True)
-    world_size = torch.mlu.device_count()
+    world_size = torch.npu.device_count()
     return_queue1 = mp.Queue()
     return_queue2 = mp.Queue()
     model = ModCls()

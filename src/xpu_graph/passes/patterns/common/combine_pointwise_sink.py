@@ -19,7 +19,7 @@ aten = torch.ops.aten
 
 
 class CombinePointwiseSink(Pattern):
-    _opt_level = OptLevel.level1
+    _opt_level = OptLevel.level2
     _pattern_group = PatternGroup.GROUP1  # Note: This pattern should be applied after folding patterns
     _support_stages = [FxStage.inference, FxStage.pregrad]
 

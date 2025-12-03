@@ -27,40 +27,25 @@ class PatternManager(Optimizer):
             PatternGroup.GROUP2: [],
         }
 
-        skip_pats = set(config.skip_patterns)
-        _skipped = []
-
         from .common import get_all_patterns as get_common_patterns
 
         for group, patterns in get_common_patterns(config).items():
             for pat in patterns:
-                if str(pat) in skip_pats:
-                    _skipped.append(pat)
-                else:
-                    self._patterns[group].append(pat)
+                self._patterns[group].append(pat)
 
         from .structure import get_all_patterns as get_structure_patterns
 
         for group, patterns in get_structure_patterns(config).items():
             for pat in patterns:
-                if str(pat) in skip_pats:
-                    _skipped.append(pat)
-                else:
-                    self._patterns[group].append(pat)
+                self._patterns[group].append(pat)
 
         from .targets import get_all_patterns as get_target_patterns
 
         for group, patterns in get_target_patterns(config).items():
             for pat in patterns:
-                if str(pat) in skip_pats:
-                    _skipped.append(pat)
-                else:
-                    self._patterns[group].append(pat)
+                self._patterns[group].append(pat)
 
-        if len(_skipped) > 0:
-            logger.debug(f"xpu_graph skip builtin patterns: {[str(pat) for pat in _skipped]}")
-
-    def reset_patterns_with_stage(self, stage):
+    def reset_patterns_with_stage(self, stage: FxStage):
         self._enable_patterns = {
             PatternGroup.GROUP0: [],
             PatternGroup.GROUP1: [],

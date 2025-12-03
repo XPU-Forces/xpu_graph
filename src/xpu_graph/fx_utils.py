@@ -180,7 +180,7 @@ def _collect_params_and_inputs_info(gm, example_inputs):
             if "tensor_dict" in node.meta and node.meta["tensor_dict"].get("_dynamo_static_input_type", None):
                 static_input_indices.append(pos)
             else:
-                print("Non-static input pos %s for source %s", pos, source_name)
+                logger.debug("Non-static input pos %s for source %s", pos, source_name)
 
     if aot_autograd_arg_pos_to_source is not None:
         assert len(full_args) == len(aot_autograd_arg_pos_to_source)

@@ -117,6 +117,8 @@ def mlu_compiler(
                         compiled._compiled_func = SerializableGraphModule(compiled._compiled_func)
                     elif isinstance(compiled._compiled_func, CompiledFxGraph):
                         compiled._compiled_func = SerializableCompiledFxGraph(compiled._compiled_func)
+                    else:
+                        return compiled._compiled_func
 
                 return compiled
 

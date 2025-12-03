@@ -62,7 +62,7 @@ jobs:
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
-        pip install uv
+        pip install uv==0.9.10
         uv python install 3.10 --default
         uv sync --extra dev --extra npu
         . .venv/bin/activate
@@ -75,6 +75,10 @@ jobs:
       # WARNING(liuyuan): [-n auto] will lead to error (OOM?) and 8 is efficient enough.
       run: |
         echo "Running npu tests..."
+        export DEV0=$(shuf -n 1 -e 0 2 4 6)
+        export DEV1=$(( $DEV0 + 1 ))
+        export ASCEND_RT_VISIBLE_DEVICES=$DEV0,$DEV1
+        echo "NPU_VISIBLE_DEVICES: $ASCEND_RT_VISIBLE_DEVICES"
         . .venv/bin/activate
         echo "Running with fallback legacy dispatch..."
         export XPU_GRAPH_FALLBACK_LEGACY_DISPATCH=1

@@ -1,3 +1,29 @@
+# Release 0.10.0
+
+## 主要依赖库版本描述
+- python 3.9 或者更高
+- [torch-mlu] 2.7.1；
+- [torch-npu] 2.7.1；
+- pytorch与torch-mlu或torch-npu对应；
+- [triton-x] 3.2.0.post9 或者更高；
+
+## 重大变动
+- Fallback Legacy Dispatch机制默认开启。在：
+    1. 训练/推理场景输入存在subclass tensor （如`DTensor`）；或
+    2. 训练场景存在higher-order operator时（如`aotograd.Function.apply`），
+
+    均会自动回退到 aot_autograd 的编译流程，以覆盖现有dispatch机制不支持的场景
+
+## 主要特性与改进
+- XpuGraphConfig增加调试用选项`include_patterns`和`skip_patterns`，用于额外打开或关闭特定pattern。 #463
+- 调整`CombinePointwiseSource`和`CombinePointwiseSink`两个pattern的应用优化级别为`level2`。 #470
+
+## Bug修复与其他改动
+- 修复**常量折叠**相关pass错误折叠有**副作用（side-effect）**节点的问题；
+- 修复mlu推理模式下触发FallbackLegacyDispatch后产物无法被上游组件正确序列化的问题；
+
+---
+
 # Release 0.9.0
 
 ## 主要依赖库版本描述
@@ -17,7 +43,7 @@
 
 ## 主要特性与改进
 - 现在`Target.npu`后端支持了编译产物落盘缓存，以支持冷启动优化；xpu_graph设置里cache功能是默认打开的，但在之前的版本并不能生效，现在这个开关可以作用与`Target.npu`;
-- 现在`XpuGraph`在`torch 2.7.1`版本上实现了`guard_filter`功能，使用方式为`torch.compile(backend=XpuGraph(), options={"guard_filter_fn": lambda guards: return [False for g in guards]})`，即返回每个guard的保留状态列表，用于过滤；如果你需要禁用全部guards，我们预定义了一个回调函数`from xpu_graph import skip_all_guards_unsafe`，只需将此函数传递给`guard_filter_fn`字段即可；
+- 现在`XpuGraph`在`torch 2.7.1`版本上实现了`guard_filter`功能，使用方式为`torch.compile(backend=XpuGraph(), options={"guard_filter_fn": lambda guards: [False for g in guards]})`，即返回每个guard的保留状态列表，用于过滤；如果你需要禁用全部guards，我们预定义了一个回调函数`from xpu_graph import skip_all_guards_unsafe`，只需将此函数传递给`guard_filter_fn`字段即可；
 
 ## Bug修复与其他改动
 - 修复用户在传入`{"compiler": "ge"}`设置下，错误使用`AclGraph`而非`GE`的问题；

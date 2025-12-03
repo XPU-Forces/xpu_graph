@@ -3,17 +3,16 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-import xpu_graph
-from tests.mlu.test_dist_utils import (
+from tests.npu.test_dist_utils import (
     MainModel,
     cleanup,
     dist_setup,
     get_dp_dataloader,
     set_dist_env,
 )
-from xpu_graph.config import OptLevel
+from xpu_graph import OptLevel, Target, XpuGraph, XpuGraphConfig
 
 
 def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
@@ -21,16 +20,23 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model = ModCls()
     model.load_state_dict(torch.load(model_path))
     model.train()
-    model.mlu(rank)
-    model = FSDP(model, use_orig_params=True, device_mesh=device_mesh)
+    model.npu(rank)
+    model = DDP(model, device_mesh=device_mesh)
 
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.01)
     dataloader = get_dp_dataloader(rank, world_size)
 
     if do_compile:
-        xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=True, freeze=False, opt_level=OptLevel.level2, debug=True
+        xpu_graph_backend = XpuGraph(
+            XpuGraphConfig(
+                is_training=True,
+                freeze=False,
+                target=Target.npu,
+                opt_level=OptLevel.level0,
+                debug=True,
+                vendor_compiler_config=None,
+            )
         )
         model = torch.compile(model, backend=xpu_graph_backend, dynamic=False)
 
@@ -38,7 +44,7 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
         final_loss = 0
         n_batch = 0
         for batch_idx, (data, target) in enumerate(dataloader):
-            data, target = data.mlu(rank), target.mlu(rank)
+            data, target = data.npu(rank), target.npu(rank)
 
             optimizer.zero_grad()
             output = model(data)
@@ -57,10 +63,10 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     cleanup()
 
 
-def fsdp_test(ModCls, model_path="fsdp_model.pth"):
+def ddp_test(ModCls, model_path="ddp_model.pth"):
     set_dist_env()
     mp.set_start_method("spawn", force=True)
-    world_size = torch.mlu.device_count()
+    world_size = torch.npu.device_count()
     return_queue1 = mp.Queue()
     return_queue2 = mp.Queue()
     model = ModCls()
@@ -95,16 +101,16 @@ def fsdp_test(ModCls, model_path="fsdp_model.pth"):
 
 
 @pytest.mark.exclusive
-class TestFSDP:
+class TestDDP:
     @pytest.mark.parametrize(
         "PatternModel",
         [
             MainModel,
         ],
     )
-    def test_fsdp(self, tmp_path, PatternModel):
-        fsdp_test(PatternModel, tmp_path / "fsdp_model.pth")
+    def test_ddp(self, tmp_path, PatternModel):
+        ddp_test(PatternModel, tmp_path / "ddp_model.pth")
 
 
 if __name__ == "__main__":
-    fsdp_test(MainModel)
+    ddp_test(MainModel)
