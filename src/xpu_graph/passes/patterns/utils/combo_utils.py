@@ -228,9 +228,6 @@ def get_ancestors(node):
             continue
         ancestors.append(node)
         stack += extract_nodes_from_args_kwargs(node.args, node.kwargs)
-    if len(ancestors) > 0:
-        # remove node
-        ancestors = ancestors[1:]
     return ancestors
 
 

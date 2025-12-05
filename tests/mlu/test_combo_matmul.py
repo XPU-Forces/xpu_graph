@@ -80,29 +80,49 @@ def fn7(inputs, weight_list, bias_list):
     return outputs_original
 
 
+def fn8(inputs, weight_list, bias_list):
+    weight_list = [w.t() for w in weight_list]
+    return fn0(inputs, weight_list, bias_list)
+
+
 def create_input(func, M, N, K):
     T = 8
     inputs = None
     weight_list = None
     bias_list = None
-    if func in [fn0, fn2, fn4, fn5]:
+    if func in [fn0, fn2, fn4, fn5, fn8]:
         M, N, K = 5, 8, 7
         inputs = torch.randn((1, M, N), device=device, dtype=data_type)
-        weight_list = [torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)]
+        weight_list = [
+            torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)
+        ]
         if func == fn4:
-            bias_list = [torch.randn((K), device=device, dtype=data_type) for _ in range(T)]
+            bias_list = [
+                torch.randn((K), device=device, dtype=data_type) for _ in range(T)
+            ]
         else:
-            bias_list = [torch.randn((M, K), device=device, dtype=data_type) for _ in range(T)]
+            bias_list = [
+                torch.randn((M, K), device=device, dtype=data_type) for _ in range(T)
+            ]
+        if func == fn8:
+            weight_list = [w.t().contiguous() for w in weight_list]
+
     if func in [fn1, fn3]:
         S = 3
         M, N, K = 5, 6, 7
         inputs = torch.randn((S, M, N), device=device, dtype=data_type)
-        weight_list = [torch.randn((S, N, K), device=device, dtype=data_type) for _ in range(T)]
-        bias_list = [torch.randn((S, M, K), device=device, dtype=data_type) for _ in range(T)]
+        weight_list = [
+            torch.randn((S, N, K), device=device, dtype=data_type) for _ in range(T)
+        ]
+        bias_list = [
+            torch.randn((S, M, K), device=device, dtype=data_type) for _ in range(T)
+        ]
     if func in [fn6, fn7]:
         M, N, K = 5, 8, 7
         inputs = torch.randn((T, M, N), device=device, dtype=data_type)
-        weight_list = [torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)]
+        weight_list = [
+            torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)
+        ]
         bias_list = None
     return inputs, weight_list, bias_list
 
@@ -132,7 +152,10 @@ def combine_matmul_test_with_loss_and_grad(xpu_graph_backend, func, dynamic=True
 
     with torch.no_grad():
         temp_outputs = func(inputs, weight_list, bias_list)
-    grad_outputs = [torch.randn_like(output, device=device, dtype=data_type) for output in temp_outputs]
+    grad_outputs = [
+        torch.randn_like(output, device=device, dtype=data_type)
+        for output in temp_outputs
+    ]
 
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=dynamic)
 
@@ -169,12 +192,16 @@ def combine_matmul_test_with_loss_and_grad(xpu_graph_backend, func, dynamic=True
         elif grad0 is None and grad1 is None:
             continue  # 都是None，正常
         else:
-            raise AssertionError(f"梯度 {i} 的存在性不匹配: {grad0 is not None} vs {grad1 is not None}")
+            raise AssertionError(
+                f"梯度 {i} 的存在性不匹配: {grad0 is not None} vs {grad1 is not None}"
+            )
 
 
 class TestCombineMatMul:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, opt_level=OptLevel.level2
+        )
         self.train_backend = xpu_graph.mlu_compiler(
             is_training=True,
             opt_level=OptLevel.level2,
@@ -198,6 +225,7 @@ class TestCombineMatMul:
             fn5,
             fn6,
             fn7,
+            fn8,
         ],
     )
     def test_matmul_patterns_inference(self, caplog, pattern_func, dynamic):
@@ -223,12 +251,17 @@ class TestCombineMatMul:
             fn5,
             fn6,
             fn7,
+            fn8,
         ],
     )
-    @pytest.mark.skip(reason="combo_mm for training is not fully verified yet, disable it for now")
+    @pytest.mark.skip(
+        reason="combo_mm for training is not fully verified yet, disable it for now"
+    )
     def test_matmul_patterns_training(self, caplog, pattern_func, dynamic):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
-            combine_matmul_test_with_loss_and_grad(self.train_backend, pattern_func, dynamic)
+            combine_matmul_test_with_loss_and_grad(
+                self.train_backend, pattern_func, dynamic
+            )
             assert "Pattern.FusedCombineMatMul changed graph" in caplog.text
 
 
@@ -247,4 +280,4 @@ if __name__ == "__main__":
         debug=True,
         vendor_compiler_config=None,
     )
-    combine_matmul_test(xpu_graph_backend, fn0, dynamic=False)
+    combine_matmul_test(xpu_graph_backend, fn8, dynamic=False)
