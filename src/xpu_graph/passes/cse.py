@@ -83,9 +83,7 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
         # The placeholder, output, and get_attr nodes are copied to the new graph without change
         # do not CSE away random operations
         if (
-            n.op == "placeholder"
-            or n.op == "output"
-            or n.op == "get_attr"
+            n.is_impure()
             or get_aten_target(n) in rand_ops
             # aten.empty is non-deterministic, so don't CSE it.
             # Also, aten.empty is almost always fusible into its consumer,
