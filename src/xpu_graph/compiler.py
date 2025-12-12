@@ -227,6 +227,7 @@ class XpuGraph:
         if (guard_filter_fn := kwargs.get("options", {}).get("guard_filter_fn")) is not None and (
             tracing_context := torch._guards.TracingContext.try_get()
         ) is not None:
+            logger.warning("Be careful when using guard_filter_fn, this may lead to unexpected behavior.")
             orig_guards = tracing_context.guards_context.dynamo_guards
             filter_flags = guard_filter_fn(orig_guards)
             filtered_guards = torch._guards.GuardsSet(
