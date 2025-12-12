@@ -49,11 +49,11 @@ def test_xpugraph_inference_artifact_picklizable(caplog, tmp_path, use_inductor)
         if os.path.exists(pkl_path):
             with open(pkl_path, "rb") as f:
                 loaded_artifact = pickle.load(f)
-                return loaded_artifact
+                return loaded_artifact.__call__
 
         compiled_artifact = infer_backend(gm, example_inputs)
         with open(pkl_path, "wb") as f:
-            pickle.dump(compiled_artifact, f)
+            pickle.dump(compiled_artifact.__call__, f)
         return compiled_artifact
 
     with need_xpu_graph_logs():
