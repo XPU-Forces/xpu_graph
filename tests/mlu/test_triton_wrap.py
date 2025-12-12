@@ -56,8 +56,6 @@ class TestTritonWrap:
     def test_triton_wrap(self, monkeypatch, caplog, orig_func, ref_func):
         import torch._dynamo.config
 
-        monkeypatch.setattr(torch._dynamo.config, "capture_dynamic_output_shape_ops", True)
-        monkeypatch.setattr(torch._dynamo.config, "fake_tensor_cache_enabled", False)
         monkeypatch.setattr(torch._dynamo.config, "capture_scalar_outputs", True)
 
         with skip_xpu_graph_cache(self.infer_backend), need_xpu_graph_logs():
@@ -68,8 +66,6 @@ class TestTritonWrap:
 if __name__ == "__main__":
     import torch._dynamo.config
 
-    torch._dynamo.config.capture_dynamic_output_shape_ops = True
-    torch._dynamo.config.fake_tensor_cache_enabled = False
     torch._dynamo.config.capture_scalar_outputs = True
     xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=False, debug=True)
     compare_func(fn0, ref_fn0, xpu_graph_backend)
