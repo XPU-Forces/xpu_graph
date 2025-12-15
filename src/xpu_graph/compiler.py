@@ -204,9 +204,6 @@ class XpuGraph:
         aot_config = {}
         aot_config["keep_inference_input_mutations"] = True
 
-        aot_config["fw_compiler"] = self._get_compiler(FxStage.forward)
-        aot_config["bw_compiler"] = self._get_compiler(FxStage.backward)
-
         def partition_fn(joint_gm, joint_args, *, num_fwd_outputs):
             new_joint_gm = self._get_compiler(FxStage.joint)(joint_gm, joint_args)
 
@@ -223,6 +220,11 @@ class XpuGraph:
             )
         else:
             aot_config["inference_compiler"] = self._get_compiler(FxStage.inference)
+
+        aot_config["fw_compiler"] = (
+            self._get_compiler(FxStage.forward) if self._config.is_training else aot_config["inference_compiler"]
+        )
+        aot_config["bw_compiler"] = self._get_compiler(FxStage.backward)
 
         compiled = aot_autograd(**aot_config)(dynamo_gm, example_inputs)
 
