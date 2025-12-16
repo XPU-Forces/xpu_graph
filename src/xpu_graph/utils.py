@@ -198,6 +198,7 @@ class __XPU_GRAPH_ENVS__:
     matmul_combine_width = "XPUGRAPH_DEBUG_MM_COMBINE_WIDTH"
     fallback_legacy_dispatch = "XPUGRAPH_FALLBACK_LEGACY_DISPATCH"
     partition_fn = "XPUGRAPH_PARTITIONER"
+    dispatch_tensorify_python_scalars = "XPUGRAPH_DEBUG_TENSORIFY_PYTHON_SCALARS"
 
 
 def get_bool_env_var(name, default_value: bool):

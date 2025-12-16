@@ -249,11 +249,7 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
             dispatched_fn = aot_dispatch_base_graph(flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata)
         if isinstance(dispatched_fn, tuple):
             dispatched_fn = dispatched_fn[0]
-        if (
-            fake_mode is not None
-            and fake_mode.shape_env is not None
-            and isinstance(dispatched_fn, torch.fx.GraphModule)
-        ):
+        if get_bool_env_var(__XPU_GRAPH_ENVS__.dispatch_tensorify_python_scalars, False):
             try:
                 from torch.fx.passes._tensorify_python_scalars import (
                     tensorify_python_scalars,

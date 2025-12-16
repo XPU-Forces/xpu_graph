@@ -7,6 +7,7 @@ import triton.language as tl
 import triton
 import xpu_graph
 from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
+from xpu_graph.utils import __XPU_GRAPH_ENVS__
 
 
 @triton.jit
@@ -57,6 +58,7 @@ class TestTritonWrap:
         import torch._dynamo.config
 
         monkeypatch.setattr(torch._dynamo.config, "capture_scalar_outputs", True)
+        monkeypatch.setenv(__XPU_GRAPH_ENVS__.dispatch_tensorify_python_scalars, "True")
 
         with skip_xpu_graph_cache(self.infer_backend), need_xpu_graph_logs():
             compare_func(orig_func, ref_func, self.infer_backend)
