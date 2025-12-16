@@ -60,7 +60,7 @@ class TestTritonWrap:
 
         with skip_xpu_graph_cache(self.infer_backend), need_xpu_graph_logs():
             compare_func(orig_func, ref_func, self.infer_backend)
-        assert caplog.text.count("mlu_compile start...") == 2
+        assert caplog.text.count("mlu_compile start...") == 3
 
 
 if __name__ == "__main__":
