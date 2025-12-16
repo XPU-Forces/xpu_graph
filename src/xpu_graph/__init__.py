@@ -120,6 +120,8 @@ def mlu_compiler(
                     else:
                         return compiled._compiled_func
 
+                    return compiled.__call__
+
                 return compiled
 
         return PatchedPickableXpuGraphBackend(config, cache)
