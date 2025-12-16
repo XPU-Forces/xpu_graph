@@ -249,6 +249,15 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
             dispatched_fn = aot_dispatch_base_graph(flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata)
         if isinstance(dispatched_fn, tuple):
             dispatched_fn = dispatched_fn[0]
+        if get_bool_env_var(__XPU_GRAPH_ENVS__.dispatch_tensorify_python_scalars, False):
+            try:
+                from torch.fx.passes._tensorify_python_scalars import (
+                    tensorify_python_scalars,
+                )
+
+                tensorify_python_scalars(dispatched_fn, fake_mode.shape_env, fake_mode)
+            except:
+                logger.debug("Failed to tensorify python scalars, check the pytorch version")
     return dispatched_fn, fw_metadata
 
 
