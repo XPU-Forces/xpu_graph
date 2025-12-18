@@ -8,9 +8,28 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.graph_module import GraphModule
 
 from xpu_graph.cache import SerializableArtifact, temp_disable_tracing_envs
-from xpu_graph.config import Target, get_cache_dir
+from xpu_graph.config import Target
+from xpu_graph.device_graph_runner import GraphRunner
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger, recursive_set_obj
+
+
+class NPUGraphRunner(GraphRunner, backend=Target.npu, anchor_class=GraphRunner):
+    @classmethod
+    def _Graph(cls, *args, **kwargs):
+        return torch.npu.NPUGraph(*args, **kwargs)
+
+    @classmethod
+    def _Stream(cls, *args, **kwargs):
+        return torch.npu.Stream(*args, **kwargs)
+
+    @classmethod
+    def _GraphContext(cls, *args, **kwargs):
+        return torch.npu.graph(*args, **kwargs)
+
+    @classmethod
+    def _MempoolHandle(cls):
+        return torch.npu.graph_pool_handle()
 
 
 class NpuSerializableArtifact(SerializableArtifact):

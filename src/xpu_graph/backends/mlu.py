@@ -4,8 +4,28 @@ import torch
 import torch_mlu
 
 from xpu_graph.cache import SerializableCompiledFxGraph
+from xpu_graph.config import Target
+from xpu_graph.device_graph_runner import GraphRunner
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger
+
+
+class MLUGraphRunner(GraphRunner, backend=Target.mlu, anchor_class=GraphRunner):
+    @classmethod
+    def _Graph(cls, *args, **kwargs):
+        return torch.mlu.MLUGraph(*args, **kwargs)
+
+    @classmethod
+    def _Stream(cls, *args, **kwargs):
+        return torch.mlu.Stream(*args, **kwargs)
+
+    @classmethod
+    def _GraphContext(cls, *args, **kwargs):
+        return torch.mlu.graph(*args, **kwargs)
+
+    @classmethod
+    def _MempoolHandle(cls):
+        raise torch.mlu.graph_pool_handle()
 
 
 def mlu_compile(
