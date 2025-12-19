@@ -25,7 +25,7 @@ class MLUGraphRunner(GraphRunner, backend=Target.mlu, anchor_class=GraphRunner):
 
     @classmethod
     def _MempoolHandle(cls):
-        raise torch.mlu.graph_pool_handle()
+        return torch.mlu.graph_pool_handle()
 
 
 def mlu_compile(
