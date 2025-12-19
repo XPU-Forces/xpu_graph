@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable, ContextManager, Dict, List, Tuple, Union
+from typing import Callable, ContextManager, Dict, List, Tuple
 
 import torch
 import torch.utils._pytree as pytree
