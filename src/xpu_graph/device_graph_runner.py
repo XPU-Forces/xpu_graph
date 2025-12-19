@@ -4,10 +4,11 @@ from typing import Callable, ContextManager, Dict, List, Tuple
 import torch
 import torch.utils._pytree as pytree
 
-from xpu_graph.utils import AutoloadDispatcher
+from xpu_graph.config import Target
+from xpu_graph.utils import ImportOrIgnoreMetaClass, PolyBackendDispatcher
 
 
-class GraphRunner(torch.nn.Module, ABC, AutoloadDispatcher):
+class GraphRunner(torch.nn.Module, ABC, PolyBackendDispatcher):
     def __init__(
         self,
         callable_target: callable,
@@ -139,3 +140,53 @@ class GraphRunner(torch.nn.Module, ABC, AutoloadDispatcher):
         self._graph.replay()
         self._stream.synchronize()
         return self._output
+
+
+# NOTE(liuyuan): Thx to the torch device mechanism, all we need is to import the extention.
+# And we create or set the class to None according to the result of importing the extention.
+class NPUGraphRunner(
+    GraphRunner,
+    backend=Target.npu,
+    anchor_class=GraphRunner,
+    metaclass=ImportOrIgnoreMetaClass,
+    __modules_to_import__="torch_npu",
+):
+    @classmethod
+    def _Graph(cls, *args, **kwargs):
+        return torch.npu.NPUGraph(*args, **kwargs)
+
+    @classmethod
+    def _Stream(cls, *args, **kwargs):
+        return torch.npu.Stream(*args, **kwargs)
+
+    @classmethod
+    def _GraphContext(cls, *args, **kwargs):
+        return torch.npu.graph(*args, **kwargs)
+
+    @classmethod
+    def _MempoolHandle(cls):
+        return torch.npu.graph_pool_handle()
+
+
+class MLUGraphRunner(
+    GraphRunner,
+    backend=Target.mlu,
+    anchor_class=GraphRunner,
+    metaclass=ImportOrIgnoreMetaClass,
+    __modules_to_import__="torch_mlu",
+):
+    @classmethod
+    def _Graph(cls, *args, **kwargs):
+        return torch.mlu.MLUGraph(*args, **kwargs)
+
+    @classmethod
+    def _Stream(cls, *args, **kwargs):
+        return torch.mlu.Stream(*args, **kwargs)
+
+    @classmethod
+    def _GraphContext(cls, *args, **kwargs):
+        return torch.mlu.graph(*args, **kwargs)
+
+    @classmethod
+    def _MempoolHandle(cls):
+        return torch.mlu.graph_pool_handle()

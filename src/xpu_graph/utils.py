@@ -263,3 +263,23 @@ class AutoloadDispatcher(PolyBackendDispatcher):
         except Exception:
             logger.warning(f"{target.value} is not found, use the default registrations")
         return super().__class_getitem__(target)
+
+
+from abc import ABCMeta
+
+
+class ImportOrIgnoreMetaClass(ABCMeta):
+    def __new__(*args, __modules_to_import__=None, **kwargs):
+        if __modules_to_import__ is not None:
+            if not isinstance(__modules_to_import__, (tuple, list)):
+                __modules_to_import__ = (__modules_to_import__,)
+            import importlib
+
+            try:
+                for mod in __modules_to_import__:
+                    importlib.import_module(mod)
+            except:
+                # TODO(liuyuan): Should clear the class symbol as well ?
+                return None
+        # WARNING(liuyuan): Is ABCMeta zero-overhead without any abstract method.
+        return ABCMeta.__new__(*args, **kwargs)
