@@ -10,7 +10,7 @@ class TestMluGraphRunner:
         input_tensor = torch.empty(1024, 1024).uniform_(10, 100).mlu()
 
         golden = model(input_tensor)
-        device_graph = GraphRunner[Target.npu](
+        device_graph = GraphRunner[Target.mlu](
             model,
             lambda input_tensor: input_tensor,
             lambda input_buffer, input_tensor: (input_buffer.copy_(input_tensor), True),
