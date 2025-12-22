@@ -4,7 +4,8 @@ import torch
 aten = torch.ops.aten
 
 import xpu_graph
-from tests.common.test_models import InplaceModel, compare_inference, compare_training
+from tests.test_models import InplaceModel, compare_inference, compare_training
+from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.interceptor import OpInterceptor
@@ -43,6 +44,12 @@ def test_op_monitor_fail(caplog):
     assert f"Monitored op: {aten.add.Tensor}" in caplog.text and "diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class FaultyPattern(Pattern):
     def process(self, gm: torch.fx.GraphModule) -> bool:
         changed = False
@@ -53,6 +60,12 @@ class FaultyPattern(Pattern):
         return changed
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestInferenceInterceptorUseGolden:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(
@@ -74,6 +87,12 @@ class TestInferenceInterceptorUseGolden:
         assert "The inference pass diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestInferenceInterceptorUseActual:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(
@@ -96,6 +115,12 @@ class TestInferenceInterceptorUseActual:
         assert "The inference pass diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestTrainingInterceptorUseGolden:
     def setup_class(self):
         self.train_backend = xpu_graph.mlu_compiler(
@@ -122,6 +147,12 @@ class TestTrainingInterceptorUseGolden:
             assert "The forward pass diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestTrainingInterceptorUseActual:
     def setup_class(self):
         self.train_backend = xpu_graph.mlu_compiler(
