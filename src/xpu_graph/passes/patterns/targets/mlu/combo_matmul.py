@@ -9,7 +9,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ...utils.combo_utils import COMBINE_MM_WIDTH, find_dep, partially_topo_sort
-from .combo_matmul_utils import *
+from .combo_matmul_utils import get_node_desc, has_mm_dependency
 
 
 def all_same_tensor(tensor_list):
@@ -31,13 +31,9 @@ class FusedCombineBmm(nn.Module):
         use_groupgemm: bool,
     ):
         if use_groupgemm:
-            output = self.forward_groupgemm(
-                input_list, weight_list, bias_list, trans_a, trans_b
-            )
+            output = self.forward_groupgemm(input_list, weight_list, bias_list, trans_a, trans_b)
         else:
-            output = self.forward_bmm(
-                input_list, weight_list, bias_list, trans_a, trans_b
-            )
+            output = self.forward_bmm(input_list, weight_list, bias_list, trans_a, trans_b)
 
         # Apply activation function if specified
 
@@ -88,15 +84,9 @@ class FusedCombineBmm(nn.Module):
             output = output.view(weight_shape[0], input_shape[1], M, N)
         return output
 
-    def forward_groupgemm(
-        self, input_list, weight_list, bias_list, trans_a: bool, trans_b: bool
-    ):
-        processed_inputs = [
-            i.contiguous() if not i.is_contiguous() else i for i in input_list
-        ]
-        processed_weights = [
-            w.contiguous() if not w.is_contiguous() else w for w in weight_list
-        ]
+    def forward_groupgemm(self, input_list, weight_list, bias_list, trans_a: bool, trans_b: bool):
+        processed_inputs = [i.contiguous() if not i.is_contiguous() else i for i in input_list]
+        processed_weights = [w.contiguous() if not w.is_contiguous() else w for w in weight_list]
         args = [processed_inputs, processed_weights]
         kwargs = {"trans_a": trans_a, "trans_b": trans_b}
         if bias_list[0] is not None:
@@ -152,14 +142,11 @@ class FusedCombineMatMul(Pattern):
             candidates = [
                 node
                 for node in graph_module.graph.nodes
-                if (node.op == "call_function" or node.op == "call_module")
-                and node.target == module
+                if (node.op == "call_function" or node.op == "call_module") and node.target == module
             ]
             if len(candidates) < COMBINE_MM_WIDTH:
                 continue
-            changed = changed | self.combo_matmul(
-                graph_module, candidates, COMBINE_MM_WIDTH
-            )
+            changed = changed | self.combo_matmul(graph_module, candidates, COMBINE_MM_WIDTH)
 
         return changed
 
@@ -171,9 +158,7 @@ class FusedCombineMatMul(Pattern):
         trans_b = mm_descs[0].input2_trans
         act = mm_descs[0].act
 
-        last_node = max(
-            desc.node for desc in mm_descs if isinstance(desc.node, fx.Node)
-        )
+        last_node = max(desc.node for desc in mm_descs if isinstance(desc.node, fx.Node))
         with graph_module.graph.inserting_before(last_node):
             if (
                 self._current_stage == FxStage.inference
@@ -195,14 +180,10 @@ class FusedCombineMatMul(Pattern):
                     use_groupgemm,
                 ),
             )
-            unbind_node = graph_module.graph.call_function(
-                torch.ops.aten.unbind.int, args=(new_node,)
-            )
+            unbind_node = graph_module.graph.call_function(torch.ops.aten.unbind.int, args=(new_node,))
             new_nodes = []
             for idx in range(len(mm_descs)):
-                new_n = graph_module.graph.call_function(
-                    operator.getitem, args=(unbind_node, idx)
-                )
+                new_n = graph_module.graph.call_function(operator.getitem, args=(unbind_node, idx))
                 new_nodes.append(new_n)
 
             for desc, new_n in zip(mm_descs, new_nodes):

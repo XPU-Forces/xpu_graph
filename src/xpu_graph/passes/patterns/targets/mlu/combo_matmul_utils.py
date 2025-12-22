@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import torch
 import torch.fx as fx
@@ -8,8 +8,8 @@ from ...utils.check_ops import (  # get_shape,
     check_permute_op,
     check_t_op,
     check_trans_op,
-    get_shape,
     get_dtype,
+    get_shape,
 )
 from ...utils.combo_utils import get_ancestors
 
@@ -115,11 +115,8 @@ class MMNodeDesc:
 
 
 def get_node_desc(node):
-    intpu1 = None
-    intpu2 = None
     bias = None
     act = None
-    check_args = False
     trans_b = False
     if node.target in (
         torch.ops.aten.mm.default,
