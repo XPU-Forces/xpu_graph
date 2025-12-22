@@ -9,7 +9,7 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from ...utils.combo_utils import COMBINE_MM_WIDTH, find_dep, partially_topo_sort
-from .combo_matmul_utils import *
+from .combo_matmul_utils import get_node_desc, has_mm_dependency
 
 
 def all_same_tensor(tensor_list):
@@ -20,7 +20,16 @@ def all_same_tensor(tensor_list):
 
 
 class FusedCombineBmm(nn.Module):
-    def forward(self, input_list, weight_list, bias_list, act: str, trans_a: bool, trans_b: bool, use_groupgemm: bool):
+    def forward(
+        self,
+        input_list,
+        weight_list,
+        bias_list,
+        act: str,
+        trans_a: bool,
+        trans_b: bool,
+        use_groupgemm: bool,
+    ):
         if use_groupgemm:
             output = self.forward_groupgemm(input_list, weight_list, bias_list, trans_a, trans_b)
         else:
@@ -96,7 +105,11 @@ class FusedCombineBmm(nn.Module):
         if isinstance(output, list):
             output = torch.stack(output, dim=0)
         elif len(output.shape) == 2:
-            output = output.view(len(input_list), input_list[0].shape[0], weight_list[0].shape[1])
+            output = output.view(
+                len(input_list),
+                -1,
+                weight_list[0].shape[-2] if trans_b else weight_list[0].shape[-1],
+            )
         return output
 
 
@@ -113,8 +126,8 @@ class FusedCombineMatMul(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
-
-        graph_module.add_submodule("fused_combo_bmm", FusedCombineBmm())
+        target_module = "fused_combo_bmm"
+        graph_module.add_submodule(target_module, FusedCombineBmm())
         # split mm by difference module
         target_module = [
             torch.ops.aten.mm.default,
@@ -157,7 +170,15 @@ class FusedCombineMatMul(Pattern):
                 use_groupgemm = False
             new_node = graph_module.graph.call_module(
                 "fused_combo_bmm",
-                args=(new_input, new_weight, new_bias, act, trans_a, trans_b, use_groupgemm),
+                args=(
+                    new_input,
+                    new_weight,
+                    new_bias,
+                    act,
+                    trans_a,
+                    trans_b,
+                    use_groupgemm,
+                ),
             )
             unbind_node = graph_module.graph.call_function(torch.ops.aten.unbind.int, args=(new_node,))
             new_nodes = []
@@ -183,11 +204,18 @@ class FusedCombineMatMul(Pattern):
                 continue
 
             key = (
+                # check abtrans
                 mm_desc.input1_trans,
                 mm_desc.input2_trans,
+                # check shape
                 str(mm_desc.input1_shape),
                 str(mm_desc.input2_shape),
                 None if mm_desc.bias == None else str(mm_desc.bias_shape),
+                # check dtype
+                mm_desc.input1_dtype,
+                mm_desc.input2_dtype,
+                None if mm_desc.bias == None else str(mm_desc.bias_dtype),
+                # check activation
                 mm_desc.act,
             )
             if key not in group_by_shape:

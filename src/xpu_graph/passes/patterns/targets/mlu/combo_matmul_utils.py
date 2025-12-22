@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import torch
 import torch.fx as fx
@@ -8,22 +8,16 @@ from ...utils.check_ops import (  # get_shape,
     check_permute_op,
     check_t_op,
     check_trans_op,
+    get_dtype,
     get_shape,
 )
 from ...utils.combo_utils import get_ancestors
 
 
 def has_mm_dependency(a, b):
-    all_a = a.input1_ancestors + a.input2_ancestors + a.bias_ancestors
-    all_b = b.input1_ancestors + b.input2_ancestors + b.bias_ancestors
-    return (
-        a.input1 in all_b
-        or a.input2 in all_b
-        or (a.bias in all_b if a.bias else False)
-        or b.input1 in all_a
-        or b.input2 in all_a
-        or (b.bias in all_a if b.bias else False)
-    )
+    all_a = a.get_ancestors()
+    all_b = b.get_ancestors()
+    return a.node in all_b or b.node in all_a
 
 
 def check_trans_input(node, final_trans):
@@ -71,12 +65,13 @@ class MMNodeDesc:
         self.bias_shape: Optional[torch.Size] = None
         # Activation function string (default "none")
         self.act: str = "none"
-        self.input1_ancestors = []
-        self.input2_ancestors = []
-        self.bias_ancestors = []
+        self.ancestors = None
         self.extra_match = False
         self.input1_trans = False
         self.input2_trans = False
+        self.input1_dtype: Optional[torch.dtype] = None
+        self.input2_dtype: Optional[torch.dtype] = None
+        self.bias_dtype: Optional[torch.dtype] = None
 
     def set_node(self, node):
         self.node = node
@@ -86,7 +81,7 @@ class MMNodeDesc:
         self.input1_shape = get_shape(self.input1)
         if self.input1_shape == None:
             return False
-        self.input1_ancestors = get_ancestors(self.input1)
+        self.input1_dtype = get_dtype(self.input1)
         return True
 
     def set_input2(self, input2, final_trans=False):
@@ -97,7 +92,7 @@ class MMNodeDesc:
         if len(self.input2_shape) == 1:
             # Note: skip dot-product cases
             return False
-        self.input2_ancestors = get_ancestors(self.input2)
+        self.input2_dtype = get_dtype(self.input2)
         return True
 
     def set_bias(self, bias):
@@ -106,21 +101,28 @@ class MMNodeDesc:
             self.bias_shape = get_shape(bias)
             if self.bias_shape == None:
                 return False
-            self.bias_ancestors = get_ancestors(self.bias)
+            self.bias_dtype = get_dtype(self.bias)
         return True
 
     def set_act(self, act: str):
         self.act = act
 
+    def get_ancestors(self):
+        if self.ancestors is not None:
+            return self.ancestors
+        self.ancestors = get_ancestors(self.node)
+        return self.ancestors
+
 
 def get_node_desc(node):
-    intpu1 = None
-    intpu2 = None
     bias = None
     act = None
-    check_args = False
     trans_b = False
-    if node.target in (torch.ops.aten.mm.default, torch.ops.aten.matmul.default, torch.ops.aten.bmm.default):
+    if node.target in (
+        torch.ops.aten.mm.default,
+        torch.ops.aten.matmul.default,
+        torch.ops.aten.bmm.default,
+    ):
         input1 = node.args[0]
         input2 = node.args[1]
     elif node.target == torch.ops.aten.addmm.default:
