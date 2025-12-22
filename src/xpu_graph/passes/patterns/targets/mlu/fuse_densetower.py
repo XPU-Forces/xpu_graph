@@ -5,7 +5,7 @@ from torch import fx
 from torch.fx import map_arg
 
 from xpu_graph.config import OptLevel
-from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 
 from .triton_kernel.fused_serial_mm_2dot import fuse_serial_mm_2dot
 from .triton_kernel.fused_serial_mm_3dot import fuse_serial_mm_3dot
@@ -271,6 +271,7 @@ def _is_serial_mm_3dot(
 
 class FusedDenseTower2(Pattern):
     _opt_level = OptLevel.level2
+    _pattern_group = PatternGroup.GROUP2
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
@@ -293,6 +294,7 @@ class FusedDenseTower2(Pattern):
 
 class FusedDenseTower3(Pattern):
     _opt_level = OptLevel.level2
+    _pattern_group = PatternGroup.GROUP2
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False

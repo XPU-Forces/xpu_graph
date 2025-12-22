@@ -1,8 +1,8 @@
 import os
-from typing import Optional, Tuple, Union
+from typing import Optional
 
 import torch
-from torch import fx, nn
+from torch import fx
 
 from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
 
@@ -228,9 +228,6 @@ def get_ancestors(node):
             continue
         ancestors.append(node)
         stack += extract_nodes_from_args_kwargs(node.args, node.kwargs)
-    if len(ancestors) > 0:
-        # remove node
-        ancestors = ancestors[1:]
     return ancestors
 
 
