@@ -4,16 +4,23 @@ import torch
 aten = torch.ops.aten
 
 import xpu_graph
-from tests.test_models import InplaceModel, compare_inference, compare_training
+from tests.test_models import (
+    InplaceModel,
+    compare_inference_between,
+    compare_training_between,
+)
 from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.runtime.interceptor import OpInterceptor
+from xpu_graph.runtime.interceptor import OpInterceptor, reset_intercept_ctx
 from xpu_graph.test_utils import need_xpu_graph_logs
 
 device = "mlu"
 data_type = torch.float32
+steps = 10
+bsz = 8
+input_dim = 16
 
 
 def test_op_monitor(caplog):
@@ -45,6 +52,8 @@ def test_op_monitor_fail(caplog):
 
 
 class FaultyPattern(Pattern):
+    _support_stages = []
+
     def process(self, gm: torch.fx.GraphModule) -> bool:
         changed = False
         for node in gm.graph.nodes:
@@ -75,37 +84,117 @@ class TestInferenceInterceptorUseGolden:
         "ReproCls",
         [InplaceModel],
     )
-    def test_xfail_patterns(self, caplog, ReproCls):
+    def test_no_ctx(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
         with need_xpu_graph_logs():
-            compare_inference(device, data_type, ReproCls, self.infer_backend)
+            compare_inference_between(mod_golden, mod_compiled, example_inputs)
         assert "The inference pass diverges" in caplog.text
-
-
-@parametrize_class_env(
-    [
-        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
-        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
-    ],
-)
-class TestInferenceInterceptorUseActual:
-    def setup_class(self):
-        self.infer_backend = xpu_graph.mlu_compiler(
-            is_training=False,
-            opt_level=OptLevel.level2,
-            freeze=False,
-            enable_interceptor="rtol=1e-6,atol=1e-5,use_golden=0",
-        )
-        self.faulty_pattern = FaultyPattern()
-        self.infer_backend.get_pattern_manager().register_pattern(self.faulty_pattern)
 
     @pytest.mark.parametrize(
         "ReproCls",
         [InplaceModel],
     )
-    def test_xfail_patterns(self, caplog, ReproCls):
+    def test_use_golden(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=1"):
+                compare_inference_between(mod_golden, mod_compiled, example_inputs)
+        assert "The inference pass diverges" in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    def test_use_actual(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
         with need_xpu_graph_logs():
             with pytest.raises(AssertionError):
-                compare_inference(device, data_type, ReproCls, self.infer_backend)
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0"):
+                    compare_inference_between(mod_golden, mod_compiled, example_inputs)
+        assert "The inference pass diverges" in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    def test_passthrough(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with pytest.raises(AssertionError):
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=passthrough"):
+                    compare_inference_between(mod_golden, mod_compiled, example_inputs)
+        assert "The inference pass diverges" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    def test_fallback(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=fallback"):
+                compare_inference_between(mod_golden, mod_compiled, example_inputs)
+        assert "The inference pass diverges" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    def test_fail_error(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with pytest.raises(RuntimeError, match="Inference pass diverges"):
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=1,mode=fail_error"):
+                    compare_inference_between(mod_golden, mod_compiled, example_inputs)
+        assert "The inference pass diverges" in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    def test_switch_mode(self, caplog, monkeypatch, ReproCls):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [FxStage.inference])
+        mod_golden = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled = ReproCls(input_dim).to(device=device, dtype=data_type).eval()
+        mod_compiled.forward = torch.compile(mod_compiled.forward, backend=self.infer_backend, dynamic=False)
+        mod_compiled.load_state_dict(mod_golden.state_dict())
+        example_inputs = torch.randn((bsz * steps, input_dim), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with pytest.raises(RuntimeError, match="Inference pass diverges"):
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=1,mode=fail_error"):
+                    compare_inference_between(mod_golden, mod_compiled, example_inputs)
+            with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=fallback"):
+                compare_inference_between(mod_golden, mod_compiled, example_inputs)
         assert "The inference pass diverges" in caplog.text
 
 
@@ -115,7 +204,7 @@ class TestInferenceInterceptorUseActual:
         {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
     ],
 )
-class TestTrainingInterceptorUseGolden:
+class TestTrainingInterceptor:
     def setup_class(self):
         self.train_backend = xpu_graph.mlu_compiler(
             is_training=True,
@@ -131,47 +220,132 @@ class TestTrainingInterceptorUseGolden:
         [InplaceModel],
     )
     @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
-    def test_xfail_patterns(self, caplog, ReproCls, stage):
+    def test_use_golden(self, caplog, monkeypatch, ReproCls, stage):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [stage])
+        golden = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled.forward = torch.compile(compiled.forward, backend=self.train_backend, dynamic=None)
+        compiled.load_state_dict(golden.state_dict())
+        example_inputs = torch.randn((steps, bsz, input_dim), device=device, dtype=data_type)
+        example_target = torch.randn((steps, bsz, 1), device=device, dtype=data_type)
         with need_xpu_graph_logs():
-            self.faulty_pattern._support_stages = [stage]
-            compare_training(device, data_type, ReproCls, self.train_backend)
-        if stage == FxStage.backward:
-            assert "The backward pass diverges" in caplog.text
-        else:
-            assert "The forward pass diverges" in caplog.text
-
-
-@parametrize_class_env(
-    [
-        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
-        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
-    ],
-)
-class TestTrainingInterceptorUseActual:
-    def setup_class(self):
-        self.train_backend = xpu_graph.mlu_compiler(
-            is_training=True,
-            opt_level=OptLevel.level2,
-            freeze=False,
-            enable_interceptor="rtol=1e-6,atol=1e-5,use_golden=0",
-        )
-        self.faulty_pattern = FaultyPattern()
-        self.train_backend.get_pattern_manager().register_pattern(self.faulty_pattern)
+            with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=1"):
+                compare_training_between(golden, compiled, example_inputs, example_target)
+        assert (
+            "The forward pass diverges" if stage == FxStage.forward else "The backward pass diverges"
+        ) in caplog.text
 
     @pytest.mark.parametrize(
         "ReproCls",
         [InplaceModel],
     )
     @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
-    def test_xfail_patterns(self, caplog, ReproCls, stage):
+    def test_use_actual(self, caplog, monkeypatch, ReproCls, stage):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [stage])
+        golden = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled.forward = torch.compile(compiled.forward, backend=self.train_backend, dynamic=None)
+        compiled.load_state_dict(golden.state_dict())
+        example_inputs = torch.randn((steps, bsz, input_dim), device=device, dtype=data_type)
+        example_target = torch.randn((steps, bsz, 1), device=device, dtype=data_type)
         with need_xpu_graph_logs():
-            self.faulty_pattern._support_stages = [stage]
             with pytest.raises(AssertionError):
-                compare_training(device, data_type, ReproCls, self.train_backend)
-        if stage == FxStage.backward:
-            assert "The backward pass diverges" in caplog.text
-        else:
-            assert "The forward pass diverges" in caplog.text
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0"):
+                    compare_training_between(golden, compiled, example_inputs, example_target)
+        assert (
+            "The forward pass diverges" if stage == FxStage.forward else "The backward pass diverges"
+        ) in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
+    def test_passthough(self, caplog, monkeypatch, ReproCls, stage):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [stage])
+        golden = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled.forward = torch.compile(compiled.forward, backend=self.train_backend, dynamic=None)
+        compiled.load_state_dict(golden.state_dict())
+        example_inputs = torch.randn((steps, bsz, input_dim), device=device, dtype=data_type)
+        example_target = torch.randn((steps, bsz, 1), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with pytest.raises(AssertionError):
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=passthrough"):
+                    compare_training_between(golden, compiled, example_inputs, example_target)
+        assert (
+            "The forward pass diverges" if stage == FxStage.forward else "The backward pass diverges"
+        ) not in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
+    def test_fallback(self, caplog, monkeypatch, ReproCls, stage):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [stage])
+
+        golden = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled.forward = torch.compile(compiled.forward, backend=self.train_backend, dynamic=None)
+        compiled.load_state_dict(golden.state_dict())
+        example_inputs = torch.randn((steps, bsz, input_dim), device=device, dtype=data_type)
+        example_target = torch.randn((steps, bsz, 1), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=fallback"):
+                compare_training_between(golden, compiled, example_inputs, example_target)
+        assert (
+            "The forward pass diverges" if stage == FxStage.forward else "The backward pass diverges"
+        ) not in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
+    def test_fail_error(self, caplog, monkeypatch, ReproCls, stage):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [stage])
+
+        golden = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled.forward = torch.compile(compiled.forward, backend=self.train_backend, dynamic=None)
+        compiled.load_state_dict(golden.state_dict())
+        example_inputs = torch.randn((steps, bsz, input_dim), device=device, dtype=data_type)
+        example_target = torch.randn((steps, bsz, 1), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with pytest.raises(
+                RuntimeError, match="Forward pass diverges" if stage == FxStage.forward else "Backward pass diverges"
+            ):
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=fail_error"):
+                    compare_training_between(golden, compiled, example_inputs, example_target)
+        assert (
+            "The forward pass diverges" if stage == FxStage.forward else "The backward pass diverges"
+        ) in caplog.text
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [InplaceModel],
+    )
+    @pytest.mark.parametrize("stage", [FxStage.backward, FxStage.forward])
+    def test_switch_mode(self, caplog, monkeypatch, ReproCls, stage):
+        monkeypatch.setattr(self.faulty_pattern, "_support_stages", [stage])
+        golden = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled = ReproCls(input_dim).to(device=device, dtype=data_type).train()
+        compiled.forward = torch.compile(compiled.forward, backend=self.train_backend, dynamic=None)
+        compiled.load_state_dict(golden.state_dict())
+        example_inputs = torch.randn((steps, bsz, input_dim), device=device, dtype=data_type)
+        example_target = torch.randn((steps, bsz, 1), device=device, dtype=data_type)
+        with need_xpu_graph_logs():
+            with pytest.raises(
+                RuntimeError, match="Forward pass diverges" if stage == FxStage.forward else "Backward pass diverges"
+            ):
+                with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=fail_error"):
+                    compare_training_between(golden, compiled, example_inputs, example_target)
+            with reset_intercept_ctx("rtol=1e-6,atol=1e-5,use_golden=0,mode=fallback"):
+                compare_training_between(golden, compiled, example_inputs, example_target)
+        assert (
+            "The forward pass diverges" if stage == FxStage.forward else "The backward pass diverges"
+        ) in caplog.text
 
 
 if __name__ == "__main__":
@@ -181,9 +355,10 @@ if __name__ == "__main__":
 
     faulty_pattern = FaultyPattern()
     xpu_graph_backend.get_pattern_manager().register_pattern(faulty_pattern)
+    from tests.test_models import compare_training
 
     faulty_pattern._support_stages = [FxStage.forward]
-    compare_training(InplaceModel, xpu_graph_backend, nsteps=2)
+    compare_training(device, data_type, InplaceModel, xpu_graph_backend, nsteps=2)
 
     faulty_pattern._support_stages = [FxStage.backward]
-    compare_training(InplaceModel, xpu_graph_backend, nsteps=2)
+    compare_training(device, data_type, InplaceModel, xpu_graph_backend, nsteps=2)

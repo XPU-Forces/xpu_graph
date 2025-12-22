@@ -10,10 +10,9 @@ def wrap_artifact_at_runtime(
     dynamo_gm,
     fw_metadata=None,
 ):
-    if config.enable_interceptor is not None:
+    if config.enable_interceptor:
         from xpu_graph.runtime.interceptor import intercept
 
-        logger.info("Wrapping compiled function with interceptor")
         return intercept(
             compiled_func,
             golden_fn=dynamo_gm,
