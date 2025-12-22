@@ -2,7 +2,8 @@ import pytest
 import torch
 
 import xpu_graph
-from tests.common.test_models import all_models, compare_inference
+from tests.test_models import all_models, compare_inference
+from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
@@ -10,6 +11,12 @@ device = "mlu"
 data_type = torch.float32
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestInference:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=False)
@@ -23,6 +30,12 @@ class TestInference:
             compare_inference(device, data_type, ReproCls, self.infer_backend)
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestFreezeInference:
     def setup_class(self):
         self.freeze_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2, freeze=True)
@@ -37,6 +50,12 @@ class TestFreezeInference:
             compare_inference(device, data_type, ReproCls, self.freeze_backend)
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestInferenceWithInterceptor:
     def setup_class(self):
         self.infer_backend = xpu_graph.mlu_compiler(
@@ -54,6 +73,12 @@ class TestInferenceWithInterceptor:
             assert "diverges" not in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestFreezeInferenceWithInterceptor:
     def setup_class(self):
         self.freeze_backend = xpu_graph.mlu_compiler(
