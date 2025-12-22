@@ -8,8 +8,8 @@ from tests.test_models import InplaceModel, compare_inference, compare_training
 from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel
 from xpu_graph.fx_utils import FxStage
-from xpu_graph.interceptor import OpInterceptor
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.runtime.interceptor import OpInterceptor
 from xpu_graph.test_utils import need_xpu_graph_logs
 
 device = "mlu"
@@ -44,12 +44,6 @@ def test_op_monitor_fail(caplog):
     assert f"Monitored op: {aten.add.Tensor}" in caplog.text and "diverges" in caplog.text
 
 
-@parametrize_class_env(
-    [
-        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
-        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
-    ],
-)
 class FaultyPattern(Pattern):
     def process(self, gm: torch.fx.GraphModule) -> bool:
         changed = False

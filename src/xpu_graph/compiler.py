@@ -1,5 +1,4 @@
 import functools
-import os
 from itertools import chain
 from typing import Callable
 
@@ -23,7 +22,7 @@ from .fx_utils import (
 )
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
-from .runtime import XpuGraphRuntimeArtifact
+from .runtime import wrap_artifact_at_runtime
 from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
 
 __all__ = [
@@ -244,21 +243,6 @@ class XpuGraph:
         else:
             xpu_gm, fw_metadata = self._dispatch_and_compile(dynamo_gm, example_inputs)
 
-        xpu_gm = XpuGraphRuntimeArtifact(xpu_gm)
-
-        if self._config.enable_interceptor is not None:
-            from xpu_graph.interceptor import intercept
-
-            logger.info("Wrapping compiled funciton with interceptor")
-            xpu_gm = intercept(
-                xpu_gm,
-                golden_fn=dynamo_gm,
-                fw_metadata=fw_metadata,
-                is_training=self._config.is_training,
-                mark=os.environ.get("RANK", "0"),
-                config_str=self._config.enable_interceptor,
-            )
-
         if (guard_filter_fn := kwargs.get("options", {}).get("guard_filter_fn")) is not None and (
             tracing_context := torch._guards.TracingContext.try_get()
         ) is not None:
@@ -270,7 +254,7 @@ class XpuGraph:
             logger.info(f"Removed guards: {list(filtered_guards)}")
             tracing_context.guards_context.dynamo_guards = orig_guards - filtered_guards
 
-        return xpu_gm
+        return wrap_artifact_at_runtime(self._config, xpu_gm, dynamo_gm, fw_metadata)
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()

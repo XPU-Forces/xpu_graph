@@ -1,4 +1,5 @@
 import copy
+import functools
 import itertools
 import os
 from typing import Callable
@@ -9,6 +10,8 @@ from torch.nn import Module
 
 from xpu_graph.config import get_dump_dir
 from xpu_graph.utils import logger
+
+from . import XpuGraphRuntimeArtifact, call_func_at_runtime
 
 CASE_CNT = itertools.count()
 
@@ -32,17 +35,13 @@ def intercept(target_fn, *, golden_fn, fw_metadata, is_training, mark=0, config_
     impure = fw_metadata is None or fw_metadata.num_mutated_inp_runtime_indices > 0
 
     if is_training:
-        return AutogradInterceptor(golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs).guard(
-            target_fn
-        )
+        return AutogradInterceptor(target_fn, golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs)
     else:
-        return FunctionInterceptor(golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs).guard(
-            target_fn
-        )
+        return FunctionInterceptor(target_fn, golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs)
 
 
 def _invoke_inference(func, inputs):
-    outputs = func(*inputs)
+    outputs = call_func_at_runtime(func, *inputs)
     return outputs
 
 
@@ -90,8 +89,9 @@ def compare_tensor_list(base_list, trgt_list, **check_configs):
     return diverge_cnt
 
 
-class FunctionInterceptor:
-    def __init__(self, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
+class FunctionInterceptor(XpuGraphRuntimeArtifact):
+    def __init__(self, compiled_fn, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
+        super().__init__(compiled_fn)
         # Note: The monitor is used for inference.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
@@ -100,13 +100,14 @@ class FunctionInterceptor:
         self.impure = impure
         self.check_configs = check_configs
 
-    def guard(self, compiled_fn):
+    @functools.cached_property
+    def runtime_call(self):
         ## base func is the actual func in the original autograd graph
         ## trgt func is executed alongside to compare with
         if self.use_golden:
-            base_func, trgt_func = self.golden_fn, compiled_fn
+            base_func, trgt_func = self.golden_fn, self._compiled_func
         else:
-            base_func, trgt_func = compiled_fn, self.golden_fn
+            base_func, trgt_func = self._compiled_func, self.golden_fn
 
         # Similar to what torch._functorch.autograd does, wrap the forward function again
         def monitored_inference(*inputs):
@@ -170,17 +171,18 @@ class FunctionInterceptor:
 
             return base_outputs
 
-        if hasattr(compiled_fn, "zero_grad"):
-            monitored_inference.zero_grad = compiled_fn.zero_grad
-        if hasattr(compiled_fn, "named_parameters"):
-            monitored_inference.named_parameters = compiled_fn.named_parameters
-        if hasattr(compiled_fn, "named_buffers"):
-            monitored_inference.named_buffers = compiled_fn.named_buffers
+        if hasattr(self._compiled_func, "zero_grad"):
+            monitored_inference.zero_grad = self._compiled_func.zero_grad
+        if hasattr(self._compiled_func, "named_parameters"):
+            monitored_inference.named_parameters = self._compiled_func.named_parameters
+        if hasattr(self._compiled_func, "named_buffers"):
+            monitored_inference.named_buffers = self._compiled_func.named_buffers
         return monitored_inference
 
 
-class AutogradInterceptor:
-    def __init__(self, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
+class AutogradInterceptor(XpuGraphRuntimeArtifact):
+    def __init__(self, compiled_fn, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
+        super().__init__(compiled_fn)
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
@@ -191,13 +193,12 @@ class AutogradInterceptor:
         self.impure = impure
         self.check_configs = check_configs
 
-    def guard(self, compiled_fn):
+    @functools.cached_property
+    def runtime_call(self):
         if self.use_golden:
-            base_func = self.golden_fn
-            trgt_func = compiled_fn
+            base_func, trgt_func = self.golden_fn, self._compiled_func
         else:
-            base_func = compiled_fn
-            trgt_func = self.golden_fn
+            base_func, trgt_func = self._compiled_func, self.golden_fn
 
         class MonitoredCompiled(torch.autograd.Function):
             @staticmethod
@@ -350,12 +351,12 @@ class AutogradInterceptor:
             outputs = outputs[len(inputs) :]
             return outputs
 
-        if hasattr(compiled_fn, "zero_grad"):
-            monitored_forward.zero_grad = compiled_fn.zero_grad
-        if hasattr(compiled_fn, "named_parameters"):
-            monitored_forward.named_parameters = compiled_fn.named_parameters
-        if hasattr(compiled_fn, "named_buffers"):
-            monitored_forward.named_buffers = compiled_fn.named_buffers
+        if hasattr(self._compiled_func, "zero_grad"):
+            monitored_forward.zero_grad = self._compiled_func.zero_grad
+        if hasattr(self._compiled_func, "named_parameters"):
+            monitored_forward.named_parameters = self._compiled_func.named_parameters
+        if hasattr(self._compiled_func, "named_buffers"):
+            monitored_forward.named_buffers = self._compiled_func.named_buffers
         return monitored_forward
 
 
