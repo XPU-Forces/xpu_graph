@@ -1,48 +1,104 @@
 import copy
+import functools
 import itertools
 import os
-from typing import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
+from enum import Enum
+from typing import Callable, Optional
 
 import torch
 from torch.fx import GraphModule
 from torch.nn import Module
 
 from xpu_graph.config import get_dump_dir
-from xpu_graph.utils import logger
+from xpu_graph.utils import __XPU_GRAPH_ENVS__, logger
+
+from . import XpuGraphRuntimeArtifact, call_func_at_runtime
 
 CASE_CNT = itertools.count()
 
 
-def intercept(target_fn, *, golden_fn, fw_metadata, is_training, mark=0, config_str=""):
-    check_configs = {}
-    use_golden = False
-    for item in config_str.split(","):
-        key, val = item.split("=")
-        if key in ["rtol", "atol"]:
-            val = float(val)
-            check_configs[key] = val
-        elif key in ["allow_subclasses", "equal_nan", "check_device", "check_dtype", "check_layout", "check_stride"]:
-            val = val.lower() in ["true", "1", "on"]
-            check_configs[key] = val
-        elif key == "use_golden":
-            use_golden = val.lower() in ["true", "1", "on"]
-        else:
-            logger.warning(f"Invalid key: {key}")
+class InterceptorMode(Enum):
+    FAIL_DUMP = "fail_dump"
+    FAIL_ERROR = "fail_error"
+    FALLBACK = "fallback"
+    PASSTHROUGH = "passthrough"
+
+
+@dataclass
+class InterceptorCtx:
+    mode: InterceptorMode = InterceptorMode.FAIL_DUMP
+    use_golden: bool = True
+    check_configs: dict = field(default_factory=dict)
+
+    @staticmethod
+    def parse_from(config_str):
+        new_ctx = InterceptorCtx()
+        if config_str is not None:
+            for item in config_str.split(","):
+                key, val = item.split("=")
+                if key == "mode":
+                    new_ctx.mode = InterceptorMode(val)
+                elif key in ["rtol", "atol"]:
+                    val = float(val)
+                    new_ctx.check_configs[key] = val
+                elif key in [
+                    "allow_subclasses",
+                    "equal_nan",
+                    "check_device",
+                    "check_dtype",
+                    "check_layout",
+                    "check_stride",
+                ]:
+                    val = val.lower() in ["true", "1", "on"]
+                    new_ctx.check_configs[key] = val
+                elif key == "use_golden":
+                    new_ctx.use_golden = val.lower() in ["true", "1", "on"]
+                else:
+                    logger.warning(f"Invalid key: {key}")
+        return new_ctx
+
+
+_CURRENT_INTERCEPT_CTX_ = None
+
+
+@contextmanager
+def reset_intercept_ctx(ctx_str: Optional[str] = None, **kwargs):
+    global _CURRENT_INTERCEPT_CTX_
+    old_ctx = _CURRENT_INTERCEPT_CTX_
+    try:
+        new_ctx = replace(InterceptorCtx.parse_from(ctx_str), **kwargs)
+        _CURRENT_INTERCEPT_CTX_ = new_ctx
+        logger.debug(f"Enable intercept context: {_CURRENT_INTERCEPT_CTX_}")
+        yield
+    finally:
+        _CURRENT_INTERCEPT_CTX_ = old_ctx
+        logger.debug(f"Reset intercept context: {_CURRENT_INTERCEPT_CTX_}")
+
+
+def get_current_intercept_ctx():
+    return _CURRENT_INTERCEPT_CTX_
+
+
+def intercept(target_fn, *, golden_fn, fw_metadata, is_training, mark=0, config_str: Optional[str] = None):
+    if config_str is not None and isinstance(config_str, str):
+        intercept_ctx = InterceptorCtx.parse_from(config_str)
+    else:
+        intercept_ctx = InterceptorCtx()
+
+    logger.info(f"Wrapping compiled function with {intercept_ctx}")
 
     impure = fw_metadata is None or fw_metadata.num_mutated_inp_runtime_indices > 0
 
     if is_training:
-        return AutogradInterceptor(golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs).guard(
-            target_fn
-        )
+        return AutogradInterceptor(target_fn, golden_fn, mark, impure=impure, intercept_ctx=intercept_ctx)
     else:
-        return FunctionInterceptor(golden_fn, mark, use_golden=use_golden, impure=impure, **check_configs).guard(
-            target_fn
-        )
+        return FunctionInterceptor(target_fn, golden_fn, mark, impure=impure, intercept_ctx=intercept_ctx)
 
 
 def _invoke_inference(func, inputs):
-    outputs = func(*inputs)
+    outputs = call_func_at_runtime(func, *inputs)
     return outputs
 
 
@@ -52,7 +108,7 @@ def _invoke_forward(func, inputs):
     return outputs
 
 
-def _invoke_backward(func, inputs, outputs, grad_outputs, inputs_requires_grad):
+def _invoke_backward(inputs, outputs, grad_outputs, inputs_requires_grad):
     inputs_ad_idx = []
     inputs_ad = []
     grad_outputs_ad = []
@@ -90,27 +146,33 @@ def compare_tensor_list(base_list, trgt_list, **check_configs):
     return diverge_cnt
 
 
-class FunctionInterceptor:
-    def __init__(self, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
+class FunctionInterceptor(XpuGraphRuntimeArtifact):
+    def __init__(self, compiled_fn, golden_fn: Callable, mark=0, impure=True, intercept_ctx=None):
+        super().__init__(compiled_fn)
         # Note: The monitor is used for inference.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
         self.mark = mark
-        self.use_golden = use_golden
         self.impure = impure
-        self.check_configs = check_configs
+        self.intercept_ctx = intercept_ctx or InterceptorCtx()
 
-    def guard(self, compiled_fn):
-        ## base func is the actual func in the original autograd graph
-        ## trgt func is executed alongside to compare with
-        if self.use_golden:
-            base_func, trgt_func = self.golden_fn, compiled_fn
-        else:
-            base_func, trgt_func = compiled_fn, self.golden_fn
-
+    @functools.cached_property
+    def runtime_call(self):
         # Similar to what torch._functorch.autograd does, wrap the forward function again
         def monitored_inference(*inputs):
-            logger.info("Monitored inference")
+            intercept_ctx = get_current_intercept_ctx() or self.intercept_ctx
+            logger.info(f"Monitored inference with {intercept_ctx}")
+            if intercept_ctx.mode == InterceptorMode.FALLBACK:
+                return _invoke_inference(self.golden_fn, inputs)
+            if intercept_ctx.mode == InterceptorMode.PASSTHROUGH:
+                return _invoke_inference(self._compiled_func, inputs)
+            use_golden = intercept_ctx.use_golden
+            ## base func is the actual func in the original autograd graph
+            ## trgt func is executed alongside to compare with
+            if use_golden:
+                base_func, trgt_func = self.golden_fn, self._compiled_func
+            else:
+                base_func, trgt_func = self._compiled_func, self.golden_fn
 
             base_inputs = inputs
             if self.impure:
@@ -131,8 +193,8 @@ class FunctionInterceptor:
             base_outputs = _invoke_inference(base_func, base_inputs)
             input_diverge_cnt = 0
             if self.impure:
-                input_diverge_cnt = compare_tensor_list(base_inputs, trgt_inputs, **self.check_configs)
-            output_diverge_cnt = compare_tensor_list(base_outputs, trgt_outputs, **self.check_configs)
+                input_diverge_cnt = compare_tensor_list(base_inputs, trgt_inputs, **intercept_ctx.check_configs)
+            output_diverge_cnt = compare_tensor_list(base_outputs, trgt_outputs, **intercept_ctx.check_configs)
             diverge_cnt = input_diverge_cnt + output_diverge_cnt
             if diverge_cnt > 0:
                 global CASE_CNT
@@ -150,7 +212,7 @@ class FunctionInterceptor:
                             print_output=False, include_stride=True, include_device=True
                         )
                         gm_f.write(mod_str)
-                if self.use_golden:
+                if use_golden:
                     golden_inputs, actual_inputs = base_inputs, trgt_inputs
                     golden_outputs, actual_outputs = base_outputs, trgt_outputs
                 else:
@@ -167,42 +229,41 @@ class FunctionInterceptor:
                     dump_glob,
                     os.path.join(dump_path, "dump_glob_inf.pt"),
                 )
+                if intercept_ctx.mode == InterceptorMode.FAIL_ERROR:
+                    raise RuntimeError("Inference pass diverges")
 
             return base_outputs
 
-        if hasattr(compiled_fn, "zero_grad"):
-            monitored_inference.zero_grad = compiled_fn.zero_grad
-        if hasattr(compiled_fn, "named_parameters"):
-            monitored_inference.named_parameters = compiled_fn.named_parameters
-        if hasattr(compiled_fn, "named_buffers"):
-            monitored_inference.named_buffers = compiled_fn.named_buffers
+        if hasattr(self._compiled_func, "zero_grad"):
+            monitored_inference.zero_grad = self._compiled_func.zero_grad
+        if hasattr(self._compiled_func, "named_parameters"):
+            monitored_inference.named_parameters = self._compiled_func.named_parameters
+        if hasattr(self._compiled_func, "named_buffers"):
+            monitored_inference.named_buffers = self._compiled_func.named_buffers
         return monitored_inference
 
 
-class AutogradInterceptor:
-    def __init__(self, golden_fn: Callable, mark=0, use_golden=False, impure=True, **check_configs):
+class AutogradInterceptor(XpuGraphRuntimeArtifact):
+    def __init__(self, compiled_fn, golden_fn: Callable, mark=0, impure=True, intercept_ctx=None):
+        super().__init__(compiled_fn)
         # Note: The monitor is used for training.
         # We suppose that original gm has no states (as torch dynamo does, which treats parameters as inputs)
         self.golden_fn = golden_fn
         if isinstance(golden_fn, Module):
             assert len(golden_fn.state_dict()) == 0
         self.mark = mark
-        self.use_golden = use_golden
         self.impure = impure
-        self.check_configs = check_configs
+        self.intercept_ctx = intercept_ctx or InterceptorCtx()
 
-    def guard(self, compiled_fn):
-        if self.use_golden:
-            base_func = self.golden_fn
-            trgt_func = compiled_fn
-        else:
-            base_func = compiled_fn
-            trgt_func = self.golden_fn
-
+    @functools.cached_property
+    def runtime_call(self):
         class MonitoredCompiled(torch.autograd.Function):
             @staticmethod
-            def forward(ctx, *inputs):
-                logger.info("Monitored forward")
+            def forward(ctx, intercept_ctx, *inputs):
+                if intercept_ctx.use_golden:
+                    base_func, trgt_func = self.golden_fn, self._compiled_func
+                else:
+                    base_func, trgt_func = self._compiled_func, self.golden_fn
 
                 inputs_requires_grad = [isinstance(t, torch.Tensor) and t.requires_grad for t in inputs]
                 base_inputs = [
@@ -225,8 +286,8 @@ class AutogradInterceptor:
                 base_outputs = _invoke_forward(base_func, base_inputs)
                 input_diverge_cnt = 0
                 if self.impure:
-                    input_diverge_cnt = compare_tensor_list(base_inputs, trgt_inputs, **self.check_configs)
-                output_diverge_cnt = compare_tensor_list(base_outputs, trgt_outputs, **self.check_configs)
+                    input_diverge_cnt = compare_tensor_list(base_inputs, trgt_inputs, **intercept_ctx.check_configs)
+                output_diverge_cnt = compare_tensor_list(base_outputs, trgt_outputs, **intercept_ctx.check_configs)
                 diverge_cnt = input_diverge_cnt + output_diverge_cnt
                 if diverge_cnt > 0:
                     global CASE_CNT
@@ -245,7 +306,7 @@ class AutogradInterceptor:
                             )
                             gm_f.write(mod_str)
 
-                    if self.use_golden:
+                    if intercept_ctx.use_golden:
                         golden_inputs, actual_inputs = base_inputs, trgt_inputs
                         golden_outputs, actual_outputs = base_outputs, trgt_outputs
                     else:
@@ -263,6 +324,8 @@ class AutogradInterceptor:
                         dump_glob,
                         os.path.join(dump_path, "dump_glob_fwd.pt"),
                     )
+                    if intercept_ctx.mode == InterceptorMode.FAIL_ERROR:
+                        raise RuntimeError("Forward pass diverges")
 
                 ctx.saved_states = {
                     "base_inputs": base_inputs,
@@ -271,6 +334,7 @@ class AutogradInterceptor:
                     "trgt_outputs": trgt_outputs,
                     "inputs_requires_grad": inputs_requires_grad,
                 }
+                ctx.intercept_ctx = intercept_ctx
                 inputs_after = [
                     (
                         t_after.detach().requires_grad_(True)
@@ -288,7 +352,8 @@ class AutogradInterceptor:
 
             @staticmethod
             def backward(ctx, *grad_outputs):
-                logger.info("Monitored backward")
+                intercept_ctx = ctx.intercept_ctx
+                logger.info(f"Monitored backward with {intercept_ctx}")
 
                 base_inputs = ctx.saved_states["base_inputs"]
                 trgt_inputs = ctx.saved_states["trgt_inputs"]
@@ -296,13 +361,11 @@ class AutogradInterceptor:
                 trgt_outputs = ctx.saved_states["trgt_outputs"]
                 inputs_requires_grad = ctx.saved_states["inputs_requires_grad"]
 
-                trgt_grad_inputs = _invoke_backward(
-                    trgt_func, trgt_inputs, trgt_outputs, grad_outputs, inputs_requires_grad
+                trgt_grad_inputs = _invoke_backward(trgt_inputs, trgt_outputs, grad_outputs, inputs_requires_grad)
+                base_grad_inputs = _invoke_backward(base_inputs, base_outputs, grad_outputs, inputs_requires_grad)
+                grad_diverge_cnt = compare_tensor_list(
+                    base_grad_inputs, trgt_grad_inputs, **intercept_ctx.check_configs
                 )
-                base_grad_inputs = _invoke_backward(
-                    base_func, base_inputs, base_outputs, grad_outputs, inputs_requires_grad
-                )
-                grad_diverge_cnt = compare_tensor_list(base_grad_inputs, trgt_grad_inputs, **self.check_configs)
                 if grad_diverge_cnt > 0:
                     global CASE_CNT
                     case_id = next(CASE_CNT)
@@ -319,7 +382,7 @@ class AutogradInterceptor:
                                 print_output=False, include_stride=True, include_device=True
                             )
                             gm_f.write(mod_str)
-                    if self.use_golden:
+                    if intercept_ctx.use_golden:
                         golden_inputs, actual_inputs = base_inputs, trgt_inputs
                         golden_grad_inputs, actual_grad_inputs = base_grad_inputs, trgt_grad_inputs
                     else:
@@ -336,11 +399,20 @@ class AutogradInterceptor:
                         dump_glob,
                         os.path.join(dump_path, "dump_glob_bwd.pt"),
                     )
-                return base_grad_inputs
+                    if intercept_ctx.mode == InterceptorMode.FAIL_ERROR:
+                        raise RuntimeError("Backward pass diverges")
+                return None, *base_grad_inputs
 
         # Similar to what torch._functorch.autograd does, wrap the forward function again
         def monitored_forward(*inputs):
-            outputs = MonitoredCompiled.apply(*inputs)
+            intercept_ctx = get_current_intercept_ctx() or self.intercept_ctx
+            logger.info(f"Monitored forward with {intercept_ctx}")
+            if intercept_ctx.mode == InterceptorMode.FALLBACK:
+                return self.golden_fn(*inputs)
+            if intercept_ctx.mode == InterceptorMode.PASSTHROUGH:
+                return self._compiled_func(*inputs)
+
+            outputs = MonitoredCompiled.apply(intercept_ctx, *inputs)
             after_inputs = outputs[: len(inputs)]
             for t, t_after in zip(inputs, after_inputs):
                 # filter out inplace mutations with grad
@@ -350,12 +422,12 @@ class AutogradInterceptor:
             outputs = outputs[len(inputs) :]
             return outputs
 
-        if hasattr(compiled_fn, "zero_grad"):
-            monitored_forward.zero_grad = compiled_fn.zero_grad
-        if hasattr(compiled_fn, "named_parameters"):
-            monitored_forward.named_parameters = compiled_fn.named_parameters
-        if hasattr(compiled_fn, "named_buffers"):
-            monitored_forward.named_buffers = compiled_fn.named_buffers
+        if hasattr(self._compiled_func, "zero_grad"):
+            monitored_forward.zero_grad = self._compiled_func.zero_grad
+        if hasattr(self._compiled_func, "named_parameters"):
+            monitored_forward.named_parameters = self._compiled_func.named_parameters
+        if hasattr(self._compiled_func, "named_buffers"):
+            monitored_forward.named_buffers = self._compiled_func.named_buffers
         return monitored_forward
 
 
