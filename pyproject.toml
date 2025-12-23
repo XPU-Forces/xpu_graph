@@ -95,4 +95,4 @@ url = "https://download.pytorch.org/whl/cpu"
 torch           = { index = "pytorch_cpu" }
 torchvision     = { index = "pytorch_cpu" }
 # DO NOT forget to change the verison here.
-torch_npu       = { url = "https://tosv.byted.org/obj/seed-hhw/xllm_xpu_plugin_ci/torch_npu-2.7.1.dev20251209-cp310-cp310-manylinux_2_28_x86_64.whl" }
+torch_npu       = { url = "https://tosv.byted.org/obj/seed-hhw/xllm_xpu_plugin_ci/torch_npu-2.7.1.dev20251107-cp310-cp310-manylinux_2_28_x86_64.whl" }
