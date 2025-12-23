@@ -5,6 +5,7 @@ from typing import Any, Dict
 from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
 from .compiler import XpuGraph
 from .config import OptLevel, Target, XpuGraphConfig
+from .device_graph_runner import GraphRunner
 from .guard_filters import *
 from .passes.patterns.plugin_pattern import *
 from .version import __version__
@@ -24,6 +25,7 @@ __all__ = [
     "deregister_plugin_patterns",
     "enable_plugin_patterns",
     "skip_all_guards_unsafe",
+    "GraphRunner",
 ]
 
 
