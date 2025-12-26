@@ -115,7 +115,6 @@ def fn1(x):
 
 
 def fn2(x):
-    axis = -1
     b = x[:, 39415:39479].contiguous()
     b += 1
     c = aten.stack(

@@ -11,7 +11,6 @@ import time
 from enum import Enum
 from typing import Any, BinaryIO, NamedTuple
 
-
 IS_WINDOWS: bool = os.name == "nt"
 
 
@@ -136,10 +135,7 @@ def check_file(
                     f"Failed due to {err.__class__.__name__}:\n{err}"
                     if not isinstance(err, subprocess.CalledProcessError)
                     else (
-                        "COMMAND (exit code {returncode})\n"
-                        "{command}\n\n"
-                        "STDERR\n{stderr}\n\n"
-                        "STDOUT\n{stdout}"
+                        "COMMAND (exit code {returncode})\n" "{command}\n\n" "STDERR\n{stderr}\n\n" "STDOUT\n{stdout}"
                     ).format(
                         returncode=err.returncode,
                         command=" ".join(as_posix(x) for x in err.cmd),
@@ -200,11 +196,7 @@ def main() -> None:
 
     logging.basicConfig(
         format="<%(threadName)s:%(levelname)s> %(message)s",
-        level=logging.NOTSET
-        if args.verbose
-        else logging.DEBUG
-        if len(args.filenames) < 1000
-        else logging.INFO,
+        level=logging.NOTSET if args.verbose else logging.DEBUG if len(args.filenames) < 1000 else logging.INFO,
         stream=sys.stderr,
     )
 
@@ -212,10 +204,7 @@ def main() -> None:
         max_workers=os.cpu_count(),
         thread_name_prefix="Thread",
     ) as executor:
-        futures = {
-            executor.submit(check_file, x, args.retries, args.timeout): x
-            for x in args.filenames
-        }
+        futures = {executor.submit(check_file, x, args.retries, args.timeout): x for x in args.filenames}
         for future in concurrent.futures.as_completed(futures):
             try:
                 for lint_message in future.result():

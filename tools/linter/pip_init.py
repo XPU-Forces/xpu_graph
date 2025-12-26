@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import time
-
 from typing import List
 
 
@@ -34,9 +33,7 @@ if __name__ == "__main__":
         action="store_true",
         help="verbose logging",
     )
-    parser.add_argument(
-        "--dry-run", help="do not install anything, just print what would be done."
-    )
+    parser.add_argument("--dry-run", help="do not install anything, just print what would be done.")
     parser.add_argument(
         "--no-black-binary",
         help="do not use pre-compiled binaries from pip for black.",

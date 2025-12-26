@@ -134,7 +134,6 @@ def _is_stack_to_cat(
         return False, ()
     cat_inputs = node.args[0]
     last_input = cat_inputs[-1]
-    stack_inputs = []
     if len(last_input.users) == 1:
         return False, ()
     for key, _ in last_input.users.items():

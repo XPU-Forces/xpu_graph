@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 import torch_mlu
 from torch import fx, nn

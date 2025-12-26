@@ -1,5 +1,4 @@
 from functools import cache
-from typing import Callable
 
 import pytest
 import torch

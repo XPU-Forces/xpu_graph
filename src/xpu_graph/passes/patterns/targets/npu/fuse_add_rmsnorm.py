@@ -1,5 +1,5 @@
 import operator
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import torch
 import torch.fx as fx

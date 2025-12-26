@@ -3,6 +3,7 @@ from typing import Dict
 import torch
 import torch_mlu
 
+from xpu_graph.backends import device_graph
 from xpu_graph.cache import SerializableCompiledFxGraph
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger
@@ -17,6 +18,11 @@ def mlu_compile(
     **config_dict: Dict,
 ) -> torch.nn.Module:
     logger.info("Decompose gm for mlu_inductor")
+    compiler = config_dict.get("compiler", None)
+    if compiler == "device_graph":
+        assert is_inference, "Device graph capture/replay is intended for inference-style execution."
+        return device_graph.device_graph_compiler(module, example_inputs, target="mlu", **config_dict)
+
     from torch.nn.attention import SDPBackend, sdpa_kernel
 
     with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
