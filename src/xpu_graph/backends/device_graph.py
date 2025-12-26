@@ -1,10 +1,9 @@
-import pickle
 from typing import Dict
 
 import torch
 
+
 def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **config_dict: Dict) -> torch.nn.Module:
-    
     if example_inputs is None:
         raise ValueError("device_graph_compiler requires example_inputs for capture().")
     if not isinstance(example_inputs, (tuple, list)):
@@ -13,7 +12,7 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
         example_args = tuple(example_inputs)
 
     import torch.utils._pytree as pytree
-    
+
     ex_flat, _ = pytree.tree_flatten((example_args, {}))
     copy_tensor_pos = []
     for i, v in enumerate(ex_flat):
@@ -24,7 +23,7 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
 
     from xpu_graph.config import Target
     from xpu_graph.device_graph_runner import GraphRunner
-    
+
     clone_args = bool(config_dict.get("clone_args", True))
     memory_pool = config_dict.get("memory_pool", None)
 
@@ -48,7 +47,7 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
                 )
             else:
                 raise ValueError("Device Graph Runner target not define.")
-            
+
             self._captured = False
             self._warmed_up = False
 
@@ -65,7 +64,12 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
             flat, _ = pytree.tree_flatten((args, kwargs))
             runtime_tensors = [flat[i] for i in copy_tensor_pos]
             # log for debug
-            print("copy_param_callback: buffer shapes", [b.shape for b in input_buffers], "runtime shapes", [r.shape for r in runtime_tensors])
+            print(
+                "copy_param_callback: buffer shapes",
+                [b.shape for b in input_buffers],
+                "runtime shapes",
+                [r.shape for r in runtime_tensors],
+            )
             if len(runtime_tensors) != len(input_buffers):
                 return False
             try:
@@ -87,8 +91,7 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
             if not self._captured:
                 self._runner.capture(*args, clone_args=clone_args, memory_pool=memory_pool, **kwargs)
                 self._captured = True
-            
+
             return self._runner(*args, **kwargs)
 
     return _LazyNPUGraph(module, copy_tensor_pos)
-    

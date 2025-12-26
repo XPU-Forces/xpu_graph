@@ -6,7 +6,6 @@
 # Modified by xpu_graph for internal use.
 
 import builtins
-import functools
 import inspect
 import math
 import os

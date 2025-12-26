@@ -268,7 +268,6 @@ def fn7(x):
 
 
 def fn8(x):
-    axis = -1
     b = x[:, 39415:39479].contiguous()
     b += 1
     c = aten.stack(
