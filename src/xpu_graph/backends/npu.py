@@ -8,6 +8,7 @@ from torch.fx.graph_module import GraphModule
 from xpu_graph.cache import SerializableArtifact, temp_disable_tracing_envs
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger, recursive_set_obj
+from xpu_graph.backends import device_graph
 
 
 class NpuSerializableArtifact(SerializableArtifact):
@@ -84,7 +85,6 @@ def ge_compiler(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
 
     return compiled_module
 
-
 def inductor_compiler(
     module: torch.nn.Module,
     inputs,
@@ -129,5 +129,8 @@ def npu_compile(
     if compiler == "ge":
         assert is_inference, "Currently, we use ge only for inference."
         return ge_compiler(module, inputs, **config_dict)
+    elif compiler == "device_graph":
+        assert is_inference, "Device graph capture/replay is intended for inference-style execution."
+        return device_graph.device_graph_compiler(module, inputs, target="npu", **config_dict)
     else:
         return inductor_compiler(module, inputs, is_inference=is_inference, is_backward=is_backward, **config_dict)
