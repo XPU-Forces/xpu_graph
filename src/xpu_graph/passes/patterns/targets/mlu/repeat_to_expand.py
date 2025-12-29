@@ -35,7 +35,6 @@ class FusedGatherToCopy(Pattern):
         ]
         for gather_node in candidates:
             repeat_node = gather_node.args[2]
-            gather_node.args[1]
             if repeat_node.target != torch.ops.aten.repeat.default:
                 continue
             if len(repeat_node.users) != 1:

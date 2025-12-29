@@ -33,9 +33,7 @@ class Gelu(AutoMatchPattern):
             mul2_node = node_map["mul2"]
             pow_node = node_map["pow"]
             mul3_node = node_map["mul3"]
-            node_map["add2"]
             mul4_node = node_map["mul4"]
-            node_map["tanh"]
             add3_node = node_map["add3"]
             mul5_node = node_map["mul5"]
 

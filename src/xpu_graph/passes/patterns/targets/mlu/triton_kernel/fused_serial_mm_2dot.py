@@ -10,10 +10,7 @@ from . import libentry
 
 
 def do_config_prune(configs, named_args, **kwargs):
-    named_args["M"]
     K1 = named_args["K1"]
-    named_args["N1"]
-    named_args["N2"]
 
     pruned_configs = []
     for config in configs:

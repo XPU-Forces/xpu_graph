@@ -33,20 +33,12 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
         def __init__(self, callable_target: torch.nn.Module, copy_tensor_pos):
             super().__init__()
             self.copy_tensor_pos = copy_tensor_pos
-            if target == "npu":
-                self._runner = GraphRunner[Target.npu](
-                    callable_target,
-                    init_param_callback=self._init_param_callback,
-                    copy_param_callback=self._copy_param_callback,
-                )
-            elif target == "mlu":
-                self._runner = GraphRunner[Target.mlu](
-                    callable_target,
-                    init_param_callback=self._init_param_callback,
-                    copy_param_callback=self._copy_param_callback,
-                )
-            else:
-                raise ValueError("Device Graph Runner target not define.")
+
+            self._runner = GraphRunner[Target(target)](
+                callable_target,
+                init_param_callback=self._init_param_callback,
+                copy_param_callback=self._copy_param_callback,
+            )
 
             self._captured = False
             self._warmed_up = False
@@ -76,8 +68,9 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
                 for buf, rt in zip(input_buffers, runtime_tensors):
                     if not isinstance(rt, torch.Tensor):
                         return False
-                    # buf should be a non-Parameter tensor buffer, so in-place copy is OK.
-                    buf.copy_(rt)
+                    # Perform asynchronous host-to-device copy to unblock the CPU.
+                    # Explicit stream synchronization (wait_stream) is required later to ensure data consistency before graph replay.
+                    buf.copy_(rt, non_blocking=True)
                 # torch.npu.synchronize()
             except Exception:
                 return False

@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch_mlu
 
 from xpu_graph.compiler import Target, XpuGraph, XpuGraphConfig
 

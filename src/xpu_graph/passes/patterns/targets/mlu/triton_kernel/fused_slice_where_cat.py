@@ -91,7 +91,6 @@ def fuse_slice_where_cat(
     output_stride = output_tensor.stride(0)
 
     slice_row = slice_tensor.shape[0]
-    slice_tensor.shape[1]
 
     block_r = slice_row
     block_c = slice_len
