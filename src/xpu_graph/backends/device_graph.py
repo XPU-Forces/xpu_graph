@@ -1,90 +1,134 @@
+import operator
 from typing import Dict
 
 import torch
+import torch.fx
+from torch.fx.node import Node
+from torch.fx.passes.operator_support import OperatorSupport
+from torch.fx.passes.tools_common import CALLABLE_NODE_OPS
+from torch.utils import _pytree
+
+from xpu_graph.utils import logger
+
+
+class DeviceGraphOperatorSupport(OperatorSupport):
+    def __init__(self, target_device: str):
+        super().__init__()
+        self.target_device = target_device
+
+    def is_node_supported(self, submodules, node: Node) -> bool:
+        if node.op not in CALLABLE_NODE_OPS:
+            return False
+
+        if node.target is operator.getitem:
+            return True
+
+        if node.op == "call_function" or node.op == "call_method" or node.op == "call_module":
+            namespace = getattr(node.target, "namespace", "dummy")
+            if namespace in ["torch_npu_triton", "torch_mlu_triton"]:
+                return True
+            # Note(Zijun): Not sure about how to decide whether a Node is xpu-ops
+            if hasattr(node.target, "__module__") and "xpu_ops" in node.target.__module__:
+                return True
+
+        found_invalid_device = False
+
+        def get_val(meta):
+            return meta.get("val", meta.get("fake_result", None))
+
+        def check_device(t):
+            nonlocal found_invalid_device
+            if found_invalid_device:
+                return
+            if isinstance(t, torch.Tensor):
+                if t.device.type != self.target_device:
+                    found_invalid_device = True
+
+        for input_node in node.all_input_nodes:
+            _pytree.tree_map_(check_device, get_val(input_node.meta))
+            if found_invalid_device:
+                return False
+
+        _pytree.tree_map_(check_device, get_val(node.meta))
+
+        return not found_invalid_device
 
 
 def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **config_dict: Dict) -> torch.nn.Module:
-    if example_inputs is None:
-        raise ValueError("device_graph_compiler requires example_inputs for capture().")
-    if not isinstance(example_inputs, (tuple, list)):
-        example_args = (example_inputs,)
-    else:
-        example_args = tuple(example_inputs)
+    # step1: FakeTensor prop
+    # Note(Zijun): not sure whether it's necessary, due to pass_manager has done it before
+    # fake_propagator = FakeTensorProp(module)
+    # fake_propagator.propagate(*example_inputs)
 
-    import torch.utils._pytree as pytree
+    # step2: Partitioning
+    from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
-    ex_flat, _ = pytree.tree_flatten((example_args, {}))
-    copy_tensor_pos = []
-    for i, v in enumerate(ex_flat):
-        if isinstance(v, torch.nn.Parameter):
-            continue
-        if isinstance(v, torch.Tensor):
-            copy_tensor_pos.append(i)
+    supported_ops = DeviceGraphOperatorSupport(target_device=target)
+    partitioner = CapabilityBasedPartitioner(module, supported_ops, allows_single_node_partition=True)
+    partitions = partitioner.propose_partitions()
+    fused_module = partitioner.fuse_partitions(partitions)
 
     from xpu_graph.config import Target
     from xpu_graph.device_graph_runner import GraphRunner
 
-    clone_args = bool(config_dict.get("clone_args", True))
-    memory_pool = config_dict.get("memory_pool", None)
+    BackendRunnerClass = GraphRunner[Target(target)]
 
-    # NOTE: We wrap with a lazy module because torch.compile invokes backends with FakeTensors;
-    # device graph capture must run with real device tensors at runtime
-    class _LazyNPUGraph(torch.nn.Module):
-        def __init__(self, callable_target: torch.nn.Module, copy_tensor_pos):
+    # Using Lazy mode here because potential in-place operations in the graph might alter the global state
+    class _LazyXPUGraph(torch.nn.Module):
+        def __init__(self, target_module: torch.nn.Module, compipler_config: Dict):
             super().__init__()
-            self.copy_tensor_pos = copy_tensor_pos
+            self.runner = BackendRunnerClass(target_module, None, None)
+            self.config = compipler_config
+            self._is_initialized = False
+            self.copy_tensor_pos = []
 
-            self._runner = GraphRunner[Target(target)](
-                callable_target,
-                init_param_callback=self._init_param_callback,
-                copy_param_callback=self._copy_param_callback,
-            )
+        def _setup_callbacks(self, args, kwarg):
+            flat_args, _ = _pytree.tree_flatten((args, kwarg))
+            self.copy_tensor_pos = []
+            for i, v in enumerate(flat_args):
+                if isinstance(v, torch.Tensor):
+                    self.copy_tensor_pos.append(i)
 
-            self._captured = False
-            self._warmed_up = False
+            def init_param_callback(*args, **kwargs):
+                flat, _ = _pytree.tree_flatten((args, kwargs))
+                return [flat[i] for i in self.copy_tensor_pos]
 
-        @staticmethod
-        def _init_param_callback(*args, **kwargs):
-            flat, _ = pytree.tree_flatten((args, kwargs))
-            # log for debug
-            print("init_param_callback: flat lens", len(flat), "copy_tensor_pos", copy_tensor_pos)
-            # Return the exact Tensor objects used during capture (after clone_args mapping inside capture()).
-            return [flat[i] for i in copy_tensor_pos]
+            def copy_param_callback(input_buffers, *args, **kwargs):
+                flat, _ = _pytree.tree_flatten((args, kwargs))
+                runtime_tensors = [flat[i] for i in self.copy_tensor_pos]
 
-        @staticmethod
-        def _copy_param_callback(input_buffers, *args, **kwargs):
-            flat, _ = pytree.tree_flatten((args, kwargs))
-            runtime_tensors = [flat[i] for i in copy_tensor_pos]
-            # log for debug
-            print(
-                "copy_param_callback: buffer shapes",
-                [b.shape for b in input_buffers],
-                "runtime shapes",
-                [r.shape for r in runtime_tensors],
-            )
-            if len(runtime_tensors) != len(input_buffers):
-                return False
-            try:
-                for buf, rt in zip(input_buffers, runtime_tensors):
-                    if not isinstance(rt, torch.Tensor):
-                        return False
-                    # Perform asynchronous host-to-device copy to unblock the CPU.
-                    # Explicit stream synchronization (wait_stream) is required later to ensure data consistency before graph replay.
-                    buf.copy_(rt, non_blocking=True)
-                # torch.npu.synchronize()
-            except Exception:
-                return False
-            return True
+                if len(runtime_tensors) != len(input_buffers):
+                    return False
+                try:
+                    for buf, rt in zip(input_buffers, runtime_tensors):
+                        if not isinstance(rt, torch.Tensor):
+                            return False
+                        buf.copy_(rt, non_blocking=True)
+                    return True
+                except Exception:
+                    return False
+
+            self.runner._init_param_callback = init_param_callback
+            self.runner._copy_param_callback = copy_param_callback
+            self._is_initialized = True
 
         def forward(self, *args, **kwargs):
-            if not self._warmed_up:
-                self._warmed_up = True
-                return self._runner._callable_target(*args, **kwargs)
+            if not self._is_initialized:
+                self._setup_callbacks(args, kwargs)
+                memory_pool = self.config.get("memory_pool", None)
+                clone_args = bool(self.config.get("clone_args", True))
+                self.runner.capture(*args, memory_pool=memory_pool, clone_args=clone_args, **kwargs)
 
-            if not self._captured:
-                self._runner.capture(*args, clone_args=clone_args, memory_pool=memory_pool, **kwargs)
-                self._captured = True
+                # return self.runner._output
+                # FIX: Force a replay to ensure correct output values
+                return self.runner.forward(*args, **kwargs)
 
-            return self._runner(*args, **kwargs)
+            return self.runner.forward(*args, **kwargs)
 
-    return _LazyNPUGraph(module, copy_tensor_pos)
+    # step4: Replace fused_module's submodules with LazyXPUGraph
+    for name, submodule in fused_module.named_children():
+        if isinstance(submodule, torch.fx.GraphModule):
+            lazy_runner = _LazyXPUGraph(submodule, config_dict)
+            setattr(fused_module, name, lazy_runner)
+
+    return fused_module

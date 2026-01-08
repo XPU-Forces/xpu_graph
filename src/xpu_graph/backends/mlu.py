@@ -17,12 +17,12 @@ def mlu_compile(
     is_backward: bool = False,
     **config_dict: Dict,
 ) -> torch.nn.Module:
-    logger.info("Decompose gm for mlu_inductor")
     compiler = config_dict.get("compiler", None)
     if compiler == "device_graph":
         assert is_inference, "Device graph capture/replay is intended for inference-style execution."
         return device_graph.device_graph_compiler(module, example_inputs, target="mlu", **config_dict)
 
+    logger.info("Decompose gm for mlu_inductor")
     from torch.nn.attention import SDPBackend, sdpa_kernel
 
     with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
