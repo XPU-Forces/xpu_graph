@@ -25,10 +25,7 @@ class DeviceGraphOperatorSupport(OperatorSupport):
 
         if node.op == "call_function" or node.op == "call_method" or node.op == "call_module":
             namespace = getattr(node.target, "namespace", "dummy")
-            if namespace in ["torch_npu_triton", "torch_mlu_triton"]:
-                return True
-            # Note(Zijun): Not sure about how to decide whether a Node is xpu-ops
-            if hasattr(node.target, "__module__") and "xpu_ops" in node.target.__module__:
+            if namespace in ["torch_npu_triton", "torch_mlu_triton", "xpu_ops"]:
                 return True
 
         found_invalid_device = False
@@ -75,27 +72,24 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
 
     # Using Lazy mode here because potential in-place operations in the graph might alter the global state
     class _LazyXPUGraph(torch.nn.Module):
-        def __init__(self, target_module: torch.nn.Module, compipler_config: Dict):
+        def __init__(self, target_module: torch.nn.Module):
             super().__init__()
-            self.runner = BackendRunnerClass(target_module, None, None)
-            self.config = compipler_config
-            self._is_initialized = False
             self.copy_tensor_pos = []
-
-        def _setup_callbacks(self, args, kwarg):
-            flat_args, _ = _pytree.tree_flatten((args, kwarg))
-            self.copy_tensor_pos = []
-            for i, v in enumerate(flat_args):
-                if isinstance(v, torch.Tensor):
-                    self.copy_tensor_pos.append(i)
 
             def init_param_callback(*args, **kwargs):
-                flat, _ = _pytree.tree_flatten((args, kwargs))
-                return [flat[i] for i in self.copy_tensor_pos]
+                flat_args, _ = _pytree.tree_flatten((args, kwargs))
+                if not self.copy_tensor_pos:
+                    for i, v in enumerate(flat_args):
+                        if isinstance(v, torch.nn.Parameter):
+                            continue
+                        if isinstance(v, torch.Tensor):
+                            self.copy_tensor_pos.append(i)
+
+                return [flat_args[i] for i in self.copy_tensor_pos]
 
             def copy_param_callback(input_buffers, *args, **kwargs):
-                flat, _ = _pytree.tree_flatten((args, kwargs))
-                runtime_tensors = [flat[i] for i in self.copy_tensor_pos]
+                flat_args, _ = _pytree.tree_flatten((args, kwargs))
+                runtime_tensors = [flat_args[i] for i in self.copy_tensor_pos]
 
                 if len(runtime_tensors) != len(input_buffers):
                     return False
@@ -103,22 +97,24 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
                     for buf, rt in zip(input_buffers, runtime_tensors):
                         if not isinstance(rt, torch.Tensor):
                             return False
-                        buf.copy_(rt, non_blocking=True)
+                        buf.copy_(rt)
                     return True
                 except Exception:
                     return False
 
-            self.runner._init_param_callback = init_param_callback
-            self.runner._copy_param_callback = copy_param_callback
-            self._is_initialized = True
+            self.runner = BackendRunnerClass(
+                target_module,
+                init_param_callback=init_param_callback,
+                copy_param_callback=copy_param_callback,
+            )
+            self._is_initialized = False
 
         def forward(self, *args, **kwargs):
             if not self._is_initialized:
-                self._setup_callbacks(args, kwargs)
-                memory_pool = self.config.get("memory_pool", None)
-                clone_args = bool(self.config.get("clone_args", True))
+                memory_pool = config_dict.get("memory_pool", None)
+                clone_args = bool(config_dict.get("clone_args", True))
                 self.runner.capture(*args, memory_pool=memory_pool, clone_args=clone_args, **kwargs)
-
+                self._is_initialized = True
                 # return self.runner._output
                 # FIX: Force a replay to ensure correct output values
                 return self.runner.forward(*args, **kwargs)
@@ -128,7 +124,7 @@ def device_graph_compiler(module: torch.nn.Module, example_inputs, target, **con
     # step4: Replace fused_module's submodules with LazyXPUGraph
     for name, submodule in fused_module.named_children():
         if isinstance(submodule, torch.fx.GraphModule):
-            lazy_runner = _LazyXPUGraph(submodule, config_dict)
+            lazy_runner = _LazyXPUGraph(submodule)
             setattr(fused_module, name, lazy_runner)
 
     return fused_module
