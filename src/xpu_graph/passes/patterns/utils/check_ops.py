@@ -238,8 +238,10 @@ def check_trans_op(node: fx.Node) -> bool:
 def check_t_op(node: fx.Node) -> bool:
     return check_op(node, aten.t.default)
 
+
 def check_permute_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.permute.default)
+
 
 def check_act_op(
     node: fx.Node,

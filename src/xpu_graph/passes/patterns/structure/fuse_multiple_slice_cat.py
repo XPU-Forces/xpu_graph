@@ -1,5 +1,4 @@
 import operator
-from typing import Callable
 
 import torch
 from torch import fx, nn

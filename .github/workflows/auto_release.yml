@@ -53,7 +53,7 @@ jobs:
       image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.2.rc1_py3.11_th26
       volumes:
       - /etc/localtime:/etc/localtime
-      options: --privileged=true --ipc=host --pid=host --user root
+      options: --privileged=true --ipc=host --user root
     steps:
     - uses: actions/checkout@v4
     - name: Build
@@ -75,7 +75,7 @@ jobs:
       image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.2.rc1_py3.11_th26
       volumes:
       - /etc/localtime:/etc/localtime
-      options: --privileged=true --ipc=host --pid=host --user root
+      options: --privileged=true --ipc=host --user root
     env:
       XPU_GRAPH_VERSION: ${{ inputs.version }} # NOTE(liuyuan): specially designed for command sed.
     steps:

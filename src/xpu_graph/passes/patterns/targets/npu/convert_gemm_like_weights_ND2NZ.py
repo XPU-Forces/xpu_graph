@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 import torch
 import torch.fx as fx
 import torch_npu
