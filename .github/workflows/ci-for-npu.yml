@@ -68,6 +68,7 @@ jobs:
         . .venv/bin/activate
         python -m build .
         uv pip install dist/*.whl --force-reinstall --no-deps
+        echo "codecov token: ${{ secrets.CODECOV_TOKEN }}"
     - name: Running npu tests
       shell: bash
       env:
