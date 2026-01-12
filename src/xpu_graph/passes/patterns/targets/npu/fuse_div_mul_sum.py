@@ -104,11 +104,9 @@ class FusedDivMulSum(Pattern):
 
             div1_dividend = div1.args[0]
             div1_base_input = expand1_node.args[0]
-            expand1_shape = expand1_node.args[1]
 
             div2_dividend = div2.args[0]
             div2_base_input = expand2_node.args[0]
-            expand2_shape = expand2_node.args[1]
 
             with graph.inserting_before(final_mul):
                 fused_node = graph.call_module(

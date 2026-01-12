@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 import torch
 import torch_mlu
@@ -35,7 +35,6 @@ class FusedGatherToCopy(Pattern):
         ]
         for gather_node in candidates:
             repeat_node = gather_node.args[2]
-            gather_dim = gather_node.args[1]
             if repeat_node.target != torch.ops.aten.repeat.default:
                 continue
             if len(repeat_node.users) != 1:
