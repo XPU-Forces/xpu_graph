@@ -80,12 +80,17 @@ def fn7(inputs, weight_list, bias_list):
     return outputs_original
 
 
+def fn8(inputs, weight_list, bias_list):
+    weight_list = [w.t() for w in weight_list]
+    return fn0(inputs, weight_list, bias_list)
+
+
 def create_input(func, M, N, K):
     T = 8
     inputs = None
     weight_list = None
     bias_list = None
-    if func in [fn0, fn2, fn4, fn5]:
+    if func in [fn0, fn2, fn4, fn5, fn8]:
         M, N, K = 5, 8, 7
         inputs = torch.randn((1, M, N), device=device, dtype=data_type)
         weight_list = [torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)]
@@ -93,6 +98,9 @@ def create_input(func, M, N, K):
             bias_list = [torch.randn((K), device=device, dtype=data_type) for _ in range(T)]
         else:
             bias_list = [torch.randn((M, K), device=device, dtype=data_type) for _ in range(T)]
+        if func == fn8:
+            weight_list = [w.t().contiguous() for w in weight_list]
+
     if func in [fn1, fn3]:
         S = 3
         M, N, K = 5, 6, 7
@@ -198,6 +206,7 @@ class TestCombineMatMul:
             fn5,
             fn6,
             fn7,
+            fn8,
         ],
     )
     def test_matmul_patterns_inference(self, caplog, pattern_func, dynamic):
@@ -223,6 +232,7 @@ class TestCombineMatMul:
             fn5,
             fn6,
             fn7,
+            fn8,
         ],
     )
     @pytest.mark.skip(reason="combo_mm for training is not fully verified yet, disable it for now")
@@ -247,4 +257,4 @@ if __name__ == "__main__":
         debug=True,
         vendor_compiler_config=None,
     )
-    combine_matmul_test(xpu_graph_backend, fn0, dynamic=False)
+    combine_matmul_test(xpu_graph_backend, fn8, dynamic=False)

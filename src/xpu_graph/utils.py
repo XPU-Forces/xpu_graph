@@ -191,12 +191,14 @@ class __XPU_GRAPH_ENVS__:
     vendor_compiler_mode = "VENDOR_COMPILER_MODE"
     enable_interceptor = "XPUGRAPH_INTERCEPTOR"
     logs = "XPUGRAPH_LOGS"
+    include_patterns = "XPUGRAPH_DEBUG_INCLUDE_PATTERNS"
     skip_patterns = "XPUGRAPH_DEBUG_SKIP_PATTERNS"
     pointwise_combine_width = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_WIDTH"
     pointwise_combine_ops_idx = "XPUGRAPH_DEBUG_POINTWISE_COMBINE_OPS_IDX"
     matmul_combine_width = "XPUGRAPH_DEBUG_MM_COMBINE_WIDTH"
     fallback_legacy_dispatch = "XPUGRAPH_FALLBACK_LEGACY_DISPATCH"
     partition_fn = "XPUGRAPH_PARTITIONER"
+    dispatch_tensorify_python_scalars = "XPUGRAPH_DEBUG_TENSORIFY_PYTHON_SCALARS"
 
 
 def get_bool_env_var(name, default_value: bool):
@@ -226,3 +228,58 @@ def recursive_set_obj(src_dict: dict, tgt_obj):
                     setattr(tgt_obj, k, v)
                 except Exception as e:
                     raise e
+
+
+class PolyBackendDispatcher:
+    # WARNING(liuyuan): The class member [_anchor_class] and [_registrations] should not start with "__". In short, "_" is protected and "__" is private.
+    def __init_subclass__(
+        cls,
+        backend: Union["Target", List["Target"], Tuple["Target"]] = None,
+        anchor_class: type = None,
+    ):
+        assert not hasattr(cls, "_anchor_class"), "The class already has anchor class yet."
+        if anchor_class and not hasattr(anchor_class, "_registrations"):
+            anchor_class._registrations = {}
+
+        if backend:
+            if not isinstance(backend, (tuple, list)):
+                backend = (backend,)
+            for backend in backend:
+                assert backend not in anchor_class._registrations
+                anchor_class._registrations[backend] = cls
+                cls._anchor_class = anchor_class
+
+    def __class_getitem__(cls, key: "Target"):
+        if hasattr(cls, "_registrations"):
+            if key and key in cls._registrations:
+                cls = cls._registrations[key]
+        return cls
+
+
+class AutoloadDispatcher(PolyBackendDispatcher):
+    def __class_getitem__(cls, target: "Target"):
+        try:
+            importlib.import_module(f"xpu_graph.backends.{target.value}", __package__)
+        except Exception:
+            logger.warning(f"{target.value} is not found, use the default registrations")
+        return super().__class_getitem__(target)
+
+
+from abc import ABCMeta
+
+
+class ImportOrIgnoreMetaClass(ABCMeta):
+    def __new__(*args, __modules_to_import__=None, **kwargs):
+        if __modules_to_import__ is not None:
+            if not isinstance(__modules_to_import__, (tuple, list)):
+                __modules_to_import__ = (__modules_to_import__,)
+            import importlib
+
+            try:
+                for mod in __modules_to_import__:
+                    importlib.import_module(mod)
+            except:
+                # TODO(liuyuan): Should clear the class symbol as well ?
+                return None
+        # WARNING(liuyuan): Is ABCMeta zero-overhead without any abstract method.
+        return ABCMeta.__new__(*args, **kwargs)

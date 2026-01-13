@@ -54,7 +54,7 @@ jobs:
       - /usr/local/Ascend/driver:/usr/local/Ascend/driver
       - /usr/local/dcmi:/usr/local/dcmi
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi
-      options: --privileged=true --ipc=host --pid=host --user root --shm-size=300g -e ASCEND_VISIBLE_DEIVCES=6 -e ASCEND_RT_VISIBLE_DEVICES=6
+      options: --privileged=true --ipc=host --user root --shm-size=300g -e ASCEND_VISIBLE_DEIVCES=6 -e ASCEND_RT_VISIBLE_DEVICES=6
     steps:
     - uses: actions/checkout@v4
     - name: Build And Install Wheel Artifact
@@ -62,7 +62,7 @@ jobs:
       shell: bash
       run: |
         export HTTP_PROXY=${XPU_GPRAH_PROXY} HTTPS_PROXY=${XPU_GPRAH_PROXY}
-        pip install uv
+        pip install uv==0.9.10
         uv python install 3.10 --default
         uv sync --extra dev --extra npu
         . .venv/bin/activate
@@ -75,6 +75,10 @@ jobs:
       # WARNING(liuyuan): [-n auto] will lead to error (OOM?) and 8 is efficient enough.
       run: |
         echo "Running npu tests..."
+        export DEV0=$(shuf -n 1 -e 0 2 4 6)
+        export DEV1=$(( $DEV0 + 1 ))
+        export ASCEND_RT_VISIBLE_DEVICES=$DEV0,$DEV1
+        echo "NPU_VISIBLE_DEVICES: $ASCEND_RT_VISIBLE_DEVICES"
         . .venv/bin/activate
         pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph -m "not exclusive" -n 8 --ignore=tests/common/test_inference.py tests/common tests/npu
         pytest --cov=.venv/lib/python3.10/site-packages/xpu_graph --cov-append --cov-report=xml -m "exclusive" -n 0 --ignore=tests/common/test_inference.py tests/common tests/npu

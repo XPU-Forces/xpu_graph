@@ -1,5 +1,3 @@
-from typing import List, Tuple
-
 import torch
 import torch_mlu
 from torch import fx, nn
@@ -22,7 +20,6 @@ from .triton_kernel.linear_attention_kernel import attention
 
 def naive(q, k, v, bias, causal, sm_scale, has_bias):
     N_CTX = q.shape[-2]
-    n_head = q.shape[1]
     M = torch.tril(torch.ones((N_CTX, N_CTX), device="mlu"))
     p = torch.matmul(q, k.transpose(2, 3)).float() * sm_scale
     if has_bias:

@@ -8,7 +8,7 @@ dtype = torch.float32
 
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 
 @torch.library.custom_op("test_op::numpy_mul", mutates_args=())
@@ -38,7 +38,7 @@ def backward(ctx, grad):
 numpy_mul.register_autograd(backward, setup_context=setup_context)
 
 
-class Simple(torch.nn.Module):
+class SimpleWitCustomOp(torch.nn.Module):
     def __init__(self, input_dim, p=0.1):
         super().__init__()
         self.fc = torch.nn.Linear(input_dim, input_dim)
@@ -67,7 +67,7 @@ class NumpyMul(torch.autograd.Function):
 numpy_mul2 = NumpyMul.apply
 
 
-class Simple2(torch.nn.Module):
+class SimpleWithAutogradFunction(torch.nn.Module):
     def __init__(self, input_dim, p=0.1):
         super().__init__()
         self.fc = torch.nn.Linear(input_dim, input_dim)
@@ -134,7 +134,7 @@ def compare_training_with_custom_op(ModCls, backend, nsteps=4, bsz=8, input_dim=
             assert is_similar(p_golden, p_compiled)
 
 
-class TestCustom:
+class TestCustomFallbackTraining:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
             is_training=True, opt_level=OptLevel.level2, freeze=False, fallback_legacy_dispatch=True
@@ -143,15 +143,62 @@ class TestCustom:
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [Simple, Simple2, SimpleSwiGLUwithCKPT],
+        [
+            SimpleWitCustomOp,
+            SimpleWithAutogradFunction,
+            SimpleSwiGLUwithCKPT,
+        ],
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, ReproCls):
-        compare_training_with_custom_op(ReproCls, self.train_backend)
+    def test_custom_op(self, caplog, ReproCls):
+        with need_xpu_graph_logs():
+            compare_training_with_custom_op(ReproCls, self.train_backend)
+        if ReproCls == SimpleWitCustomOp:
+            assert "Higher order operators detected" not in caplog.text
+        else:
+            assert "Higher order operators detected" in caplog.text
+
+
+def compare_inference_with_custom_op(ModCls, backend, nbatches=4, bsz=8, input_dim=16):
+    golden = ModCls(input_dim).eval()
+    compiled = ModCls(input_dim).eval()
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
+
+    compiled.load_state_dict(golden.state_dict())
+
+    with torch.no_grad():
+        for i in range(nbatches):
+            input = torch.randn((bsz, input_dim), device=device, dtype=dtype)
+            golden_output = golden(input)
+            compiled_output = compiled(input)
+            print(f"Batch: {i} golden: {golden_output}, compiled: {compiled_output}")
+            assert is_similar(golden_output, compiled_output)
+
+
+class TestCustomFallbackInference:
+    def setup_class(self):
+        inference_config = xpu_graph.XpuGraphConfig(
+            is_training=False, opt_level=OptLevel.level2, freeze=False, fallback_legacy_dispatch=True
+        )
+        self.inference_backend = xpu_graph.XpuGraph(inference_config)
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [
+            SimpleWitCustomOp,
+            SimpleWithAutogradFunction,
+            SimpleSwiGLUwithCKPT,
+        ],
+    )
+    def test_custom_op(self, caplog, ReproCls):
+        with need_xpu_graph_logs():
+            compare_inference_with_custom_op(ReproCls, self.inference_backend)
+        assert "Higher order operators detected" not in caplog.text
+        assert "decompose graph complete" in caplog.text
 
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True, fallback_legacy_dispatch=True
+        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True, fallback_legacy_dispatch=False
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in [SimpleSwiGLUwithCKPT]:

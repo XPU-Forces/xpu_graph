@@ -67,11 +67,14 @@ class XpuGraphConfig:
     # Users can enable interceptor to monitor the results of compiled graph
     enable_interceptor: Optional[str] = None
 
+    # Users can specify which patterns can be included
+    include_patterns: List[str] = field(default_factory=list)
+
     # Users can specify which patterns can be skipped
     skip_patterns: List[str] = field(default_factory=list)
 
     # Whether to use legacy dispatchers in case of higher-order operators or subclass-tensors
-    fallback_legacy_dispatch: bool = False
+    fallback_legacy_dispatch: bool = True
 
     # Users can specify which partition function to use for training
     partition_fn: Optional[Union[Callable, str]] = None
@@ -112,6 +115,9 @@ class XpuGraphConfig:
 
         if os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor) is not None:
             self.enable_interceptor = os.getenv(__XPU_GRAPH_ENVS__.enable_interceptor)
+
+        if os.getenv(__XPU_GRAPH_ENVS__.include_patterns) is not None:
+            self.include_patterns = os.getenv(__XPU_GRAPH_ENVS__.include_patterns).split(",")
 
         if os.getenv(__XPU_GRAPH_ENVS__.skip_patterns) is not None:
             self.skip_patterns = os.getenv(__XPU_GRAPH_ENVS__.skip_patterns).split(",")

@@ -1,4 +1,3 @@
-import time
 from abc import ABC, abstractmethod
 
 import torch
@@ -14,7 +13,7 @@ opt_times = 0
 class Optimizer(ABC):
     _debug = False
     _dump_graph = False
-    _opt_level = OptLevel.level0
+    _opt_level = OptLevel.level1
     _support_stages = [FxStage.inference]
 
     @abstractmethod
@@ -51,14 +50,11 @@ class Optimizer(ABC):
 
     def __dump_files(self, gm):
         import os
-        import shutil
 
         global opt_times
-        dirname = "xpu_graph_debugs"
+        dirname = f"xpu_graph_debugs_pid{os.getpid()}"
 
-        if opt_times == 0:
-            if os.path.exists(dirname):
-                shutil.rmtree(dirname)
+        if not os.path.exists(dirname):
             os.makedirs(dirname)
 
         filename = os.path.join(dirname, f"optimization_{opt_times}_after_pass_{self.__class__.__name__}")
@@ -78,7 +74,4 @@ class Optimizer(ABC):
         opt_times += 1
 
     def _set_level(self, opt_level: OptLevel):
-        assert (
-            self.__class__._opt_level <= opt_level
-        ), f"opt_level {opt_level} is not supported by {self.__class__.__name__}."
         self._opt_level = opt_level

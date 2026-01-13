@@ -27,12 +27,12 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model.load_state_dict(torch.load(model_path))
     model.train()
     model.mlu(rank)
-    model.inner = parallelize_module(
-        model.inner,
+    model = parallelize_module(
+        model,
         device_mesh,
         parallelize_plan={
-            "inner.0": ColwiseParallel(input_layouts=Shard(0), output_layouts=Shard(1)),
-            "inner.2": RowwiseParallel(input_layouts=Shard(1), output_layouts=Shard(0)),
+            "up_proj": ColwiseParallel(input_layouts=Shard(0), output_layouts=Shard(1)),
+            "down_proj": RowwiseParallel(input_layouts=Shard(1), output_layouts=Shard(0)),
         },
     )
     criterion = nn.MSELoss()
@@ -43,7 +43,7 @@ def train(rank, world_size, do_compile, return_queue, ModCls, model_path):
         xpu_graph_backend = xpu_graph.mlu_compiler(
             is_training=True, freeze=False, opt_level=OptLevel.level2, debug=True
         )
-        model = torch.compile(model, backend=xpu_graph_backend, dynamic=False)
+        model = torch.compile(model, backend=xpu_graph_backend, dynamic=False, fullgraph=True)
 
     for epoch in range(5):
         final_loss = 0
@@ -74,12 +74,12 @@ def infer(rank, world_size, do_compile, return_queue, ModCls, model_path):
     model.load_state_dict(torch.load(model_path))
     model.eval()
     model.mlu(rank)
-    model.inner = parallelize_module(
-        model.inner,
+    model = parallelize_module(
+        model,
         device_mesh,
         parallelize_plan={
-            "inner.0": ColwiseParallel(input_layouts=Shard(0), output_layouts=Shard(1)),
-            "inner.2": RowwiseParallel(input_layouts=Shard(1), output_layouts=Shard(0)),
+            "up_proj": ColwiseParallel(input_layouts=Shard(0), output_layouts=Shard(1)),
+            "down_proj": RowwiseParallel(input_layouts=Shard(1), output_layouts=Shard(0)),
         },
     )
     criterion = nn.MSELoss(reduction="sum")
@@ -89,18 +89,19 @@ def infer(rank, world_size, do_compile, return_queue, ModCls, model_path):
         xpu_graph_backend = xpu_graph.mlu_compiler(
             is_training=False, freeze=False, opt_level=OptLevel.level2, debug=True
         )
-        model = torch.compile(model, backend=xpu_graph_backend, dynamic=False)
+        model = torch.compile(model, backend=xpu_graph_backend, dynamic=False, fullgraph=True)
 
     final_loss = 0
-    for batch_idx, (data, target) in enumerate(dataloader):
-        data, target = data.mlu(rank), target.mlu(rank)
-        output = model(data)
-        loss = criterion(output, target)
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(dataloader):
+            data, target = data.mlu(rank), target.mlu(rank)
+            output = model(data)
+            loss = criterion(output, target)
 
-        if batch_idx % 10 == 0 and rank == 0:
-            print(f"Batch [{batch_idx}], Loss: {loss.item():.4f}")
+            if batch_idx % 10 == 0 and rank == 0:
+                print(f"Batch [{batch_idx}], Loss: {loss.item():.4f}")
 
-        final_loss = final_loss + loss
+            final_loss = final_loss + loss
 
     return_queue.put((rank, final_loss.item()))
     cleanup()
@@ -116,7 +117,7 @@ def tp_test(ModCls, is_training=True, model_path="tp_model.pth"):
     torch.save(model.state_dict(), model_path)
 
     do_compile = 0
-    torch.multiprocessing.spawn(
+    mp.spawn(
         train if is_training else infer,
         args=(world_size, do_compile, return_queue1, ModCls, model_path),
         nprocs=world_size,
@@ -128,7 +129,7 @@ def tp_test(ModCls, is_training=True, model_path="tp_model.pth"):
         results1[rank] = loss
 
     do_compile = 1
-    torch.multiprocessing.spawn(
+    mp.spawn(
         train if is_training else infer,
         args=(world_size, do_compile, return_queue2, ModCls, model_path),
         nprocs=world_size,
@@ -163,4 +164,4 @@ class TestTP:
 
 
 if __name__ == "__main__":
-    tp_test(MainModel)
+    tp_test(MainModel, is_training=True)

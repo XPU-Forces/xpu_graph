@@ -49,7 +49,7 @@ jobs:
     runs-on: MLU
     container:
       image: hub.byted.org/base/lagrange.torch27.mlu:7532ae44d8c162c8cb5ce81ef8a13c28
-      options: --privileged=true --ipc=host --pid=host --user root --network host
+      options: --privileged=true --ipc=host --user root --network host
     steps:
     - uses: actions/checkout@v4
     - name: Build And Install Wheel Artifact

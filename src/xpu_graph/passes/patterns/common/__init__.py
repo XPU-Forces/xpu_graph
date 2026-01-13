@@ -3,7 +3,6 @@ import pkgutil
 
 from xpu_graph.config import XpuGraphConfig
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern, Pattern, PatternGroup
-from xpu_graph.utils import logger
 
 
 def get_all_patterns(config: XpuGraphConfig):
@@ -23,7 +22,7 @@ def get_all_patterns(config: XpuGraphConfig):
                 and issubclass(pat, Pattern)
                 and pat.__module__.startswith(__name__)
                 and pat not in (Pattern, AutoMatchPattern)
-                and pat._opt_level <= config.opt_level
+                and pat.filter(config)
             ):
                 patterns[pat._pattern_group].append(pat())
 

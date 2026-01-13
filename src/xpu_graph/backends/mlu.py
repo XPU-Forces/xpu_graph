@@ -3,12 +3,25 @@ from typing import Dict
 import torch
 import torch_mlu
 
+from xpu_graph.backends import device_graph
 from xpu_graph.cache import SerializableCompiledFxGraph
 from xpu_graph.fx_utils import decompose_for_inductor
 from xpu_graph.utils import logger
 
 
-def mlu_compile(module: torch.nn.Module, example_inputs, **config_dict: Dict) -> torch.nn.Module:
+def mlu_compile(
+    module: torch.nn.Module,
+    example_inputs,
+    *,
+    is_inference: bool = False,
+    is_backward: bool = False,
+    **config_dict: Dict,
+) -> torch.nn.Module:
+    compiler = config_dict.get("compiler", None)
+    if compiler == "device_graph":
+        assert is_inference, "Device graph capture/replay is intended for inference-style execution."
+        return device_graph.device_graph_compiler(module, example_inputs, target="mlu", **config_dict)
+
     logger.info("Decompose gm for mlu_inductor")
     from torch.nn.attention import SDPBackend, sdpa_kernel
 
@@ -18,9 +31,6 @@ def mlu_compile(module: torch.nn.Module, example_inputs, **config_dict: Dict) ->
         "After decompose_for_inductor, graph like:\n %s",
         module.print_readable(print_output=False, include_stride=True, include_device=True),
     )
-
-    is_inference = config_dict.get("is_inference", False)
-    is_backward = config_dict.get("is_backward", False)
 
     mode = config_dict.get("mode", "reduce-overhead")
     if mode == "cudagraphs":
