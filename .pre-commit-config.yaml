@@ -18,7 +18,7 @@ repos:
     hooks:
     -   id: ruff
         stages: [pre-commit]
-        args: [ --fix, --exit-non-zero-on-fix, --extend-select, I, --silent ]
+        args: [ --fix, --exit-non-zero-on-fix, --extend-select, I, --line-length=120, --silent]
     -   id: ruff
         stages: [manual]
-        args: [ --fix, --exit-non-zero-on-fix, --extend-select, I, --verbose]
+        args: [ --fix, --exit-non-zero-on-fix, --extend-select, I, --line-length=120, --verbose]
