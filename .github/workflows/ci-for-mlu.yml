@@ -73,7 +73,7 @@ jobs:
         export MLU_VISIBLE_DEVICES=$DEV0,$DEV1
         echo "MLU_VISIBLE_DEVICES: $MLU_VISIBLE_DEVICES"
         echo "Running MLU tests..."
-        python3 -m pytest --cov=xpu_graph -m "not exclusive" -n 8 tests/common tests/mlu
+        python3 -m pytest --cov=xpu_graph -m "not exclusive" --dist=loadfile -n 8 tests/common tests/mlu
         python3 -m pytest --cov=xpu_graph --cov-append -m "exclusive" -n 0 tests/common tests/mlu
     - uses: codecov/codecov-action@v5
       env:
