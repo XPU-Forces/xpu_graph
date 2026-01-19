@@ -40,10 +40,15 @@ class TestNpuGraphRunner:
 
         device_graph.capture(torch.empty_like(input_tensor).uniform_(1, 2))
 
-        result = device_graph.forward(input_tensor)
+        replay_stream = torch.npu.Stream()
+        with replay_stream:
+            result = device_graph.forward(input_tensor)
 
         s = torch.npu.Stream()
+        s.wait_stream(replay_stream)
         with torch.npu.stream(s):
             result = result + 2.0
+
+        torch.npu.synchronize()
 
         assert torch.allclose(result, golden)
