@@ -76,6 +76,9 @@ class BatchDenseLayerModule(torch.nn.Module):
             inputs = inputs.contiguous()
         if not weight.is_contiguous():
             weight = weight.contiguous()
+        if bias is not None:
+            if not bias.is_contiguous():
+                bias = bias.contiguous()
         b, m, _ = inputs.shape
         n = weight.shape[-1] if not weight_trans else weight.shape[-2]
         if bias is not None and bias.shape == torch.Size([b, m, n]):

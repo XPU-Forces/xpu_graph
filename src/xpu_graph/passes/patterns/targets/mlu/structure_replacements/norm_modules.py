@@ -14,8 +14,8 @@ class LayerNormModule(torch.nn.Module):
     def forward(self, inputs, weights, bias, epsilon):
         import torch.nn.functional as F
 
-        if weights is None and weights.dtype != inputs.dtype:
+        if weights is not None and weights.dtype != inputs.dtype:
             weights = weights.to(inputs.dtype)
-        if bias is None and bias.dtype != inputs.dtype:
+        if bias is not None and bias.dtype != inputs.dtype:
             bias = bias.to(inputs.dtype)
         return F.layer_norm(inputs, inputs.shape[-1:], weights, bias, epsilon)
