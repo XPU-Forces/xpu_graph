@@ -17,7 +17,7 @@ class DenseLayerModule(torch.nn.Module):
 
         m = inputs.shape[0]
         n = weight.shape[-1] if not weight_trans else weight.shape[-2]
-        if bias != None:
+        if bias is not None:
             bias_shape = bias.shape
             if len(bias_shape) == 2 and bias_shape[0] == 1:
                 bias = bias.view(-1)
