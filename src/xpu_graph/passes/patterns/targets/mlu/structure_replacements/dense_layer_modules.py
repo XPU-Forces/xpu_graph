@@ -17,7 +17,7 @@ class DenseLayerModule(torch.nn.Module):
 
         m = inputs.shape[0]
         n = weight.shape[-1] if not weight_trans else weight.shape[-2]
-        if bias != None:
+        if bias is not None:
             bias_shape = bias.shape
             if len(bias_shape) == 2 and bias_shape[0] == 1:
                 bias = bias.view(-1)
@@ -76,6 +76,9 @@ class BatchDenseLayerModule(torch.nn.Module):
             inputs = inputs.contiguous()
         if not weight.is_contiguous():
             weight = weight.contiguous()
+        if bias is not None:
+            if not bias.is_contiguous():
+                bias = bias.contiguous()
         b, m, _ = inputs.shape
         n = weight.shape[-1] if not weight_trans else weight.shape[-2]
         if bias is not None and bias.shape == torch.Size([b, m, n]):
