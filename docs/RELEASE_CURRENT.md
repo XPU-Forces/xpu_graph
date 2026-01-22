@@ -1,4 +1,4 @@
-# Release 0.10.1
+# Release 0.11.0
 
 ## 主要依赖库版本描述
 - python 3.9 或者更高
@@ -27,4 +27,5 @@
   ```
 
 ## Bug修复与其他改动
-- 修复**CSE**相关pass错误移除有**副作用side-effect**节点的问题；
+- 修复`LayerNorm`相关pass对不带weight和bias的场景的分支处理。
+- 修复`CustomBatchMatmul`调用pass对bias非连续场景的支持。
