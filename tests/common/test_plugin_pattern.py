@@ -161,6 +161,9 @@ class TestPluginPattern:
                 def pattern(x):
                     return (x[:, :2048].contiguous(),)
 
+                def func(x):
+                    return x[:, :2048].contiguous().clone()
+
                 assert pattern_reg_success_log(pattern) in caplog.text
                 assert caplog.text.count(pattern_reg_success_log(pattern)) == 2
 
@@ -168,15 +171,15 @@ class TestPluginPattern:
                 config = XpuGraphConfig(is_training=False, debug=True)
                 xpu_graph = XpuGraph(config)
 
-                compiled = torch.compile(pattern, backend=xpu_graph, dynamic=False)
+                compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
 
                 input_tensor = torch.randn(1024, 1024)
-                assert is_similar(compiled(input_tensor)[0], replace_1(input_tensor)) == True
+                assert is_similar(compiled(input_tensor), replace_1(input_tensor)), "shape (1024, 2048) failed"
                 assert pattern_changed_success_log(pattern, "VariantPatternLt2048") in caplog.text
                 caplog.clear()
 
                 input_tensor = torch.randn(10, 3072)
-                assert is_similar(compiled(input_tensor)[0], replace_1(input_tensor)) == True
+                assert is_similar(compiled(input_tensor), replace_1(input_tensor)), "shape (10, 3072) failed"
                 assert pattern_changed_success_log(pattern, "VariantPatternGe2048") in caplog.text
 
             assert pattern_dereg_success_log(pattern) in caplog.text
@@ -248,11 +251,11 @@ class TestPluginPattern:
 
             def true_func(x):
                 x = x.view(-1, x.shape[-1])
-                return (x,)
+                return x.clone()
 
             def true_func_2(x):
                 x = x.view(-1, x.shape[-1], x.shape[0])
-                return (x,)
+                return x.clone()
 
             config = XpuGraphConfig(is_training=False, debug=True)
             xpu_graph = XpuGraph(config)
@@ -263,8 +266,8 @@ class TestPluginPattern:
             compiled_2 = torch.compile(true_func_2, backend=xpu_graph, dynamic=False)
 
             input_tensor = torch.rand(1024, 1024 * 1024)
-            assert is_similar(compiled(input_tensor)[0], replace(input_tensor))
-            assert is_similar(compiled_2(input_tensor)[0], replace(input_tensor)) == False
+            assert is_similar(compiled(input_tensor), replace(input_tensor)), "shape 2d failed"
+            assert not is_similar(compiled_2(input_tensor), replace(input_tensor)), "shape 3d should fail"
 
     def test_literal_rewrite_basic(self, caplog):
         with enable_plugin_patterns():
