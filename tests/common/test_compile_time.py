@@ -1,10 +1,11 @@
-import xpu_graph
-import torch
-from xpu_graph.config import XpuGraphConfig
-from xpu_graph.test_utils import timeit 
-import pytest
-from pytest import approx
 import numpy as np
+import pytest
+import torch
+from pytest import approx
+
+import xpu_graph
+from xpu_graph.config import XpuGraphConfig
+from xpu_graph.test_utils import timeit
 
 # TODO(liuyuan):make it test nightly for machine-monopolization.
 # class TestCompileTime():

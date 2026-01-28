@@ -138,7 +138,6 @@ class GraphRunner(torch.nn.Module, ABC, PolyBackendDispatcher):
     def forward(self, *args, **kwargs) -> torch.Tensor:
         assert self._copy_to_param_buffer(*args, **kwargs)
         self._graph.replay()
-        self._stream.synchronize()
         return self._output
 
 

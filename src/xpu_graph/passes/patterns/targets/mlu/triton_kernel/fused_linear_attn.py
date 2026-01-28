@@ -1,6 +1,3 @@
-import math
-from typing import List
-
 import torch
 import torch_mlu
 import triton

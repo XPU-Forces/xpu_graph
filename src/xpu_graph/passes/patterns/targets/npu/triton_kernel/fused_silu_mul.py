@@ -1,5 +1,3 @@
-import logging
-
 import torch
 import torch_npu
 import triton

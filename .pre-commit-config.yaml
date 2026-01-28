@@ -13,30 +13,12 @@ repos:
     -   id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
 
--   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
     hooks:
-    -   id: isort
-        args: ["--profile", "black"]
-        stages: [commit]
-    -   id: isort
-        name: isort for ci
-        args: ["--profile", "black", "--diff"]
+    -   id: ruff
+        stages: [pre-commit]
+        args: [ --fix, --exit-non-zero-on-fix, --extend-select, I, --line-length=120, --silent]
+    -   id: ruff
         stages: [manual]
-
-
--   repo: https://github.com/psf/black.git
-    rev: 23.1.0
-    hooks:
-    -   id: black
-        args: ["--line-length=120"]
-        stages: [commit]
-    -   id: black
-        name: black for ci
-        args: ["--line-length=120", "--diff"]
-        stages: [manual]
-
--   repo: https://github.com/pycqa/autoflake
-    rev: v2.3.1
-    hooks:
-      - id: autoflake
+        args: [ --fix, --exit-non-zero-on-fix, --extend-select, I, --line-length=120, --verbose]
