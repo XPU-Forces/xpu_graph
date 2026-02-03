@@ -1,7 +1,8 @@
 import pytest
 import torch
 
-from tests.common.test_models import SimpleModel, compare_inference
+from tests.test_models import SimpleModel, compare_inference
+from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel, XpuGraph, XpuGraphConfig, XpuGraphLocalCache
 from xpu_graph.test_utils import need_xpu_graph_logs
 
@@ -9,6 +10,12 @@ device = "cpu"
 dtype = torch.float32
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 @pytest.mark.parametrize("freezing", [False, True])
 def test_xpugraph_cache(caplog, tmp_path, freezing):
     # Note: currently, we do not guard on **freezed params**

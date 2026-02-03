@@ -2,7 +2,8 @@ import pytest
 import torch
 
 import xpu_graph
-from tests.common.test_models import all_models, compare_training
+from tests.test_models import all_models, compare_training
+from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
@@ -10,6 +11,12 @@ device = "mlu"
 data_type = torch.float32
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestTraining:
     def setup_class(self):
         self.train_backend = xpu_graph.mlu_compiler(
@@ -28,6 +35,12 @@ class TestTraining:
         compare_training(device, data_type, ReproCls, self.train_backend)
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestTrainingWithInterceptor:
     def setup_class(self):
         self.train_backend = xpu_graph.mlu_compiler(

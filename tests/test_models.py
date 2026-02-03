@@ -86,6 +86,19 @@ class DropoutModel(nn.Module):
 all_models = [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel, DropoutModel]
 
 
+def compare_inference_between(golden, compiled, example_inputs):
+    compiled_input = example_inputs.clone()
+    golden_input = example_inputs.clone()
+    with torch.inference_mode():
+        with torch.random.fork_rng(device_type=torch._utils._get_available_device_type()):
+            output_golden = golden(golden_input)
+
+        compiled_output = compiled(compiled_input)
+
+    assert is_similar(compiled_input, golden_input)
+    assert is_similar(compiled_output, output_golden)
+
+
 def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16, dynamic=True, state_dict=None):
     golden = ModCls(input_dim).to(device=device, dtype=data_type).eval()
     compiled = ModCls(input_dim).to(device=device, dtype=data_type).eval()
@@ -98,31 +111,13 @@ def compare_inference(device, data_type, ModCls, backend, bsz=80, input_dim=16, 
 
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=dynamic)
     compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
-    golden_input = compiled_input.clone()
-    with torch.inference_mode():
-        if device == "cpu":
-            rng_state = torch.random.get_rng_state()
-            output_golden = golden(golden_input)
-            torch.random.set_rng_state(rng_state)
-        else:
-            with torch.random.fork_rng(device_type=device):
-                output_golden = golden(golden_input)
-
-        compiled_output = compiled(compiled_input)
-
-    assert is_similar(compiled_input, golden_input)
-    assert is_similar(compiled_output, output_golden)
+    compare_inference_between(golden, compiled, compiled_input)
 
 
-def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input_dim=16, dynamic=True):
-    golden = ModCls(input_dim).to(device=device, dtype=data_type).train()
-    compiled = ModCls(input_dim).to(device=device, dtype=data_type).train()
-
-    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=dynamic)
+def compare_training_between(golden, compiled, example_inputs, target):
     compiled.load_state_dict(golden.state_dict())
-    compiled_input = torch.randn((bsz, input_dim), device=device, dtype=data_type)
-    golden_input = compiled_input.clone()
-    target = torch.randn((bsz, 1), device=device, dtype=data_type)
+
+    nsteps = example_inputs.shape[0]
     optimizer_golden = torch.optim.AdamW(golden.parameters())
     optimizer_compiled = torch.optim.AdamW(compiled.parameters())
     optimizer_compiled.load_state_dict(optimizer_golden.state_dict())
@@ -131,22 +126,17 @@ def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input
     loss_fn = nn.MSELoss()
 
     for i in range(nsteps):
-        if device == "cpu":
-            rng_state = torch.random.get_rng_state()
-            optimizer_golden.zero_grad()
-            loss_golden = loss_fn(golden(golden_input), target)
+        compiled_input = example_inputs[i].clone()
+        golden_input = example_inputs[i].clone()
+        optimizer_golden.zero_grad()
+        with torch.random.fork_rng(device_type=torch._utils._get_available_device_type()):
+            loss_golden = loss_fn(golden(golden_input), target[i])
             loss_golden.backward()
-            optimizer_golden.step()
-            torch.random.set_rng_state(rng_state)
-        else:
-            with torch.random.fork_rng(device_type=device):
-                optimizer_golden.zero_grad()
-                loss_golden = loss_fn(golden(golden_input), target)
-                loss_golden.backward()
-                optimizer_golden.step()
+
+        optimizer_golden.step()
 
         optimizer_compiled.zero_grad()
-        loss_compiled = loss_fn(compiled(compiled_input), target)
+        loss_compiled = loss_fn(compiled(compiled_input), target[i])
         loss_compiled.backward()
         optimizer_compiled.step()
 
@@ -154,3 +144,15 @@ def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input
 
         assert is_similar(compiled_input, golden_input)
         assert is_similar(loss_golden, loss_compiled)
+
+
+def compare_training(device, data_type, ModCls, backend, nsteps=10, bsz=8, input_dim=16, dynamic=True):
+    golden = ModCls(input_dim).to(device=device, dtype=data_type).train()
+    compiled = ModCls(input_dim).to(device=device, dtype=data_type).train()
+
+    compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=dynamic)
+
+    example_inputs = torch.randn((nsteps, bsz, input_dim), device=device, dtype=data_type)
+    example_target = torch.randn((nsteps, bsz, 1), device=device, dtype=data_type)
+
+    compare_training_between(golden, compiled, example_inputs, example_target)
