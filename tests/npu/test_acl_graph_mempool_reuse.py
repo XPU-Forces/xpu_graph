@@ -4,13 +4,31 @@ import torch
 from xpu_graph import Target, XpuGraph, XpuGraphConfig
 
 
+@pytest.fixture(autouse=True)
+def reset_npu_mempool():
+    try:
+        torch.npu.empty_cache()
+        yield
+    finally:
+        pass
+        torch.npu.empty_cache()
+
+
 class BMM(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.empty(2048, 1024))
 
     def forward(self, x):
-        return torch.matmul(x, self.weight)
+        y = torch.matmul(x, self.weight)
+        y1 = torch.relu(y)
+        y2 = torch.relu(-y)
+        z = torch.cat([y1, y2], dim=-1)
+
+        # Note: inplace operation is required here
+        #       because out-of-place result is placed outside custom mempool and will not reused
+        x.copy_(z)
+        return x
 
 
 @pytest.mark.skip(reason="toxic, see #396")
@@ -75,3 +93,16 @@ class TestMemPoolReuse:
 
             # NOTE(liuyuan): should grow with 0B at least once if we use acl_graph memory pool reuse.
             assert 0 in mem_growth, f"{mem_growth=}"
+
+
+if __name__ == "__main__":
+    import logging
+
+    import torch
+    from torch_npu.dynamo import torchair as tng
+
+    tng.logger.setLevel(logging.DEBUG)
+
+    testcase = TestMemPoolReuse()
+    testcase.setup_method()
+    testcase.test_mem_pool_reuse()
