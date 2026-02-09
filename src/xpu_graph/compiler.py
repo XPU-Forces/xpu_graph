@@ -260,7 +260,7 @@ class XpuGraph:
     def _set_context(self):
         self._orig_ctx = {}
         self._orig_ctx["torch._inductor.config.freezing"] = torch._inductor.config.freezing
-        if self._config.freeze and self._config.is_training == False:
+        if self._config.freeze and self._config.is_training is False:
             # The configuration in this inductor affects the return value of is_parameter_freezing(),
             # thereby influencing the process of generating the fx_graph in dynamo. The current code
             # in the community is not very clean, and it would be more reasonable to place this
