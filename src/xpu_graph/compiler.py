@@ -1,3 +1,4 @@
+import functools
 import os
 from itertools import chain
 from typing import Callable
@@ -18,6 +19,7 @@ from .fx_utils import (
     fakify_tensors,
     find_hop_nodes,
     find_subclass_inputs,
+    freeze_compile,
 )
 from .passes.pass_manager import PassManager
 from .passes.patterns.plugin_pattern import __PLUGIN_PATTERN_GROUP__
@@ -34,6 +36,7 @@ class XpuGraph:
         self,
         config: XpuGraphConfig,
         cache: XpuGraphCache = None,
+        **kwargs,
     ):
         config._reset_config_with_env()
         self._config = config
@@ -43,7 +46,7 @@ class XpuGraph:
         self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
         self._set_context()
         # WARNING(liuyuan): _pass_manager MUST be initilized after _set_context because triton kernel depends on environment varaibels that fetched in _set_context.
-        self._pass_manager = PassManager(self._config)
+        self._pass_manager = PassManager(self._config, **kwargs)
         # NOTE(liuyuan): The plugin patterns should be placed before those built-in.
         self._pass_manager.get_pattern_manager().insert_patterns(
             chain.from_iterable(__PLUGIN_PATTERN_GROUP__.get(self._config.target, {}).values())
@@ -104,7 +107,8 @@ class XpuGraph:
                 else:
                     xpu_compiled = SerializableGraphModule(xpu_compiled)
 
-                if self._config.enable_cache:
+                if self._config.enable_cache and stage != FxStage.joint:
+                    # Note(chenyifan): Disable cache for FxStage.joint for now, as it drops necessary meta info for parition_fn
                     if isinstance(xpu_compiled, SerializableArtifact):
                         xpu_compiled = self._cache.save_artifact(hashkey, xpu_compiled)
                     else:
@@ -113,6 +117,7 @@ class XpuGraph:
                 if isinstance(xpu_compiled, SerializableArtifact):
                     # WARNING(liuyuan): MUST get the real artifact itself before return.
                     xpu_compiled = xpu_compiled.artifact
+
             return xpu_compiled
 
         def wrapped(gm, sample_inputs):
@@ -194,20 +199,52 @@ class XpuGraph:
 
         return xpu_gm, fw_metadata
 
-    def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
+    def _dispatch_and_compile(self, dynamo_gm, example_inputs):
+        logger.debug(
+            "before compile: graph like:\n %s",
+            dynamo_gm.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
+        aot_config = {}
+        aot_config["keep_inference_input_mutations"] = True
+
+        def partition_fn(joint_gm, joint_args, *, num_fwd_outputs):
+            new_joint_gm = self._get_compiler(FxStage.joint)(joint_gm, joint_args)
+
+            from torch._functorch.partitioners import default_partition
+
+            partition_fn = get_partition_fn(self._config.partition_fn) or default_partition
+
+            return partition_fn(new_joint_gm, joint_args, num_fwd_outputs=num_fwd_outputs)
+
+        aot_config["partition_fn"] = partition_fn
+        if self._config.freeze:
+            aot_config["inference_compiler"] = functools.partial(
+                freeze_compile, dynamo_gm, inner_compiler=self._get_compiler(FxStage.inference)
+            )
+        else:
+            aot_config["inference_compiler"] = self._get_compiler(FxStage.inference)
+
+        aot_config["fw_compiler"] = (
+            self._get_compiler(FxStage.forward) if self._config.is_training else aot_config["inference_compiler"]
+        )
+        aot_config["bw_compiler"] = self._get_compiler(FxStage.backward)
+
+        compiled = aot_autograd(**aot_config)(dynamo_gm, example_inputs)
+
+        if tracing_context := torch._guards.TracingContext.try_get():
+            fw_metadata = tracing_context.fw_metadata
+        else:
+            fw_metadata = None
+
+        return compiled, fw_metadata
+
+    def __call__(self, dynamo_gm, example_inputs, **kwargs):
         logger.info(f"{self._config}")
 
         if self._config.fallback_legacy_dispatch:
             xpu_gm, fw_metadata = self._legacy_dispatch_and_compile(dynamo_gm, example_inputs)
         else:
-            # Temporially use aot_eager as a placeholder
-            from torch._dynamo.backends.debugging import aot_eager
-
-            xpu_gm = aot_eager(dynamo_gm, example_inputs)
-            if tracing_context := torch._guards.TracingContext.try_get():
-                fw_metadata = tracing_context.fw_metadata
-            else:
-                fw_metadata = None
+            xpu_gm, fw_metadata = self._dispatch_and_compile(dynamo_gm, example_inputs)
 
         xpu_gm = XpuGraphRuntimeArtifact(xpu_gm)
 
@@ -243,7 +280,7 @@ class XpuGraph:
     def _set_context(self):
         self._orig_ctx = {}
         self._orig_ctx["torch._inductor.config.freezing"] = torch._inductor.config.freezing
-        if self._config.freeze and self._config.is_training == False:
+        if self._config.freeze and self._config.is_training is False:
             # The configuration in this inductor affects the return value of is_parameter_freezing(),
             # thereby influencing the process of generating the fx_graph in dynamo. The current code
             # in the community is not very clean, and it would be more reasonable to place this

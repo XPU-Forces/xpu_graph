@@ -1,16 +1,16 @@
 import pytest
 import torch
-
-aten = torch.ops.aten
-
 import xpu_graph
-from tests.common.test_models import InplaceModel, compare_inference, compare_training
 from xpu_graph import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.interceptor import OpInterceptor
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.test_utils import need_xpu_graph_logs
 
+from tests.test_models import InplaceModel, compare_inference, compare_training
+from tests.utils import parametrize_class_env
+
+aten = torch.ops.aten
 device = "cpu"
 data_type = torch.float32
 
@@ -53,6 +53,12 @@ class FaultyPattern(Pattern):
         return changed
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestInferenceInterceptorUseGolden:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
@@ -75,6 +81,12 @@ class TestInferenceInterceptorUseGolden:
         assert "The inference pass diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestInferenceInterceptorUseActual:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
@@ -98,6 +110,12 @@ class TestInferenceInterceptorUseActual:
         assert "The inference pass diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestTrainingInterceptorUseGolden:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
@@ -125,6 +143,12 @@ class TestTrainingInterceptorUseGolden:
             assert "The forward pass diverges" in caplog.text
 
 
+@parametrize_class_env(
+    [
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "1"},
+        {"XPUGRAPH_FALLBACK_LEGACY_DISPATCH": "0"},
+    ],
+)
 class TestTrainingInterceptorUseActual:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(

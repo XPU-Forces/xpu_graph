@@ -38,6 +38,7 @@ class FxStage(Enum):
     pregrad = "pregrad"
     forward = "forward"
     backward = "backward"
+    joint = "joint"
 
 
 def trace_and_inline(
@@ -256,8 +257,8 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
                 )
 
                 tensorify_python_scalars(dispatched_fn, fake_mode.shape_env, fake_mode)
-            except:
-                logger.debug("Failed to tensorify python scalars, check the pytorch version")
+            except Exception as e:
+                logger.debug("Failed to tensorify python scalars, check the pytorch version: %s", e)
     return dispatched_fn, fw_metadata
 
 
@@ -384,6 +385,59 @@ def get_disable_fake_mode():
             unset_fake_temporarily as disable_fake_mode,
         )
     return disable_fake_mode
+
+
+def freeze_compile(dynamo_gm, aot_graph_module, example_args, *, inner_compiler=None):
+    can_unlift = True
+    for name, param in dynamo_gm.named_parameters(remove_duplicate=False):
+        if _is_subclass_input(param):
+            logger.debug("Found subclass input %s, cannot unlift", name)
+            can_unlift = False
+            break
+    for name, buffer in dynamo_gm.named_buffers(remove_duplicate=False):
+        if _is_subclass_input(buffer):
+            logger.debug("Found subclass input %s, cannot unlift", name)
+            can_unlift = False
+            break
+    if can_unlift:
+        logger.debug(
+            "Before freezing, graph like:\n %s",
+            aot_graph_module.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
+        unlifted_nodes = _unlift_params(dynamo_gm, aot_graph_module)
+        aot_graph_module.graph.lint()
+        aot_graph_module.recompile()
+        unlifted_params = [node for node in unlifted_nodes if node.op == "get_attr"]
+        num_params = len(unlifted_params)
+        example_args = list(example_args[num_params:])
+        logger.info(
+            "Freezing %d params: %s",
+            num_params,
+            [node.target for node in unlifted_params],
+        )
+        logger.debug(
+            "After freezing, graph like:\n %s",
+            aot_graph_module.print_readable(print_output=False, include_stride=True, include_device=True),
+        )
+    if inner_compiler is not None:
+        compiled = inner_compiler(aot_graph_module, example_args)
+    else:
+        compiled = aot_graph_module
+
+    if can_unlift:
+
+        def freeze_wrapper(full_args):
+            unfreezed_args = list(full_args[num_params:])
+            full_args.clear()
+            if not hasattr(compiled, "_boxed_call"):
+                return compiled(*unfreezed_args)
+            return compiled(unfreezed_args)
+
+        freeze_wrapper._boxed_call = True
+
+        return freeze_wrapper
+
+    return compiled
 
 
 def _get_wrapped_constant(node: fx.Node):
