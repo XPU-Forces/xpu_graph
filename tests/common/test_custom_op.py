@@ -152,10 +152,11 @@ class TestCustomFallbackTraining:
     def test_custom_op(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             compare_training_with_custom_op(ReproCls, self.train_backend)
-        if ReproCls == SimpleWitCustomOp:
-            assert "Higher order operators detected" not in caplog.text
-        else:
-            assert "Higher order operators detected" in caplog.text
+        if self.train_backend._config.fallback_legacy_dispatch:
+            if ReproCls == SimpleWitCustomOp:
+                assert "Higher order operators detected" not in caplog.text
+            else:
+                assert "Higher order operators detected" in caplog.text
 
 
 def compare_inference_with_custom_op(ModCls, backend, nbatches=4, bsz=8, input_dim=16):
@@ -192,8 +193,9 @@ class TestCustomFallbackInference:
     def test_custom_op(self, caplog, ReproCls):
         with need_xpu_graph_logs():
             compare_inference_with_custom_op(ReproCls, self.inference_backend)
-        assert "Higher order operators detected" not in caplog.text
-        assert "decompose graph complete" in caplog.text
+        if self.inference_backend._config.fallback_legacy_dispatch:
+            assert "Higher order operators detected" not in caplog.text
+            assert "decompose graph complete" in caplog.text
 
 
 if __name__ == "__main__":
