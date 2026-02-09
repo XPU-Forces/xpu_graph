@@ -257,8 +257,8 @@ def _invoke_dispatcher(flat_fn, fake_flat_args, fake_mode, shape_env, aot_config
                 )
 
                 tensorify_python_scalars(dispatched_fn, fake_mode.shape_env, fake_mode)
-            except:
-                logger.debug("Failed to tensorify python scalars, check the pytorch version")
+            except Exception as e:
+                logger.debug("Failed to tensorify python scalars, check the pytorch version: %s", e)
     return dispatched_fn, fw_metadata
 
 

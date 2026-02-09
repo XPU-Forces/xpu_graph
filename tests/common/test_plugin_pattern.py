@@ -2,8 +2,6 @@ from functools import cache
 
 import pytest
 import torch
-
-import xpu_graph
 from xpu_graph import (
     XpuGraph,
     enable_plugin_patterns,
@@ -102,7 +100,7 @@ class TestPluginPattern:
                         compiled(input_tensor, input_tensor_2)[0],
                         replace_add_and_div(input_tensor, input_tensor_2)[0],
                     )
-                    == False
+                    is False
                 )
                 caplog.clear()
 
@@ -114,7 +112,7 @@ class TestPluginPattern:
                         compiled(input_tensor, input_tensor_2)[0],
                         replace_add_and_div(input_tensor, input_tensor_2)[0],
                     )
-                    == False
+                    is False
                 )
                 caplog.clear()
 
@@ -125,7 +123,7 @@ class TestPluginPattern:
                         compiled(input_tensor, input_tensor_2)[0],
                         replace_add_and_div(input_tensor, input_tensor_2)[0],
                     )
-                    == True
+                    is True
                 )
                 assert pattern_changed_success_log(add_and_div) in caplog.text
             assert pattern_dereg_success_log(add_and_div) in caplog.text
@@ -205,7 +203,7 @@ class TestPluginPattern:
                         compiled(input_tensor, input_tensor)[0],
                         replace(input_tensor, input_tensor),
                     )
-                    == False
+                    is False
                 )
                 assert pattern_changed_success_log(pattern) not in caplog.text
 
@@ -230,7 +228,7 @@ class TestPluginPattern:
                         compiled(input_tensor, input_tensor)[0],
                         replace(input_tensor, input_tensor),
                     )
-                    == True
+                    is True
                 )
                 assert pattern_changed_success_log(pattern2, "VariantPattern2_with_argument_elimination") in caplog.text
                 assert pattern_changed_success_log(pattern2) not in caplog.text
@@ -317,7 +315,7 @@ class TestPluginPattern:
         with enable_plugin_patterns():
             # NOTE(liuyuan): This is a good case compared to the one before.
             @register_this_as_plugin_pattern((torch.empty(1, 1024), 3, 300), replace, Target.none)
-            def pattern(x, y, z):
+            def pattern(x, y, z):  # noqa: F811
                 return ((x.view(-1, 1024)[0][0] * (x - y)).add(200, alpha=z),)
 
             def test_func(x):
