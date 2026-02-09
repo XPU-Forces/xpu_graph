@@ -1,14 +1,13 @@
 import pytest
 import torch
 import torch.nn as nn
+import xpu_graph
 from torch.utils.checkpoint import checkpoint
+from xpu_graph import OptLevel
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 device = "cpu"
 dtype = torch.float32
-
-import xpu_graph
-from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 
 @torch.library.custom_op("test_op::numpy_mul", mutates_args=())

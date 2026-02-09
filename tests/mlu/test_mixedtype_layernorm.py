@@ -1,11 +1,9 @@
 import pytest
 import torch
-
 import xpu_graph
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
     is_similar,
-    maybe_similar,
     need_xpu_graph_logs,
     skip_xpu_graph_cache,
 )

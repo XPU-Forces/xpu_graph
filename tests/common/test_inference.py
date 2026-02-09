@@ -1,11 +1,11 @@
 import pytest
 import torch
-
 import xpu_graph
+from xpu_graph import OptLevel
+from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
+
 from tests.test_models import all_models, compare_inference
 from tests.utils import parametrize_class_env
-from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 device = "cpu"
 data_type = torch.float32

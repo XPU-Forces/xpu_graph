@@ -1,17 +1,16 @@
 import pytest
 import torch
-
-aten = torch.ops.aten
-
 import xpu_graph
-from tests.test_models import InplaceModel, compare_inference, compare_training
-from tests.utils import parametrize_class_env
 from xpu_graph import OptLevel
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.interceptor import OpInterceptor
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.test_utils import need_xpu_graph_logs
 
+from tests.test_models import InplaceModel, compare_inference, compare_training
+from tests.utils import parametrize_class_env
+
+aten = torch.ops.aten
 device = "cpu"
 data_type = torch.float32
 

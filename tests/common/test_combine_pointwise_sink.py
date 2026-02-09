@@ -1,6 +1,5 @@
 import pytest
 import torch
-
 from xpu_graph import XpuGraph, XpuGraphConfig
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
@@ -215,7 +214,7 @@ def fn4_xfail(inputs, slice_):
 
 def fn5_symshape(inputs, slice_):
     seq_len = inputs.size(0)
-    l0, l1, l2, l3 = seq_len // 4, (seq_len + 1) // 4, (seq_len + 2) // 4, (seq_len + 3) // 4
+    l0, l1, l2, _l3 = seq_len // 4, (seq_len + 1) // 4, (seq_len + 2) // 4, (seq_len + 3) // 4
     o0, o1, o2, o3 = 0, l0, l0 + l1, l0 + l1 + l2
     a0 = slice_[o0:o1]
     a1 = slice_[o1:o2]

@@ -1,10 +1,10 @@
 import pytest
 import torch
+from xpu_graph import OptLevel, XpuGraph, XpuGraphConfig, XpuGraphLocalCache
+from xpu_graph.test_utils import need_xpu_graph_logs
 
 from tests.test_models import SimpleModel, compare_inference
 from tests.utils import parametrize_class_env
-from xpu_graph import OptLevel, XpuGraph, XpuGraphConfig, XpuGraphLocalCache
-from xpu_graph.test_utils import need_xpu_graph_logs
 
 device = "cpu"
 dtype = torch.float32
